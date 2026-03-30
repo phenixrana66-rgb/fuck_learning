@@ -1,0 +1,241 @@
+<template>
+  <TeacherLayout>
+    <div class="page-card">
+      <div class="page-title">课件解析</div>
+
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px"
+        title="支持 PPT / PPTX / PDF 文件，上传后系统将自动解析知识点结构"
+      />
+
+      <div class="toolbar">
+        <el-upload
+          :auto-upload="false"
+          :show-file-list="true"
+          :limit="1"
+          :before-upload="beforeUpload"
+          accept=".ppt,.pptx,.pdf"
+        >
+          <el-button>选择文件</el-button>
+        </el-upload>
+
+        <el-button type="primary" :loading="submitting" @click="submitParse">
+          上传并解析
+        </el-button>
+
+        <el-button :disabled="!parseForm.parseId" @click="pollStatus">
+          查询状态
+        </el-button>
+      </div>
+
+      <el-form :model="parseForm" label-width="100px">
+        <el-form-item label="文件名称">
+          <el-input v-model="parseForm.fileName" readonly />
+        </el-form-item>
+        <el-form-item label="parseId">
+          <el-input v-model="parseForm.parseId" readonly />
+        </el-form-item>
+        <el-form-item label="解析状态">
+          <el-tag :type="statusTagType(parseForm.status)">
+            {{ parseForm.status || '未开始' }}
+          </el-tag>
+        </el-form-item>
+      </el-form>
+
+      <Loading
+        :visible="submitting || polling"
+        :text="polling ? '课件解析中，正在轮询状态...' : '课件上传中...'"
+        :showProgress="polling"
+        :percentage="progress"
+      />
+
+      <ErrorTip
+        v-if="errorCode"
+        :code="errorCode"
+        :message="errorMsg"
+        @retry="pollStatus"
+      />
+    </div>
+
+    <div class="page-card" v-if="knowledgeTree.length">
+      <div class="sub-title">知识点层级预览</div>
+      <div class="tree-box">
+        <el-tree
+          :data="knowledgeTree"
+          node-key="id"
+          default-expand-all
+          :props="treeProps"
+        />
+      </div>
+
+      <div class="toolbar" style="margin-top: 16px">
+        <el-button type="success" @click="goScriptPage">进入脚本生成</el-button>
+      </div>
+    </div>
+  </TeacherLayout>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
+import Loading from '@/components/teacher/Loading.vue'
+import ErrorTip from '@/components/teacher/ErrorTip.vue'
+import { lessonParse } from '@/api/teacher'
+import { getCurrentCourse, saveParseResult } from '@/utils/platform'
+
+const router = useRouter()
+const currentCourse = getCurrentCourse()
+
+const parseForm = ref({
+  fileName: '',
+  fileBase64: '',
+  parseId: '',
+  status: ''
+})
+
+const submitting = ref(false)
+const polling = ref(false)
+const progress = ref(0)
+const knowledgeTree = ref([])
+const errorCode = ref('')
+const errorMsg = ref('')
+
+const treeProps = {
+  children: 'children',
+  label: 'name'
+}
+
+let pollTimer = null
+
+function beforeUpload(file) {
+  const isValid = /\.(ppt|pptx|pdf)$/i.test(file.name)
+  if (!isValid) {
+    ElMessage.warning('仅支持 PPT/PPTX/PDF 文件')
+    return false
+  }
+
+  parseForm.value.fileName = file.name
+  const reader = new FileReader()
+  reader.readAsDataURL(file)
+  reader.onload = () => {
+    parseForm.value.fileBase64 = reader.result
+  }
+
+  return false
+}
+
+async function submitParse() {
+  if (!currentCourse.courseId) {
+    ElMessage.warning('请先选择课程')
+    return
+  }
+
+  if (!parseForm.value.fileBase64) {
+    ElMessage.warning('请先选择课件文件')
+    return
+  }
+
+  submitting.value = true
+  errorCode.value = ''
+  errorMsg.value = ''
+
+  try {
+    const res = await lessonParse({
+      courseId: currentCourse.courseId,
+      classId: currentCourse.classId,
+      schoolId: currentCourse.schoolId,
+      fileName: parseForm.value.fileName,
+      fileContent: parseForm.value.fileBase64,
+      action: 'upload'
+    })
+
+    const data = res.data || {}
+    parseForm.value.parseId = data.parseId || ''
+    parseForm.value.status = data.status || 'processing'
+    knowledgeTree.value = data.knowledgeTree || []
+
+    saveParseResult({
+      ...data,
+      fileName: parseForm.value.fileName
+    })
+
+    if (parseForm.value.parseId && parseForm.value.status !== 'success') {
+      pollStatus()
+    }
+  } catch (error) {
+    errorCode.value = error.code || 500
+    errorMsg.value = error.msg || '解析提交失败'
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function pollStatus() {
+  if (!parseForm.value.parseId) {
+    ElMessage.warning('暂无 parseId')
+    return
+  }
+
+  clearTimeout(pollTimer)
+  polling.value = true
+  progress.value = 10
+
+  const doPoll = async () => {
+    try {
+      const res = await lessonParse({
+        parseId: parseForm.value.parseId,
+        courseId: currentCourse.courseId,
+        action: 'status'
+      })
+
+      const data = res.data || {}
+      parseForm.value.status = data.status || parseForm.value.status
+      knowledgeTree.value = data.knowledgeTree || knowledgeTree.value
+      progress.value = Math.min(progress.value + 15, 95)
+
+      saveParseResult({
+        ...data,
+        parseId: parseForm.value.parseId,
+        fileName: parseForm.value.fileName
+      })
+
+      if (data.status === 'success') {
+        polling.value = false
+        progress.value = 100
+        return
+      }
+
+      if (data.status === 'failed') {
+        polling.value = false
+        errorCode.value = 500
+        errorMsg.value = data.msg || '解析失败'
+        return
+      }
+
+      pollTimer = setTimeout(doPoll, 3000)
+    } catch (error) {
+      polling.value = false
+      errorCode.value = error.code || 500
+      errorMsg.value = error.msg || '轮询解析状态失败'
+    }
+  }
+
+  doPoll()
+}
+
+function statusTagType(status) {
+  if (status === 'success') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'processing') return 'warning'
+  return 'info'
+}
+
+function goScriptPage() {
+  router.push('/teacher/script-generate')
+}
+</script>
