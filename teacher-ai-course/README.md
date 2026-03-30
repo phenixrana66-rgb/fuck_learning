@@ -1,30 +1,20 @@
-# Teacher AI Course
+﻿# Teacher AI Course
 
-## 本地开发
+教师端前端已迁移到仓库根目录统一维护。
 
-推荐直接运行：
+当前目录保留内容：
+
+- `mock/server.js` 教师端本地 mock 服务
+
+统一前端请在仓库根目录执行：
 
 ```bash
+npm install
 npm run dev
 ```
 
-该命令会同时启动：
-
-- Vite 前端开发服务
-- 本地教师端 mock 服务 `http://localhost:3001`
-
-如果只想单独启动前端或 mock：
+如果只想单独启动教师 mock：
 
 ```bash
-npm run dev:web
-npm run mock
+node mock/server.js
 ```
-
-## 测试数据
-
-- 登录测试 token：`test_token_001`
-- 本地开发默认通过 Vite 代理把 `/api` 转发到 `http://localhost:3001`
-
-## 说明
-
-当前仓库只保留教师端内容。学生端独立项目位于 `D:/student-ai-course`。
