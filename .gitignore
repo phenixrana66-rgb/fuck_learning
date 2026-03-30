@@ -1,5 +1,6 @@
 #vlux42 config
 /doc/ai-generate
+/rest-client/
 
 .vscode/
 .idea/
