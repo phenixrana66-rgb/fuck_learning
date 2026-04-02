@@ -2,6 +2,7 @@
 /doc/ai-generate
 /rest-client/
 
+.sisyphus/
 .vscode/
 .idea/
 .DS_Store
@@ -11,6 +12,7 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+__pycache__/
 tmp/
 temp/
 
