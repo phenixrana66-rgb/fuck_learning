@@ -310,9 +310,10 @@ onBeforeUnmount(() => {
 
 .student-notification-panel {
   position: absolute;
-  top: calc(100% + 12px);
-  right: 0;
+  top: 50%;
+  right: calc(100% + 12px);
   width: 320px;
+  transform: translateY(-50%);
   padding: 16px;
   border-radius: 18px;
   border: 1px solid #e7edf7;
@@ -426,7 +427,7 @@ onBeforeUnmount(() => {
 .student-notification-fade-enter-from,
 .student-notification-fade-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
+  transform: translate(-8px, -50%);
 }
 
 @media (max-width: 992px) {
@@ -441,7 +442,14 @@ onBeforeUnmount(() => {
 
   .student-notification-panel {
     width: min(320px, calc(100vw - 32px));
+    top: calc(100% + 12px);
     right: -8px;
+    transform: none;
+  }
+
+  .student-notification-fade-enter-from,
+  .student-notification-fade-leave-to {
+    transform: translateY(-6px);
   }
 }
 

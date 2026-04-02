@@ -72,38 +72,6 @@
             </article>
           </div>
         </section>
-
-        <section class="student-card">
-          <div class="student-card-header">
-            <div>
-              <h2>最近学习记录</h2>
-              <p>课程详情页的问答与章节学习进度会在这里形成最近记录。</p>
-            </div>
-          </div>
-
-          <div v-if="historyLessons.length === 0" class="student-empty student-history-empty">
-            当前暂无学习记录。
-          </div>
-          <div v-else class="student-history-list">
-            <div
-              v-for="lesson in historyLessons"
-              :key="lesson.lessonId"
-              class="student-history-item"
-            >
-              <div class="student-history-dot"></div>
-              <div class="student-history-body">
-                <div class="student-history-title">
-                  <span>{{ lesson.courseName }}</span>
-                  <span>{{ lesson.lastStudyAt }}</span>
-                </div>
-                <div class="student-history-desc">
-                  当前章节：{{ lesson.currentChapter }} · 学习进度 {{ getLessonProgress(lesson) }}% · 问答记录 {{ lesson.questionCount || 0 }} 条
-                </div>
-              </div>
-              <el-button text type="primary" @click="openHistory(lesson)">查看问答</el-button>
-            </div>
-          </div>
-        </section>
       </div>
 
       <aside class="student-home-side">
@@ -163,6 +131,31 @@
               <div class="student-side-link-desc">课程详情页默认进入知识学习，可在顶部切换 AI 互动室。</div>
             </div>
             <el-icon><ArrowRight /></el-icon>
+          </div>
+        </section>
+
+        <section class="student-side-card student-history-side-card">
+          <div class="student-side-card-header">
+            <h3>最近学习记录</h3>
+            <p>保留最近 3 条课程学习与问答记录。</p>
+          </div>
+
+          <div v-if="historyLessons.length === 0" class="student-side-empty">
+            当前暂无学习记录。
+          </div>
+          <div v-else class="student-history-side-list">
+            <article
+              v-for="lesson in historyLessons"
+              :key="lesson.lessonId"
+              class="student-history-side-item"
+            >
+              <div class="student-history-side-main">
+                <div class="student-history-side-title">{{ lesson.courseName }}</div>
+                <div class="student-history-side-summary">{{ getHistorySummary(lesson) }}</div>
+                <div class="student-history-side-meta">{{ lesson.lastStudyAt || '最近已学习' }}</div>
+              </div>
+              <el-button text type="primary" @click.stop="openHistory(lesson)">查看问答</el-button>
+            </article>
           </div>
         </section>
       </aside>
@@ -304,7 +297,7 @@ const filteredLessons = computed(() => {
 const historyLessons = computed(() => {
   return [...lessonList.value]
     .sort((a, b) => new Date(b.lastStudyAt || 0) - new Date(a.lastStudyAt || 0))
-    .slice(0, 4)
+    .slice(0, 3)
 })
 
 async function bootstrapStudent() {
@@ -435,6 +428,10 @@ function openHistory(lesson) {
 
 function getLessonProgress(lesson) {
   return calculateLessonProgress(lesson)
+}
+
+function getHistorySummary(lesson) {
+  return `当前章节 ${lesson.currentChapter} · 进度 ${getLessonProgress(lesson)}% · 问答 ${lesson.questionCount || 0} 条`
 }
 
 onMounted(async () => {
@@ -664,58 +661,20 @@ onBeforeUnmount(() => {
   text-align: right;
 }
 
-.student-history-empty {
-  min-height: 180px;
-}
-
-.student-history-list {
-  display: grid;
-  gap: 18px;
-}
-
-.student-history-item {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  padding: 18px 0;
-  border-top: 1px solid #edf2f8;
-}
-
-.student-history-item:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.student-history-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #2fae87, #4ccda4);
-}
-
-.student-history-title {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  color: #1c2a52;
-  font-size: 16px;
-}
-
-.student-history-title span:last-child,
-.student-history-desc {
-  color: #7f8aa2;
-  font-size: 13px;
-}
-
-.student-history-desc {
-  margin-top: 8px;
-  line-height: 1.8;
-}
-
 .student-home-side {
   display: grid;
   gap: 24px;
+}
+
+.student-side-card-header h3 {
+  margin: 0;
+}
+
+.student-side-card-header p {
+  margin: 10px 0 0;
+  color: #7b86a1;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .student-side-link {
@@ -771,9 +730,11 @@ onBeforeUnmount(() => {
 
 .student-notification-panel {
   position: absolute;
-  top: calc(100% + 10px);
-  left: 0;
-  width: min(360px, calc(100vw - 72px));
+  top: 50%;
+  right: calc(100% + 14px);
+  left: auto;
+  transform: translateY(-50%);
+  width: min(340px, calc(100vw - 440px));
   max-height: 360px;
   overflow: auto;
   padding: 16px;
@@ -904,6 +865,62 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.student-history-side-card {
+  padding-top: 24px;
+}
+
+.student-side-empty {
+  margin-top: 18px;
+  padding: 18px 16px;
+  border-radius: 18px;
+  background: #fbfcff;
+  border: 1px dashed #d7e0f0;
+  color: #8490aa;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.student-history-side-list {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.student-history-side-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 0;
+  border-top: 1px solid #edf2f8;
+}
+
+.student-history-side-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.student-history-side-title {
+  color: #1c2a52;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.student-history-side-summary,
+.student-history-side-meta {
+  color: #7f8aa2;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.student-history-side-summary {
+  margin-top: 6px;
+}
+
+.student-history-side-meta {
+  margin-top: 4px;
+}
+
 .student-notification-fade-enter-active,
 .student-notification-fade-leave-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -912,7 +929,7 @@ onBeforeUnmount(() => {
 .student-notification-fade-enter-from,
 .student-notification-fade-leave-to {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translate(-8px, -50%);
 }
 
 @media (max-width: 1100px) {
@@ -922,6 +939,19 @@ onBeforeUnmount(() => {
 
   .student-home-stats {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .student-notification-panel {
+    top: calc(100% + 10px);
+    right: auto;
+    left: 0;
+    transform: none;
+    width: min(360px, calc(100vw - 72px));
+  }
+
+  .student-notification-fade-enter-from,
+  .student-notification-fade-leave-to {
+    transform: translateY(6px);
   }
 }
 
@@ -949,8 +979,12 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
-  .student-history-item {
-    grid-template-columns: 10px 1fr;
+  .student-history-side-item {
+    grid-template-columns: 1fr;
+  }
+
+  .student-notification-panel {
+    width: min(360px, calc(100vw - 40px));
   }
 }
 </style>

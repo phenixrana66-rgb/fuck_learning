@@ -4,7 +4,8 @@ import { getPlatformToken, savePlatformToken } from '@/utils/platform'
 const routes = [
   {
     path: '/',
-    redirect: '/teacher/login'
+    name: 'HomePortal',
+    component: () => import('@/views/HomePortal.vue')
   },
   {
     path: '/student/home',
