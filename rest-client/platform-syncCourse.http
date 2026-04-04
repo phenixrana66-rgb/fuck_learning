@@ -1,0 +1,26 @@
+@baseUrl = http://127.0.0.1:8000
+
+### 平台课程同步
+POST {{baseUrl}}/api/v1/platform/syncCourse
+Content-Type: application/json
+
+{
+  "platformId": "chaoxing-demo",
+  "courseInfo": {
+    "courseId": "plat_course_ai_001",
+    "courseName": "人工智能导论",
+    "schoolId": "school-demo",
+    "schoolName": "演示学校",
+    "teacherInfo": [
+      {
+        "teacherId": "plat_teacher_001",
+        "teacherName": "张老师"
+      }
+    ],
+    "term": "2026春",
+    "credit": 2.0,
+    "period": 32,
+    "courseCover": "https://example.com/course-cover.png"
+  },
+  "enc": "demo-signature"
+}

@@ -1,52 +1,99 @@
-from pathlib import PurePosixPath
+from backend.app.common.exceptions import ApiError
+from backend.app.parser.llm_client import generate_outline_with_llm
+from backend.app.parser.pptx_reader import extract_pptx_presentation
+from backend.app.parser.schemas import FileInfo, OutlineResult, PreviewChapter, PreviewSubChapter, StructurePreview
 
-from backend.app.parser.schemas import FileInfo, PreviewChapter, PreviewSubChapter, StructurePreview
+
+def parse_courseware(
+    course_id: str,
+    file_url: str,
+    file_type: str,
+    is_extract_key_point: bool,
+) -> tuple[FileInfo, StructurePreview]:
+    if file_type == "pdf":
+        raise ApiError(code=400, msg="当前 demo 仅支持 .pptx 文件解析，暂不支持 PDF", status_code=400)
+
+    file_info, extracted = extract_pptx_presentation(file_url)
+    outline = generate_outline_with_llm(course_id, extracted, is_extract_key_point)
+    preview = _outline_to_structure_preview(course_id, outline, file_info.pageCount)
+    return file_info, preview
 
 
 def build_file_info(file_url: str, file_type: str) -> FileInfo:
-    suffix = PurePosixPath(file_url).name or f"courseware.{file_type}"
-    page_count = 12 if file_type == "ppt" else 18
-    return FileInfo(
-        fileName=suffix,
-        fileSize=2_048_000,
-        pageCount=page_count,
-    )
+    if file_type == "ppt":
+        file_info, _ = extract_pptx_presentation(file_url)
+        return file_info
+
+    file_name = file_url.split("/")[-1] or f"courseware.{file_type}"
+    page_count = 18
+    return FileInfo(fileName=file_name, fileSize=2_048_000, pageCount=page_count)
 
 
-def build_structure_preview(course_id: str) -> StructurePreview:
-    return StructurePreview(
-        chapters=[
+def build_structure_preview(
+    course_id: str,
+    file_url: str,
+    file_type: str,
+    is_extract_key_point: bool = True,
+) -> StructurePreview:
+    _, preview = parse_courseware(course_id, file_url, file_type, is_extract_key_point)
+    return preview
+
+
+def _outline_to_structure_preview(course_id: str, outline: OutlineResult, page_count: int) -> StructurePreview:
+    chapters: list[PreviewChapter] = []
+    next_page = 1
+    last_page = max(page_count, 1)
+
+    if not outline.chapters:
+        raise ApiError(code=502, msg="LLM 未返回有效章节结构，请检查 PPT 内容或提示词配置", status_code=502)
+
+    for chapter_index, outline_chapter in enumerate(outline.chapters, start=1):
+        sub_chapters: list[PreviewSubChapter] = []
+        for subchapter_index, outline_subchapter in enumerate(outline_chapter.subChapters, start=1):
+            page_start = _clamp_page(outline_subchapter.pageStart, next_page, last_page)
+            page_end = _clamp_page(outline_subchapter.pageEnd, page_start, last_page)
+            next_page = min(page_end + 1, last_page)
+            sub_chapters.append(
+                PreviewSubChapter(
+                    subChapterId=f"{course_id}-sub-{chapter_index:03d}-{subchapter_index:03d}",
+                    subChapterName=outline_subchapter.name.strip() or f"第{subchapter_index}小节",
+                    isKeyPoint=outline_subchapter.isKeyPoint,
+                    pageRange=f"{page_start}-{page_end}",
+                )
+            )
+
+        if not sub_chapters:
+            sub_chapters.append(
+                PreviewSubChapter(
+                    subChapterId=f"{course_id}-sub-{chapter_index:03d}-001",
+                    subChapterName="内容整理",
+                    isKeyPoint=True,
+                    pageRange=f"{next_page}-{last_page}",
+                )
+            )
+
+        chapters.append(
             PreviewChapter(
-                chapterId=f"{course_id}-chap-001",
-                chapterName="课程导入与核心问题",
-                subChapters=[
-                    PreviewSubChapter(
-                        subChapterId=f"{course_id}-sub-001",
-                        subChapterName="基础概念引入",
-                        pageRange="1-3",
-                    ),
-                    PreviewSubChapter(
-                        subChapterId=f"{course_id}-sub-002",
-                        subChapterName="关键概念展开",
-                        pageRange="4-7",
-                    ),
-                ],
-            ),
-            PreviewChapter(
-                chapterId=f"{course_id}-chap-002",
-                chapterName="案例与总结",
-                subChapters=[
-                    PreviewSubChapter(
-                        subChapterId=f"{course_id}-sub-003",
-                        subChapterName="案例分析",
-                        pageRange="8-10",
-                    ),
-                    PreviewSubChapter(
-                        subChapterId=f"{course_id}-sub-004",
-                        subChapterName="小结与练习",
-                        pageRange="11-12",
-                    ),
-                ],
-            ),
-        ]
-    )
+                chapterId=f"{course_id}-chap-{chapter_index:03d}",
+                chapterName=outline_chapter.name.strip() or f"第{chapter_index}章",
+                subChapters=sub_chapters,
+            )
+        )
+
+    _ensure_last_page_covered(chapters, last_page)
+    return StructurePreview(chapters=chapters)
+
+
+def _clamp_page(page: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(page, maximum))
+
+
+def _ensure_last_page_covered(chapters: list[PreviewChapter], last_page: int) -> None:
+    if not chapters or not chapters[-1].subChapters:
+        return
+    last_subchapter = chapters[-1].subChapters[-1]
+    start_text, end_text = last_subchapter.pageRange.split("-")
+    start = int(start_text)
+    end = int(end_text)
+    if end < last_page:
+        last_subchapter.pageRange = f"{start}-{last_page}"

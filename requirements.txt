@@ -11,5 +11,5 @@ orjson
 asyncpg
 pgvector
 minio
-python-pptx
+python-pptx>=0.6.22
 PyMuPDF

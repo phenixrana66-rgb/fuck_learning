@@ -17,7 +17,7 @@ def build_cir(courseware_id: str, preview: StructurePreview) -> CIR:
                     label=subchapter.subChapterName,
                     pageRef=page_start,
                     nodeRef=node_id,
-                    sourceSpan=f"{subchapter.subChapterName} 对应原始课件证据片段",
+                    sourceSpan=f"第{page_start}页至第{_page_refs_from_range(subchapter.pageRange)[-1]}页涉及{subchapter.subChapterName}的课件内容",
                 )
             ]
             nodes.append(
@@ -26,11 +26,11 @@ def build_cir(courseware_id: str, preview: StructurePreview) -> CIR:
                     nodeName=subchapter.subChapterName,
                     pageRefs=_page_refs_from_range(subchapter.pageRange),
                     keyPoints=[
-                        f"理解{subchapter.subChapterName}的定义",
-                        f"掌握{subchapter.subChapterName}的核心要点",
-                        f"能够将{subchapter.subChapterName}用于课堂问答和续讲",
+                        f"理解{subchapter.subChapterName}的核心内容",
+                        f"掌握与{subchapter.subChapterName}相关的重点知识",
+                        f"能够围绕{subchapter.subChapterName}进行课堂表达与复述",
                     ],
-                    summary=f"围绕{subchapter.subChapterName}生成的教学节点摘要。",
+                    summary=f"本节点围绕{subchapter.subChapterName}展开，覆盖课件第{subchapter.pageRange}页的主要内容。",
                     anchors=anchors,
                     prerequisiteNodeIds=[previous_node_id] if previous_node_id else [],
                     nextNodeId=None,

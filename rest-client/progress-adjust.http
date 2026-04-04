@@ -1,0 +1,15 @@
+@baseUrl = http://127.0.0.1:8000
+@lessonId = lesson20260406000000000000
+
+### 节奏调整
+POST {{baseUrl}}/api/v1/progress/adjust
+Content-Type: application/json
+
+{
+  "userId": "student-demo",
+  "lessonId": "{{lessonId}}",
+  "currentSectionId": "sec002",
+  "understandingLevel": "partial",
+  "qaRecordId": "ans-demo-001",
+  "enc": "demo-signature"
+}

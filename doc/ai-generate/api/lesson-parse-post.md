@@ -1,0 +1,49 @@
+# POST /api/v1/lesson/parse
+
+## 接口定位
+用于上传或提交课件解析任务，进入智课生成主链路的起点。
+
+## 规划信息
+- 模块：智课生成
+- 方法：POST
+- 模式：当前代码为同步完成式 demo，长期目标仍为异步提交
+- 后端归属：`backend/app/courseware/`、`backend/app/parser/`、`backend/app/tasks/`
+
+## 核心请求字段
+- `schoolId`：学校 ID
+- `userId`：教师或上传用户 ID
+- `courseId`：课程 ID
+- `fileType`：当前接口字段仍沿用 `ppt` / `pdf` 枚举；但**现有 demo 实现只支持 `.pptx` 文件解析**
+- `fileUrl`：课件文件 URL
+- `isExtractKeyPoint`：是否自动提取重点
+- `enc`：签名信息
+
+## 核心响应字段
+- `parseId`：解析任务 ID
+- `fileInfo`：文件信息
+- `structurePreview`：结构预览
+- `taskStatus`：任务状态
+- `requestId`：请求追踪 ID
+
+## 当前代码行为（截至本次实现）
+- 支持读取本地路径、`file://` 和 `http/https` 可访问的 `.pptx` 文件
+- 使用 `python-pptx` 提取 slide 标题、正文、表格、备注
+- 使用 OpenAI 兼容 `chat/completions` 接口生成章节结构
+- 在 `POST` 内同步完成 `structurePreview` 和 `cir` 的生成，因此当前返回的 `taskStatus` 已为 `completed`
+- `POST` 响应本身不直接返回 `cir`，如需完整 `cir` 请继续调用 `GET /api/v1/lesson/parse/{parseId}`
+- 当前传入 `pdf` 或非 `.pptx` 文件会直接返回错误，不再返回假成功数据
+
+## 当前依赖配置
+- `A12_LLM_API_BASE_URL`
+- `A12_LLM_API_KEY`
+- `A12_LLM_MODEL`
+- `A12_LLM_TIMEOUT_SECONDS`
+
+## 当前联调方式
+- 测试文件：`rest-client/lesson-parse.http`
+- 示例课件：`examples/demo-courseware.pptx`
+
+## 对接约束
+- 长期目标仍应支持异步任务模式。
+- 当前 demo 虽保留 `parseId` 和查询接口，但提交时已完成解析，可直接查询完整结果。
+- 统一响应结构为 `code / msg / data / requestId`。

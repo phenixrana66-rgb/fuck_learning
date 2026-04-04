@@ -1,0 +1,12 @@
+@baseUrl = http://127.0.0.1:8000
+
+### 语音转文字
+POST {{baseUrl}}/api/v1/qa/voiceToText
+Content-Type: application/json
+
+{
+  "voiceUrl": "https://example.com/audio/question-001.mp3",
+  "voiceDuration": 8,
+  "language": "zh-CN",
+  "enc": "demo-signature"
+}

@@ -1,0 +1,41 @@
+@baseUrl = http://127.0.0.1:8000
+
+### 平台用户同步（教师）
+POST {{baseUrl}}/api/v1/platform/syncUser
+Content-Type: application/json
+
+{
+  "platformId": "chaoxing-demo",
+  "userInfo": {
+    "userId": "plat_teacher_001",
+    "userName": "张老师",
+    "role": "teacher",
+    "schoolId": "school-demo",
+    "relatedCourseIds": ["plat_course_ai_001"],
+    "contactInfo": {
+      "phone": "13800000000",
+      "email": "teacher@example.com"
+    }
+  },
+  "enc": "demo-signature"
+}
+
+### 平台用户同步（学生）
+POST {{baseUrl}}/api/v1/platform/syncUser
+Content-Type: application/json
+
+{
+  "platformId": "chaoxing-demo",
+  "userInfo": {
+    "userId": "plat_student_001",
+    "userName": "李同学",
+    "role": "student",
+    "schoolId": "school-demo",
+    "relatedCourseIds": ["plat_course_ai_001"],
+    "contactInfo": {
+      "phone": "13900000000",
+      "email": "student@example.com"
+    }
+  },
+  "enc": "demo-signature"
+}

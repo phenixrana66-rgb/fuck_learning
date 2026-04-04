@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Literal
 
 from pydantic import Field
 
@@ -32,3 +33,33 @@ class PreviewChapter(AppBaseModel):
 
 class StructurePreview(AppBaseModel):
     chapters: list[PreviewChapter] = Field(default_factory=list)
+
+
+class ExtractedSlide(AppBaseModel):
+    slideNumber: int = Field(ge=1)
+    title: str | None = None
+    bodyTexts: list[str] = Field(default_factory=list)
+    tableTexts: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class ExtractedPresentation(AppBaseModel):
+    sourceType: Literal["pptx"] = "pptx"
+    slides: list[ExtractedSlide] = Field(default_factory=list)
+
+
+class OutlineSubChapter(AppBaseModel):
+    name: str
+    pageStart: int = Field(ge=1)
+    pageEnd: int = Field(ge=1)
+    isKeyPoint: bool = True
+
+
+class OutlineChapter(AppBaseModel):
+    name: str
+    subChapters: list[OutlineSubChapter] = Field(default_factory=list)
+
+
+class OutlineResult(AppBaseModel):
+    title: str | None = None
+    chapters: list[OutlineChapter] = Field(default_factory=list)

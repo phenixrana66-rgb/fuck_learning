@@ -1,0 +1,14 @@
+@baseUrl = http://127.0.0.1:8000
+@scriptId = script20260406000000000000
+
+### 生成音频（把 @scriptId 替换成 generateScript 返回值）
+POST {{baseUrl}}/api/v1/lesson/generateAudio
+Content-Type: application/json
+
+{
+  "scriptId": "{{scriptId}}",
+  "voiceType": "female_standard",
+  "audioFormat": "mp3",
+  "sectionIds": ["sec001", "sec002"],
+  "enc": "demo-signature"
+}

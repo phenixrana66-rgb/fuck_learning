@@ -1,0 +1,18 @@
+@baseUrl = http://127.0.0.1:8000
+@lessonId = lesson20260406000000000000
+
+### 进度追踪
+POST {{baseUrl}}/api/v1/progress/track
+Content-Type: application/json
+
+{
+  "schoolId": "school-demo",
+  "userId": "student-demo",
+  "courseId": "course-ai-001",
+  "lessonId": "{{lessonId}}",
+  "currentSectionId": "sec001",
+  "progressPercent": 35,
+  "lastOperateTime": "2026-04-06 17:30:00",
+  "qaRecordId": "ans-demo-001",
+  "enc": "demo-signature"
+}
