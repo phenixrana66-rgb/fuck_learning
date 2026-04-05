@@ -55,7 +55,7 @@
               class="student-course-item"
               @click="openLesson(lesson)"
             >
-              <div class="student-course-cover"></div>
+              <div class="student-course-cover" :style="getCourseCoverStyle(lesson)"></div>
               <div class="student-course-content">
                 <div class="student-course-title">{{ lesson.courseName }}</div>
                 <div class="student-course-teacher">{{ lesson.teacherName }}</div>
@@ -255,10 +255,200 @@ let closeTimer = null
 const heroStudentName = computed(() => studentProfile.value.studentName || fallbackProfile.studentName)
 const heroCollegeName = computed(() => studentProfile.value.collegeName || fallbackProfile.collegeName)
 
+const COURSE_THEME_MAP = [
+  {
+    keywords: ['材料力学'],
+    palette: ['#dfeeff', '#8db5ff', '#4874d9', '#1d3f88'],
+    pattern: 'mechanics'
+  },
+  {
+    keywords: ['电工', '电路'],
+    palette: ['#ddf6f4', '#7bd6cf', '#23a7a1', '#0e5f75'],
+    pattern: 'circuit'
+  },
+  {
+    keywords: ['画法几何', '机械制图', '制图'],
+    palette: ['#edf2fb', '#b7c5da', '#6f809d', '#34445f'],
+    pattern: 'drafting'
+  },
+  {
+    keywords: ['汽车'],
+    palette: ['#ffe9dd', '#ffbc88', '#f06a2b', '#8e3b12'],
+    pattern: 'automotive'
+  },
+  {
+    keywords: ['制冷'],
+    palette: ['#e6f6ff', '#9dd8ff', '#4aa7e8', '#2160a6'],
+    pattern: 'refrigeration'
+  },
+  {
+    keywords: ['建筑冷热源', '冷热源'],
+    palette: ['#edf8ff', '#a7d7e8', '#4ea8ba', '#2d6470'],
+    pattern: 'buildingEnergy'
+  },
+  {
+    keywords: ['自动控制', '控制'],
+    palette: ['#e9edff', '#b0bcff', '#6d7ef0', '#3040a5'],
+    pattern: 'control'
+  }
+]
+
+const DEFAULT_COURSE_THEME = {
+  palette: ['#eef5ff', '#c6daf8', '#7ea4e6', '#36579f'],
+  pattern: 'generic'
+}
+
 function calculateLessonProgress(lesson) {
   const chapters = (lesson.units || []).flatMap((unit) => unit.chapters || [])
   if (!chapters.length) return Number(lesson.progressPercent || 0)
   return Math.round(chapters.reduce((sum, chapter) => sum + Number(chapter.progressPercent || 0), 0) / chapters.length)
+}
+
+function getCourseTheme(lesson) {
+  const courseName = String(lesson.courseName || '')
+  return COURSE_THEME_MAP.find((item) => item.keywords.some((keyword) => courseName.includes(keyword))) || DEFAULT_COURSE_THEME
+}
+
+function buildCourseCoverSvg(lesson) {
+  const theme = getCourseTheme(lesson)
+  const [base, soft, accent, deep] = theme.palette
+  const pattern = getCourseCoverPattern(theme.pattern, theme.palette)
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${base}"/>
+          <stop offset="58%" stop-color="${soft}"/>
+          <stop offset="100%" stop-color="${accent}"/>
+        </linearGradient>
+        <radialGradient id="glowA" cx="22%" cy="28%" r="58%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.82)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+        </radialGradient>
+        <radialGradient id="glowB" cx="82%" cy="24%" r="52%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.32)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+        </radialGradient>
+      </defs>
+      <rect width="720" height="360" rx="0" fill="url(#bg)"/>
+      <rect width="720" height="360" fill="url(#glowA)" opacity="0.65"/>
+      <rect width="720" height="360" fill="url(#glowB)" opacity="0.95"/>
+      <circle cx="612" cy="82" r="104" fill="rgba(255,255,255,0.14)"/>
+      <circle cx="108" cy="302" r="132" fill="rgba(255,255,255,0.10)"/>
+      <path d="M0 280 C120 220 220 212 322 250 S532 334 720 238 L720 360 L0 360 Z" fill="rgba(255,255,255,0.16)"/>
+      <path d="M0 306 C98 276 214 278 328 316 S570 374 720 286 L720 360 L0 360 Z" fill="rgba(255,255,255,0.12)"/>
+      ${pattern}
+      <rect x="0" y="0" width="720" height="360" fill="none" stroke="rgba(255,255,255,0.18)"/>
+      <rect x="18" y="18" width="684" height="324" rx="28" fill="none" stroke="${deep}" opacity="0.10"/>
+    </svg>
+  `
+  return `url("data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}")`
+}
+
+function getCourseCoverPattern(type, palette) {
+  const [, soft, accent, deep] = palette
+  const line = `rgba(255,255,255,0.72)`
+  const lineSoft = `rgba(255,255,255,0.48)`
+  const deepSoft = `${deep}22`
+  const accentSoft = `${accent}33`
+
+  const patterns = {
+    mechanics: `
+      <g transform="translate(96 82)">
+        <path d="M0 116 C54 46 132 42 188 98 C236 144 304 144 358 92" fill="none" stroke="${line}" stroke-width="8" stroke-linecap="round"/>
+        <path d="M0 150 L368 150" stroke="${lineSoft}" stroke-width="12" stroke-linecap="round"/>
+        <path d="M40 150 L84 126 L128 150 L172 174 L216 150 L260 126 L304 150" fill="none" stroke="${accentSoft}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="92" cy="150" r="14" fill="rgba(255,255,255,0.62)"/>
+        <circle cx="276" cy="150" r="14" fill="rgba(255,255,255,0.62)"/>
+        <path d="M122 58 C138 20 180 8 220 24" fill="none" stroke="${deepSoft}" stroke-width="18" stroke-linecap="round"/>
+      </g>
+    `,
+    circuit: `
+      <g transform="translate(92 74)">
+        <path d="M16 62 H156 V118 H252 V72 H374 V154 H504" fill="none" stroke="${line}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M102 172 C164 122 234 122 298 172 S434 222 520 150" fill="none" stroke="${accentSoft}" stroke-width="12" stroke-linecap="round"/>
+        <circle cx="16" cy="62" r="14" fill="rgba(255,255,255,0.78)"/>
+        <circle cx="156" cy="62" r="14" fill="rgba(255,255,255,0.78)"/>
+        <circle cx="252" cy="118" r="14" fill="rgba(255,255,255,0.78)"/>
+        <circle cx="374" cy="72" r="14" fill="rgba(255,255,255,0.78)"/>
+        <circle cx="504" cy="154" r="14" fill="rgba(255,255,255,0.78)"/>
+        <path d="M190 208 C228 184 266 184 304 208 C342 232 380 232 418 208" fill="none" stroke="${lineSoft}" stroke-width="8" stroke-linecap="round"/>
+      </g>
+    `,
+    drafting: `
+      <g transform="translate(112 54)">
+        <rect x="10" y="18" width="220" height="148" rx="14" fill="rgba(255,255,255,0.12)" stroke="${lineSoft}" stroke-width="4"/>
+        <rect x="272" y="18" width="168" height="168" rx="18" fill="rgba(255,255,255,0.08)" stroke="${line}" stroke-width="4"/>
+        <path d="M22 144 L182 34 L230 96 L88 166 Z" fill="rgba(255,255,255,0.16)" stroke="${line}" stroke-width="4" stroke-linejoin="round"/>
+        <path d="M312 56 L396 56 L396 140 L312 140 Z M338 82 L370 82 M338 108 L370 108" fill="none" stroke="${lineSoft}" stroke-width="6" stroke-linecap="round"/>
+        <path d="M12 210 H456 M154 18 V210" stroke="${accentSoft}" stroke-width="6" stroke-linecap="round"/>
+      </g>
+    `,
+    automotive: `
+      <g transform="translate(92 116)">
+        <path d="M36 114 C76 78 126 44 206 42 H332 C394 44 430 66 458 100 L536 108 C558 110 576 126 576 148 V152 H34 C22 152 14 144 14 132 V126 C14 118 24 114 36 114 Z" fill="rgba(255,255,255,0.20)" stroke="${line}" stroke-width="6" stroke-linejoin="round"/>
+        <path d="M128 112 L214 58 H320 C360 60 396 76 420 112" fill="none" stroke="${lineSoft}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="154" cy="154" r="40" fill="rgba(255,255,255,0.12)" stroke="${line}" stroke-width="8"/>
+        <circle cx="154" cy="154" r="18" fill="rgba(255,255,255,0.68)"/>
+        <circle cx="456" cy="154" r="40" fill="rgba(255,255,255,0.12)" stroke="${line}" stroke-width="8"/>
+        <circle cx="456" cy="154" r="18" fill="rgba(255,255,255,0.68)"/>
+        <path d="M112 202 H506" stroke="${accentSoft}" stroke-width="12" stroke-linecap="round"/>
+      </g>
+    `,
+    refrigeration: `
+      <g transform="translate(96 58)">
+        <rect x="28" y="34" width="188" height="176" rx="26" fill="rgba(255,255,255,0.16)" stroke="${lineSoft}" stroke-width="4"/>
+        <path d="M88 68 C124 86 124 118 88 136 C52 154 52 186 88 204" fill="none" stroke="${line}" stroke-width="10" stroke-linecap="round"/>
+        <path d="M152 68 C188 86 188 118 152 136 C116 154 116 186 152 204" fill="none" stroke="${line}" stroke-width="10" stroke-linecap="round"/>
+        <circle cx="382" cy="122" r="76" fill="rgba(255,255,255,0.12)" stroke="${line}" stroke-width="6"/>
+        <path d="M382 52 V192 M312 122 H452" stroke="${lineSoft}" stroke-width="8" stroke-linecap="round"/>
+        <path d="M250 122 H306" stroke="${accentSoft}" stroke-width="12" stroke-linecap="round"/>
+        <path d="M458 122 H514" stroke="${accentSoft}" stroke-width="12" stroke-linecap="round"/>
+        <path d="M300 236 C348 198 420 198 468 236" fill="none" stroke="${lineSoft}" stroke-width="8" stroke-linecap="round"/>
+      </g>
+    `,
+    buildingEnergy: `
+      <g transform="translate(110 62)">
+        <path d="M54 172 V88 L156 32 L252 88 V172" fill="rgba(255,255,255,0.18)" stroke="${line}" stroke-width="6" stroke-linejoin="round"/>
+        <path d="M288 190 V54 H404 V190" fill="rgba(255,255,255,0.12)" stroke="${lineSoft}" stroke-width="6" stroke-linejoin="round"/>
+        <path d="M92 118 H128 M92 146 H128 M188 118 H224 M188 146 H224" stroke="${lineSoft}" stroke-width="8" stroke-linecap="round"/>
+        <path d="M332 88 H360 M332 118 H360 M332 148 H360" stroke="${line}" stroke-width="8" stroke-linecap="round"/>
+        <path d="M24 204 C98 146 176 146 250 204 S402 262 500 180" fill="none" stroke="${accentSoft}" stroke-width="12" stroke-linecap="round"/>
+        <circle cx="86" cy="208" r="14" fill="rgba(255,255,255,0.72)"/>
+        <circle cx="256" cy="204" r="14" fill="rgba(255,255,255,0.72)"/>
+        <circle cx="466" cy="188" r="14" fill="rgba(255,255,255,0.72)"/>
+      </g>
+    `,
+    control: `
+      <g transform="translate(94 70)">
+        <rect x="38" y="54" width="148" height="92" rx="20" fill="rgba(255,255,255,0.14)" stroke="${lineSoft}" stroke-width="5"/>
+        <rect x="252" y="54" width="148" height="92" rx="20" fill="rgba(255,255,255,0.14)" stroke="${lineSoft}" stroke-width="5"/>
+        <circle cx="514" cy="100" r="50" fill="rgba(255,255,255,0.12)" stroke="${line}" stroke-width="6"/>
+        <path d="M186 100 H252 M400 100 H464" stroke="${line}" stroke-width="8" stroke-linecap="round"/>
+        <path d="M514 150 V206 H110 V146" fill="none" stroke="${accentSoft}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M110 100 H38" stroke="${line}" stroke-width="8" stroke-linecap="round"/>
+        <path d="M478 84 L514 100 L478 116" fill="none" stroke="${lineSoft}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M96 196 C122 176 150 176 176 196 C202 216 230 216 256 196 C282 176 310 176 336 196" fill="none" stroke="${lineSoft}" stroke-width="7" stroke-linecap="round"/>
+      </g>
+    `,
+    generic: `
+      <g transform="translate(100 68)">
+        <circle cx="126" cy="114" r="86" fill="rgba(255,255,255,0.14)"/>
+        <circle cx="350" cy="108" r="72" fill="rgba(255,255,255,0.16)"/>
+        <path d="M28 206 C88 154 166 154 226 206 S364 258 470 176" fill="none" stroke="${line}" stroke-width="10" stroke-linecap="round"/>
+        <path d="M92 48 L186 48 L236 132 L142 132 Z" fill="rgba(255,255,255,0.18)" stroke="${lineSoft}" stroke-width="6" stroke-linejoin="round"/>
+        <path d="M330 50 L444 164" stroke="${accentSoft}" stroke-width="12" stroke-linecap="round"/>
+      </g>
+    `
+  }
+
+  return patterns[type] || patterns.generic
+}
+
+function getCourseCoverStyle(lesson) {
+  return {
+    backgroundImage: buildCourseCoverSvg(lesson)
+  }
 }
 
 function normalizeLesson(lesson) {
@@ -463,14 +653,14 @@ onBeforeUnmount(() => {
   min-height: 300px;
   padding: 88px 48px 112px;
   background:
-    linear-gradient(135deg, rgba(39, 153, 120, 0.96), rgba(63, 179, 145, 0.9)),
-    radial-gradient(circle at 24% 22%, rgba(255, 255, 255, 0.09), transparent 30%),
-    radial-gradient(circle at 82% 24%, rgba(255, 255, 255, 0.05), transparent 24%);
+    radial-gradient(circle at 16% 18%, rgba(255, 255, 255, 0.92), transparent 28%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.42), transparent 24%),
+    linear-gradient(135deg, #dbeafe 0%, #cfe3ff 42%, #eaf3ff 100%);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
   gap: 24px;
   align-items: end;
-  color: #fff;
+  color: #16315e;
 }
 
 .student-home-identity {
@@ -481,9 +671,10 @@ onBeforeUnmount(() => {
 }
 
 .student-home-avatar {
-  border: 2px solid rgba(255, 255, 255, 0.72);
-  background: rgba(240, 243, 250, 0.4);
-  color: #fff;
+  border: 1px solid rgba(126, 164, 230, 0.34);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 30px rgba(104, 142, 207, 0.16);
+  color: #244a8f;
 }
 
 .student-home-greet {
@@ -494,7 +685,7 @@ onBeforeUnmount(() => {
 
 .student-home-meta {
   margin-top: 10px;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(39, 71, 126, 0.8);
   font-size: 17px;
   line-height: 1.7;
 }
@@ -510,10 +701,11 @@ onBeforeUnmount(() => {
   min-height: 112px;
   padding: 16px 14px;
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(132, 170, 232, 0.28);
+  background: rgba(255, 255, 255, 0.62);
   text-align: center;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 28px rgba(100, 138, 204, 0.1);
 }
 
 .student-stat-value {
@@ -524,7 +716,7 @@ onBeforeUnmount(() => {
 .student-stat-label {
   margin-top: 12px;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.84);
+  color: rgba(48, 79, 136, 0.74);
 }
 
 .student-home-body {
@@ -602,17 +794,20 @@ onBeforeUnmount(() => {
 
 .student-course-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
 }
 
 .student-course-item {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border-radius: 22px;
   border: 1px solid #e7edf7;
   background: #fff;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  min-height: 374px;
 }
 
 .student-course-item:hover {
@@ -622,13 +817,27 @@ onBeforeUnmount(() => {
 }
 
 .student-course-cover {
-  height: 150px;
-  background: linear-gradient(135deg, #f7f9fc 0%, #edf2f8 100%);
+  height: 168px;
+  position: relative;
+  background-color: #eef4fc;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   border-bottom: 1px solid #eef3f8;
+}
+
+.student-course-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(34, 58, 108, 0.06));
 }
 
 .student-course-content {
   padding: 20px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
 }
 
 .student-course-title {
@@ -659,6 +868,10 @@ onBeforeUnmount(() => {
   color: #1c2a52;
   font-weight: 600;
   text-align: right;
+}
+
+.student-course-content :deep(.el-progress) {
+  margin-top: auto;
 }
 
 .student-home-side {
@@ -941,6 +1154,10 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .student-course-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .student-notification-panel {
     top: calc(100% + 10px);
     right: auto;
@@ -977,6 +1194,10 @@ onBeforeUnmount(() => {
 
   .student-card-header {
     flex-direction: column;
+  }
+
+  .student-course-grid {
+    grid-template-columns: 1fr;
   }
 
   .student-history-side-item {

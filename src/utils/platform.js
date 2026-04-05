@@ -117,3 +117,14 @@ export function getStudentQaHistory(lessonId) {
   const cache = JSON.parse(localStorage.getItem('studentQaHistory') || '{}')
   return cache[lessonId] || []
 }
+
+export function saveStudentQaSessions(lessonId, sessions) {
+  const cache = JSON.parse(localStorage.getItem('studentQaSessions') || '{}')
+  cache[lessonId] = sessions || []
+  localStorage.setItem('studentQaSessions', JSON.stringify(cache))
+}
+
+export function getStudentQaSessions(lessonId) {
+  const cache = JSON.parse(localStorage.getItem('studentQaSessions') || '{}')
+  return cache[lessonId] || []
+}
