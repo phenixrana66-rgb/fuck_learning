@@ -33,14 +33,8 @@
     <main class="student-player-main">
       <section v-if="activeView !== 'ai'" class="student-course-overview">
         <div class="student-course-overview-main">
-          <div class="student-course-overview-tag">课程详情</div>
           <h1>{{ lesson.courseName || lesson.lessonName }}</h1>
-          <p>{{ lesson.teacherName }} · 围绕当前章节持续学习，首页进度会自动同步更新。</p>
-          <div class="student-course-overview-context">
-            <span>{{ currentUnit.unitTitle || '当前单元待解锁' }}</span>
-            <span>{{ allChapters.length }} 个章节</span>
-            <span>{{ activeChapter.chapterTitle || '待学习章节' }}</span>
-          </div>
+          <h3 class="student-course-overview-teacher">授课教师：{{ lesson.teacherName || '未设置' }}</h3>
         </div>
         <div class="student-course-overview-meta">
           <div class="student-course-overview-metric">
@@ -68,7 +62,6 @@
             <div class="student-unit-header-main">
               <div class="student-unit-badge">知识单元</div>
               <h2>{{ unit.unitTitle }}</h2>
-              <p>共 {{ unit.chapters?.length || 0 }} 个章节，按章节逐步完成学习记录。</p>
             </div>
             <div class="student-unit-header-meta">{{ unit.chapters?.filter((chapter) => Number(chapter.progressPercent || 0) >= 100).length || 0 }}/{{ unit.chapters?.length || 0 }} 已完成</div>
           </div>
@@ -91,16 +84,6 @@
                   <strong>{{ chapter.masteryPercent }}%</strong>
                 </div>
               </div>
-              <div class="student-chapter-summary">{{ chapter.summary || '可结合课件、知识点和问答记录完成本节复盘。' }}</div>
-              <div class="student-chapter-points" v-if="chapter.knowledgePoints?.length">
-                <span
-                  v-for="point in chapter.knowledgePoints.slice(0, 3)"
-                  :key="point"
-                  class="student-chapter-point"
-                >
-                  {{ point }}
-                </span>
-              </div>
               <div class="student-chapter-card-footer">
                 <div class="student-chapter-progress-block">
                   <div class="student-chapter-progress-text">
@@ -110,7 +93,6 @@
                   <el-progress :percentage="chapter.progressPercent" :stroke-width="8" :show-text="false" />
                 </div>
                 <div class="student-chapter-footer-row">
-                  <div class="student-chapter-mastery-text">掌握度 {{ chapter.masteryPercent }}%</div>
                   <el-button type="primary" @click.stop="markChapterLearned(chapter)">记录学习</el-button>
                 </div>
               </div>
@@ -252,15 +234,11 @@
             <div class="student-ai-chat-header-main">
               <div class="student-ai-chat-title">AI实时问答</div>
             </div>
+            <button type="button" class="student-ai-new-chat-button" @click="startNewConversation">新对话</button>
           </div>
 
-          <div class="student-ai-chat-body">
-            <div v-if="chatList.length === 0" class="student-ai-chat-empty">
-              <h3>开始提问</h3>
-              <p>聊天记录会自动保存在右侧历史问答中。</p>
-            </div>
-
-            <div v-else class="student-chat-list">
+          <div class="student-ai-chat-body" :class="{ empty: chatList.length === 0 }">
+            <div v-if="chatList.length" class="student-chat-list">
               <div
                 v-for="item in chatList"
                 :key="item.id"
@@ -286,24 +264,38 @@
             <el-input
               v-model="questionText"
               type="textarea"
-              :rows="5"
+              :rows="4"
               resize="none"
               placeholder="输入你的问题"
             />
             <div class="student-ai-input-actions">
-              <button type="button" class="student-ai-icon-button" @click="triggerVoiceUpload">上传音频</button>
-              <button type="button" class="student-ai-voice-button" :disabled="voiceLoading" @click="toggleRecording">
-                {{ isRecording ? '结束录音' : '语音输入' }}
+              <button
+                type="button"
+                class="student-ai-icon-button voice"
+                :disabled="voiceLoading"
+                :aria-label="isRecording ? '结束录音' : '语音输入'"
+                @click="toggleRecording"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3.5a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 12 3.5Z" />
+                  <path d="M7.5 10.5a4.5 4.5 0 0 0 9 0" />
+                  <path d="M12 15v5" />
+                  <path d="M9 20.5h6" />
+                </svg>
               </button>
-              <el-button :loading="asking" type="primary" @click="submitTextQuestion">发送问题</el-button>
+              <button
+                type="button"
+                class="student-ai-icon-button send"
+                :disabled="asking || !questionText.trim()"
+                aria-label="发送问题"
+                @click="submitTextQuestion"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 4v12" />
+                  <path d="m7 9 5-5 5 5" />
+                </svg>
+              </button>
             </div>
-            <input
-              ref="voiceInputRef"
-              type="file"
-              accept="audio/*"
-              style="display: none"
-              @change="handleVoiceFileChange"
-            />
           </div>
         </div>
 
@@ -346,7 +338,12 @@
                   @click="openQaSession(session.sessionId)"
                   @dblclick.stop="startSessionTitleEdit(session)"
                 >
-                  <span class="student-ai-history-icon">◔</span>
+                  <span class="student-ai-history-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M6.5 7.5h11a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H11l-3.5 3v-3H6.5a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3Z" />
+                      <path d="M9 11h6" />
+                    </svg>
+                  </span>
                   <input
                     v-if="editingSessionId === session.sessionId"
                     v-model="editingSessionTitle"
@@ -402,7 +399,6 @@ import {
 } from '@/utils/platform'
 
 const route = useRoute()
-const voiceInputRef = ref(null)
 const topbarNavRef = ref(null)
 const lesson = ref({ units: [], aiTools: [] })
 const fallbackProfile = {
@@ -929,7 +925,8 @@ async function loadLesson() {
       persistQaSessions()
     }
   }
-  loadSessionIntoChat(qaSessions.value[0])
+  activeSessionId.value = ''
+  chatList.value = []
 
   await nextTick()
 }
@@ -984,10 +981,6 @@ async function submitTextQuestion() {
   await askQuestion(questionText.value.trim(), 'text')
 }
 
-function triggerVoiceUpload() {
-  voiceInputRef.value?.click()
-}
-
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -1013,14 +1006,6 @@ async function handleVoiceTextPayload(fileName, audioBase64) {
   }
 }
 
-async function handleVoiceFileChange(event) {
-  const file = event.target.files?.[0]
-  if (!file) return
-  const audioBase64 = await fileToBase64(file)
-  await handleVoiceTextPayload(file.name, audioBase64)
-  event.target.value = ''
-}
-
 async function toggleRecording() {
   if (isRecording.value) {
     mediaRecorder?.stop()
@@ -1028,7 +1013,7 @@ async function toggleRecording() {
   }
 
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-    ElMessage.warning('当前浏览器不支持实时录音，请改用上传音频')
+    ElMessage.warning('当前浏览器不支持语音输入，请改用文字提问')
     return
   }
 
@@ -1053,6 +1038,17 @@ async function toggleRecording() {
 
 function toggleAiTools() {
   aiToolsVisible.value = !aiToolsVisible.value
+}
+
+function startNewConversation() {
+  if (chatList.value.length) {
+    syncActiveSessionFromChatList()
+  }
+  activeSessionId.value = ''
+  chatList.value = []
+  questionText.value = ''
+  editingSessionId.value = ''
+  editingSessionTitle.value = ''
 }
 
 onMounted(async () => {
@@ -1235,50 +1231,19 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.student-course-overview-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(165, 190, 234, 0.38);
-  color: #365ea7;
-  backdrop-filter: blur(10px);
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .student-course-overview h1 {
-  margin: 18px 0 0;
+  margin: 0;
   color: #17315d;
   font-size: 30px;
   line-height: 1.32;
 }
 
-.student-course-overview p {
-  margin: 10px 0 0;
-  color: rgba(49, 79, 133, 0.84);
-  font-size: 14px;
-  line-height: 1.8;
-}
-
-.student-course-overview-context {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 18px;
-}
-
-.student-course-overview-context span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(159, 187, 233, 0.3);
-  color: #35568f;
-  font-size: 13px;
+.student-course-overview-teacher {
+  margin: 18px 0 0;
+  color: rgba(49, 79, 133, 0.9);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .student-course-overview-meta {
@@ -1362,13 +1327,6 @@ onBeforeUnmount(() => {
   margin: 14px 0 0;
   color: #17315d;
   font-size: 24px;
-}
-
-.student-unit-header-main p {
-  margin: 10px 0 0;
-  color: #7484a4;
-  font-size: 13px;
-  line-height: 1.8;
 }
 
 .student-unit-header-meta {
@@ -1457,12 +1415,17 @@ onBeforeUnmount(() => {
 
 .student-chapter-mastery-badge {
   flex-shrink: 0;
-  min-width: 88px;
-  padding: 12px 14px;
+  width: 100px;
+  height: 100px;
+  padding: 12px;
   border-radius: 20px;
   background: rgba(232, 240, 255, 0.9);
   border: 1px solid rgba(207, 220, 243, 0.98);
-  text-align: right;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
 }
 
 .student-chapter-mastery-badge span {
@@ -1476,36 +1439,6 @@ onBeforeUnmount(() => {
   margin-top: 6px;
   color: #17305f;
   font-size: 20px;
-}
-
-.student-chapter-summary {
-  margin-top: 16px;
-  color: #6d7d9d;
-  font-size: 13px;
-  line-height: 1.8;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.student-chapter-points {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.student-chapter-point {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(241, 246, 255, 0.96);
-  border: 1px solid rgba(219, 229, 245, 0.98);
-  color: #58709e;
-  font-size: 12px;
 }
 
 .student-chapter-card-footer {
@@ -1522,8 +1455,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(228, 236, 247, 0.96);
 }
 
-.student-chapter-progress-text,
-.student-chapter-mastery-text {
+.student-chapter-progress-text {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -1534,14 +1466,9 @@ onBeforeUnmount(() => {
 .student-chapter-progress-text strong {
   color: #18325f;
 }
-
-.student-chapter-mastery-text {
-  color: #6d7c99;
-}
-
 .student-chapter-footer-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 14px;
   align-items: center;
 }
@@ -1775,6 +1702,7 @@ onBeforeUnmount(() => {
 }
 
 .student-ai-page {
+  --student-ai-card-height: 720px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   grid-template-areas: "chat sidebar";
@@ -1789,21 +1717,22 @@ onBeforeUnmount(() => {
 
 .student-ai-chat-card {
   grid-area: chat;
-  min-height: 700px;
-  height: 100%;
+  height: var(--student-ai-card-height);
   padding: 28px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 20%;
   background: rgba(255, 255, 255, 0.9);
 }
 
 .student-ai-chat-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .student-ai-chat-header.compact {
-  padding-bottom: 8px;
+  padding-bottom: 10px;
 }
 
 .student-ai-chat-header-main {
@@ -1817,36 +1746,34 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
+.student-ai-new-chat-button {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid #d8e3f5;
+  background: linear-gradient(180deg, #ffffff, #f6f9ff);
+  color: #33578f;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.student-ai-new-chat-button:hover {
+  background: #f4f8ff;
+  border-color: #c7d8f2;
+  transform: translateY(-1px);
+}
+
 .student-ai-chat-body {
-  flex: 1;
   min-height: 0;
-  max-height: 560px;
-  padding: 12px 0 20px;
+  padding: 16px 4px 20px 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
-.student-ai-chat-empty {
-  display: grid;
-  place-items: center;
-  min-height: 360px;
-  padding: 40px 12px;
-  background: transparent;
-  text-align: center;
-  color: #6b7793;
-}
-
-.student-ai-chat-empty h3 {
-  margin: 0;
-  color: #17315d;
-  font-size: 24px;
-}
-
-.student-ai-chat-empty p {
-  margin-top: 12px;
-  max-width: 360px;
-  color: #6f809f;
-  line-height: 1.9;
+.student-ai-chat-body.empty {
+  overflow: hidden;
 }
 
 .student-chat-list {
@@ -1920,85 +1847,113 @@ onBeforeUnmount(() => {
 }
 
 .student-ai-input-area {
-  margin-top: auto;
-  padding: 18px 20px 20px;
+  min-height: 0;
+  padding: 18px 22px;
   border: 0;
-  border-radius: 26px;
-  background: linear-gradient(180deg, #eef4ff, #e9f0ff);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 14% 16%, rgba(255, 255, 255, 0.48), transparent 24%),
+    linear-gradient(180deg, #eef4ff, #e6eefc);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 10px 24px rgba(128, 155, 205, 0.08);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
 }
 
 .student-ai-input-actions {
-  margin-top: 14px;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
-.student-ai-icon-button,
-.student-ai-voice-button {
-  border: 1px solid #d7e2f3;
-  border-radius: 14px;
-  background: #fff;
-  color: #23355f;
-  padding: 10px 16px;
+.student-ai-icon-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8e2f3;
+  background: rgba(255, 255, 255, 0.96);
   cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
-.student-ai-icon-button:hover,
-.student-ai-voice-button:hover {
-  background: #f4f8ff;
-  border-color: #c6d8f2;
+.student-ai-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.student-ai-voice-button {
-  background: linear-gradient(135deg, #7ea1ef, #587fdc);
-  border-color: transparent;
+.student-ai-icon-button.voice {
+  color: #5f6a80;
+  box-shadow: 0 8px 18px rgba(140, 158, 196, 0.14);
+}
+
+.student-ai-icon-button.send {
+  border-color: #101418;
+  background: #101418;
   color: #fff;
-  box-shadow: 0 12px 22px rgba(90, 124, 204, 0.2);
+  box-shadow: 0 10px 24px rgba(16, 20, 24, 0.18);
 }
 
-.student-ai-voice-button:disabled {
+.student-ai-icon-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.student-ai-icon-button.voice:hover:not(:disabled) {
+  background: #f6f9ff;
+  border-color: #c6d6ef;
+}
+
+.student-ai-icon-button.send:hover:not(:disabled) {
+  background: #1c232d;
+  border-color: #1c232d;
+}
+
+.student-ai-icon-button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 
+.student-ai-input-area :deep(.el-textarea) {
+  height: 100%;
+}
+
 .student-ai-input-area :deep(.el-textarea__inner) {
+  height: 100%;
+  min-height: 0;
   border-radius: 22px;
   border: 0;
-  background: rgba(255, 255, 255, 0.86);
+  background: transparent;
   color: #24345d;
   box-shadow: none;
-  padding: 18px 18px 16px;
-  min-height: 136px;
+  padding: 8px 4px 0;
+  font-size: 15px;
+  line-height: 1.8;
 }
 
 .student-ai-input-area :deep(.el-textarea__inner:focus) {
-  box-shadow: 0 0 0 4px rgba(151, 184, 233, 0.16);
-}
-
-.student-ai-input-actions :deep(.el-button) {
-  min-height: 42px;
-  padding: 0 18px;
-  border-radius: 14px;
-  border: 0;
-  background: linear-gradient(135deg, #6d94f1, #4d78de);
-  box-shadow: 0 12px 22px rgba(94, 130, 208, 0.18);
+  box-shadow: none;
 }
 
 .student-ai-sidebar-shell {
   grid-area: sidebar;
   position: relative;
-  min-height: 700px;
-  height: 100%;
+  height: var(--student-ai-card-height);
 }
 
 .student-ai-sidebar-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0;
   height: 100%;
-  min-height: 700px;
   padding: 24px;
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.88);
@@ -2011,14 +1966,15 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 16px;
   align-content: start;
+  flex: 0 0 auto;
 }
 
 .student-ai-sidebar-section.history {
-  margin-top: 22px;
+  margin-top: 28px;
   padding-top: 22px;
   border-top: 1px solid #edf2f8;
   min-height: 0;
-  flex: 1;
+  flex: 1 1 auto;
 }
 
 .student-ai-sidebar-toggle {
@@ -2050,7 +2006,7 @@ onBeforeUnmount(() => {
 
 .student-ai-tool-stack {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .student-ai-tool-tile {
@@ -2101,49 +2057,57 @@ onBeforeUnmount(() => {
 }
 
 .student-ai-history-list {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   flex: 1;
   min-height: 0;
   max-height: none;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 4px;
 }
 
 .student-ai-history-item {
   width: 100%;
-  min-height: 50px;
-  padding: 0 14px;
+  min-height: 46px;
+  padding: 8px 10px;
   display: flex;
   align-items: center;
   gap: 12px;
-  border-radius: 14px;
-  border: 1px solid transparent;
+  border-radius: 12px;
+  border: 0;
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .student-ai-history-item:hover,
 .student-ai-history-item.active {
-  border-color: #e2eaf7;
-  background: #fff;
-  box-shadow: 0 10px 22px rgba(92, 123, 180, 0.08);
+  background: #f3f7ff;
 }
 
 .student-ai-history-icon {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
   border: 1px solid #d9e4f6;
-  color: #98a6c1;
-  font-size: 11px;
   background: #fff;
+  color: #97a4bc;
+}
+
+.student-ai-history-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .student-ai-history-title {
@@ -2171,13 +2135,10 @@ onBeforeUnmount(() => {
 }
 
 .student-ai-history-empty {
-  padding: 16px;
-  border-radius: 16px;
-  border: 1px dashed #dbe5f6;
-  background: #fafcff;
+  padding: 8px 4px;
   color: #7b8cad;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 @media (max-width: 1180px) {
@@ -2199,9 +2160,12 @@ onBeforeUnmount(() => {
     display: none;
   }
 
-  .student-ai-sidebar-shell,
-  .student-ai-sidebar-card,
   .student-ai-chat-card {
+    height: 640px;
+  }
+
+  .student-ai-sidebar-shell,
+  .student-ai-sidebar-card {
     min-height: 0;
     height: auto;
   }
@@ -2258,7 +2222,7 @@ onBeforeUnmount(() => {
   }
 
   .student-ai-chat-card {
-    min-height: 0;
+    height: 600px;
   }
 }
 
