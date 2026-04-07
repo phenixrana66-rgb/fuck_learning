@@ -31,6 +31,7 @@
 - [coding-guide/03-联动顺序与完成定义.md](./coding-guide/03-联动顺序与完成定义.md)
 - [coding-guide/05-接口到代码文件映射.md](./coding-guide/05-接口到代码文件映射.md)
 - [coding-guide/06-编码流程与文档持久化规范.md](./coding-guide/06-编码流程与文档持久化规范.md)
+- [coding-guide/07-数据库持久化演进规划.md](./coding-guide/07-数据库持久化演进规划.md)
 - [coding-guide/progress/current-status.md](./coding-guide/progress/current-status.md)
 - [api/api-navigation.md](./api/api-navigation.md)
 
