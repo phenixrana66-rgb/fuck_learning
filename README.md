@@ -1,6 +1,6 @@
 # fuck_learning
 
-前端入口已统一到仓库根目录，学生端和教师端共用一套前端工程。默认先访问首页，再按角色进入对应端。
+前端入口统一在仓库根目录，学生端和教师端共用一套前端工程；双端后端现在都使用 FastAPI，并共用一套 MySQL 主库与 SQLAlchemy ORM。
 
 ## 启动前准备
 
@@ -10,22 +10,20 @@
 npm install
 ```
 
-如果要启动学生端后端，首次运行还需要安装 Python 依赖：
+如果要走数据库联调，先初始化 MySQL：
 
 ```bash
-cd student-ai-course/backend/student_plugin
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+mysql -u root -p < docs/mysql建表.sql
+mysql -u root -p < docs/init_test_data.sql
 ```
 
 ## 双端后端如何启动
 
-建议开两个终端，分别启动学生端后端和教师端后端。
+建议开三个终端，分别启动学生端后端、教师端后端和前端。
 
 ### 第 1 步：启动学生端后端
 
-如果是首次运行：
+首次运行：
 
 ```bash
 cd student-ai-course/backend/student_plugin
@@ -35,7 +33,7 @@ pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 5000 --reload
 ```
 
-如果之前已经成功运行过，后续再次启动只需要：
+后续再次启动：
 
 ```bash
 cd student-ai-course/backend/student_plugin
@@ -43,7 +41,7 @@ cd student-ai-course/backend/student_plugin
 uvicorn app:app --host 0.0.0.0 --port 5000 --reload
 ```
 
-如果你更新过 `requirements.txt`，再次启动前先补一次依赖：
+如果你更新过 `requirements.txt`：
 
 ```bash
 cd student-ai-course/backend/student_plugin
@@ -54,49 +52,53 @@ uvicorn app:app --host 0.0.0.0 --port 5000 --reload
 
 说明：
 
-- 学生端后端使用 FastAPI
-- 默认端口是 `5000`
-- 前端学生端请求会通过 `/student-api` 代理到这里
-- 停止服务时按 `Ctrl + C`
+- 学生端后端端口：`5000`
+- 前端学生端请求代理：`/student-api`
 
 ### 第 2 步：启动教师端后端
 
-如果是首次运行：
+首次运行：
 
 ```bash
-cd D:\服务外包（学习通）\xuexitong\fuck_learning
-npm install
-node teacher-ai-course/mock/server.js
+cd teacher-ai-course/backend/teacher_plugin
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
 ```
 
-如果之前已经成功运行过，后续再次启动只需要：
+后续再次启动：
 
 ```bash
-cd D:\服务外包（学习通）\xuexitong\fuck_learning
-node teacher-ai-course/mock/server.js
+cd teacher-ai-course/backend/teacher_plugin
+.venv\Scripts\activate
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
+```
+
+如果你更新过 `requirements.txt`：
+
+```bash
+cd teacher-ai-course/backend/teacher_plugin
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
 ```
 
 说明：
 
-- 教师端后端当前是本地 Node mock
-- 默认端口是 `3001`
-- 前端教师端请求会走 `/api` 到这个服务
-- 停止服务时按 `Ctrl + C`
+- 教师端后端端口：`3001`
+- 前端教师端请求代理：`/api`
 
-### 第 3 步：如果还要联调前端
+### 第 3 步：启动前端
 
-在第三个终端执行：
+所有 npm 命令都必须在仓库根目录执行：
 
 ```bash
+cd D:\服务外包（学习通）\xuexitong\fuck_learning
 npm run dev:web
 ```
 
-这里要使用 `npm run dev:web`，不要使用 `npm run dev`。
-
-原因：
-
-- `npm run dev` 会同时启动 Vite 和教师端 mock
-- 你如果已经手动启动了教师端后端，再执行 `npm run dev` 会导致 `3001` 端口重复占用
+这里使用 `npm run dev:web`，不要依赖 `npm run dev` 自动拉起后端。后端现在需要分别手动启动。
 
 ## 默认访问入口
 
@@ -106,9 +108,10 @@ npm run dev:web
 
 ## 后端说明
 
-- 学生端后端位于 `student-ai-course/backend/student_plugin`
-- 教师端后端位于 `teacher-ai-course/mock/server.js`
-- 学生端前后端本地联调要求签名密钥一致；根目录前端默认已使用 `chaoxing-ai-static-key`，如后端自定义了 `CHAOXING_STATIC_KEY`，需要同步保持一致
+- 学生端 FastAPI：`student-ai-course/backend/student_plugin`
+- 教师端 FastAPI：`teacher-ai-course/backend/teacher_plugin`
+- 共享 SQLAlchemy ORM：`backend-common/chaoxing_db`
+- 初始化测试数据中已登记测试 PPT：`第九章 压杆稳定_20260401213017.ppt`
 
 ## 构建
 

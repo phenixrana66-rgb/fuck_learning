@@ -1,50 +1,55 @@
 # Teacher AI Course
 
-教师端前端已迁移到仓库根目录统一维护。
+教师端前端已迁移到仓库根目录统一维护，教师端后端也已从 Node mock 迁移为 FastAPI。
 
 当前目录保留内容：
 
-- `mock/server.js` 教师端本地 mock 服务
+- `backend/teacher_plugin` 教师端 FastAPI 服务
+- `mock/server.js` 旧 Node mock，已废弃，不再作为默认启动方式
 
 ## 首次启动教师端后端
 
 ```bash
-cd ..
-npm install
-node teacher-ai-course/mock/server.js
+cd backend/teacher_plugin
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
 ```
 
 ## 后续再次启动教师端后端
 
 ```bash
-node mock/server.js
+cd backend/teacher_plugin
+.venv\Scripts\activate
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
 ```
-
-默认端口：
-
-- `3001`
 
 ## 与学生端一起联调
 
 如果你要同时启动双端后端：
 
 1. 在一个终端启动学生端 FastAPI
-2. 在另一个终端启动教师端 mock
+2. 在另一个终端启动教师端 FastAPI
 
-教师端 mock 启动命令：
+教师端 FastAPI 启动命令：
 
 ```bash
-node teacher-ai-course/mock/server.js
+cd teacher-ai-course/backend/teacher_plugin
+.venv\Scripts\activate
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
 ```
 
-如果教师端之前已经启动过，后续再次运行不需要重新 `npm install`。
+教师端与学生端共用一套 MySQL 主库和一套 SQLAlchemy ORM，公共模型目录：
+
+```bash
+backend-common/chaoxing_db
+```
 
 ## 前端联调注意
 
-如果教师端 mock 已经手动启动，前端请在仓库根目录执行：
+如果教师端后端已经手动启动，前端请在仓库根目录执行：
 
 ```bash
 npm run dev:web
 ```
-
-不要执行 `npm run dev`，因为该命令会再次自动启动教师端 mock。

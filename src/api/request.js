@@ -59,7 +59,7 @@ service.interceptors.response.use(
     let msg = '网络异常，请稍后重试'
 
     if (isLocalMockUnavailable) {
-      msg = '本地测试服务未启动，请先运行 mock 或直接使用 npm run dev'
+      msg = '本地测试服务未启动，请先分别运行学生端和教师端 FastAPI，再执行 npm run dev:web'
       ElMessage.error(msg)
       return Promise.reject({
         code: 503,

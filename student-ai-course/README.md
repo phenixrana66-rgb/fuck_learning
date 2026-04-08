@@ -4,7 +4,7 @@
 
 当前目录保留内容：
 
-- `backend/student_plugin/` 学生端后端适配层
+- `backend/student_plugin/` 学生端 FastAPI 后端
 - `docs/` 学生端联调说明
 
 统一前端请在仓库根目录执行：
@@ -43,8 +43,14 @@ pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 5000 --reload
 ```
 
-如果需要和教师端一起联调，请在仓库根目录另开一个终端执行：
+## 与教师端一起联调
+
+教师端后端现在也是 FastAPI，请在仓库根目录另开一个终端执行：
 
 ```bash
-node teacher-ai-course/mock/server.js
+cd teacher-ai-course/backend/teacher_plugin
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
 ```
