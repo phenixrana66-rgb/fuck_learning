@@ -19,6 +19,7 @@
 - `03-联动顺序与完成定义.md`：阶段顺序与 DoD
 - `05-接口到代码文件映射.md`：接口文档到后端代码文件定位
 - `06-编码流程与文档持久化规范.md`：先读什么、改完同步什么
+- `07-数据库持久化演进规划.md`：从内存态到 MySQL / Redis / MinIO 的落地边界与阶段顺序
 
 ## 三、当前 backend 代码状态（高层）
 
@@ -40,8 +41,8 @@
 - `common/security.py` 还是 `verify_signature_placeholder`
 - 多个 `service.py` 仍使用内存字典或示例返回
 - 当前 PPT 解析 demo 仅支持 `.pptx`，不支持 `.pdf` 与旧 `.ppt`
-- `courseware` 解析结果和任务状态仍保存在进程内字典，尚未落 PostgreSQL / Redis
-- 真实 PostgreSQL / Alembic / Dramatiq / Redis / MinIO / TTS / ASR 尚未全接通
+- `courseware` 解析结果和任务状态仍保存在进程内字典，尚未落 MySQL / Redis
+- 真实 MySQL / Alembic / Dramatiq / Redis / MinIO / TTS / ASR 尚未全接通
 - 只有解析链接入了 LLM；脚本、问答、续讲仍未消费真实结构化结果
 
 ## 四、默认下一步优先级

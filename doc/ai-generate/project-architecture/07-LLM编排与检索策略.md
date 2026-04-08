@@ -22,15 +22,15 @@
 - `resume_or_reinforce`
 
 ### 7.3 检索路线定稿
-正式采用“结构约束 + 精确匹配 + 向量补召回 + 重排回链”的混合检索方案：
+正式采用“结构约束 + 精确匹配 + 术语扩展 + 重排回链”的检索方案：
 
 ```
 用户问题
 -> 术语归一化 / 同义词扩展
 -> currentSectionId 限域
 -> page / node 双粒度候选召回
--> Full-Text / trigram 精确匹配
--> pgvector 语义补召回
+-> MySQL FULLTEXT 精确匹配
+-> 术语表 / 别名表补召回
 -> 重排（页码、术语命中、节点距离、证据密度）
 -> evidencePages / evidenceSpans 回链
 -> 送入受控问答 Prompt
