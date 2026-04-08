@@ -17,6 +17,11 @@ def create_parse_task(payload: ParseRequest, request_id: str | None = None) -> P
         payload={"courseId": payload.courseId, "fileUrl": payload.fileUrl},
         request_id=request_id,
     )
+    mark_task_processing(parse_id, progress_percent=0)
+    return ParseAcceptedData(parseId=parse_id, taskStatus=ParseTaskStatus.PROCESSING)
+
+
+def run_parse_task(parse_id: str, payload: ParseRequest) -> None:
     try:
         mark_task_processing(parse_id, progress_percent=10)
         file_info, preview = parse_courseware(
@@ -30,22 +35,20 @@ def create_parse_task(payload: ParseRequest, request_id: str | None = None) -> P
     except ApiError as exc:
         error_data = {**exc.data, "parseId": parse_id}
         mark_task_failed(parse_id, code=exc.code, msg=exc.msg, data=error_data)
-        raise ApiError(code=exc.code, msg=exc.msg, status_code=exc.status_code, data=error_data) from exc
     except Exception as exc:  # noqa: BLE001
         error_data = {"parseId": parse_id}
         mark_task_failed(parse_id, code=500, msg="服务端错误", data=error_data)
-        raise ApiError(code=500, msg="服务端错误", status_code=500, data=error_data) from exc
+    else:
+        task = ParseQueryData(
+            parseId=parse_id,
+            fileInfo=file_info,
+            structurePreview=preview,
+            taskStatus=ParseTaskStatus.COMPLETED,
+            cir=cir,
+            progressPercent=100,
+        )
+        mark_task_completed(parse_id, result=task.model_dump())
 
-    task = ParseQueryData(
-        parseId=parse_id,
-        fileInfo=file_info,
-        structurePreview=preview,
-        taskStatus=ParseTaskStatus.COMPLETED,
-        cir=cir,
-        progressPercent=100,
-    )
-    mark_task_completed(parse_id, result=task.model_dump())
-    return ParseAcceptedData(**task.model_dump(exclude={"cir", "progressPercent", "errorMessage"}))
 
 
 def get_parse_task(parse_id: str) -> ParseQueryData:

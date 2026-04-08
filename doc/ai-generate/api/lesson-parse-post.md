@@ -6,7 +6,7 @@
 ## 规划信息
 - 模块：智课生成
 - 方法：POST
-- 模式：当前代码为同步完成式 demo，长期目标仍为异步提交
+- 模式：当前代码已改为本地后台执行式任务提交，长期目标仍为接入正式异步任务系统
 - 后端归属：`backend/app/courseware/`、`backend/app/parser/`、`backend/app/tasks/`
 
 ## 核心请求字段
@@ -29,10 +29,9 @@
 - 支持读取本地路径、`file://` 和 `http/https` 可访问的 `.pptx` 文件
 - 使用 `python-pptx` 提取 slide 标题、正文、表格、备注
 - 使用 OpenAI 兼容 `chat/completions` 接口生成章节结构
-- 在 `POST` 内同步完成 `structurePreview` 和 `cir` 的生成，因此当前成功响应里的 `taskStatus` 仍为 `completed`
+- `POST` 成功后会立即返回 `parseId` 与 `taskStatus=processing`，解析执行在本地后台线程中继续完成
 - `POST` 响应本身不直接返回 `cir`，如需完整 `cir` 请继续调用 `GET /api/v1/lesson/parse/{parseId}`
-- 当前传入 `pdf` 或非 `.pptx` 文件会直接返回错误，不再返回假成功数据
-- 当前若解析失败，错误响应的 `data` 中会包含 `parseId`，便于后续继续查询任务失败态
+- 当前传入 `pdf` 或非 `.pptx` 文件时，任务会在后台失败，随后可通过 `GET /api/v1/lesson/parse/{parseId}` 查询失败态
 - 当前解析任务会同步写入本地桥接仓储，记录 `requestId`、状态与时间戳信息
 
 ## 当前依赖配置
@@ -47,7 +46,7 @@
 
 ## 对接约束
 - 长期目标仍应支持异步任务模式。
-- 当前 demo 虽保留 `parseId` 和查询接口，但提交成功时已完成解析，可直接查询完整结果。
-- 当前失败场景也会保留 `parseId`，便于统一走查询接口查看失败态。
+- 当前成功提交只代表任务已创建，不代表解析已完成。
+- 当前失败场景由查询接口暴露，提交接口不再同步返回解析失败结果。
 - 当前任务记录的桥接持久化位置为 `temp/ai-generate/tasks/tasks.json`，仅作为接入真实基础设施前的过渡实现。
 - 统一响应结构为 `code / msg / data / requestId`。

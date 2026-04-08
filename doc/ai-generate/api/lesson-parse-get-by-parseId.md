@@ -23,9 +23,9 @@
 
 ## 对接约束
 - 与 `POST /api/v1/lesson/parse` 配套使用。
-- 当前 demo 中查询结果直接返回完成态结构化结果。
+- 当前查询结果会先返回 `processing`，待后台执行完成后再返回 `completed` 或 `failed`。
 - 未找到 `parseId` 时当前返回 404。
-- 当前若提交阶段失败但已生成 `parseId`，查询接口会返回 `taskStatus=failed`，并在 `errorMessage` 中提供失败原因。
+- 当前若后台解析失败，查询接口会返回 `taskStatus=failed`，并在 `errorMessage` 中提供失败原因。
 - 当前查询结果来自 `tasks/service.py` 与本地桥接仓储，而不是单纯的进程内字典。
 - 长期仍建议覆盖处理中、完成、失败三类状态，并由真实任务系统驱动。
 - 完成态需支持返回结构化结果或其访问引用。
