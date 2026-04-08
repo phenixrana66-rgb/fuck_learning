@@ -29,9 +29,11 @@
 - 支持读取本地路径、`file://` 和 `http/https` 可访问的 `.pptx` 文件
 - 使用 `python-pptx` 提取 slide 标题、正文、表格、备注
 - 使用 OpenAI 兼容 `chat/completions` 接口生成章节结构
-- 在 `POST` 内同步完成 `structurePreview` 和 `cir` 的生成，因此当前返回的 `taskStatus` 已为 `completed`
+- 在 `POST` 内同步完成 `structurePreview` 和 `cir` 的生成，因此当前成功响应里的 `taskStatus` 仍为 `completed`
 - `POST` 响应本身不直接返回 `cir`，如需完整 `cir` 请继续调用 `GET /api/v1/lesson/parse/{parseId}`
 - 当前传入 `pdf` 或非 `.pptx` 文件会直接返回错误，不再返回假成功数据
+- 当前若解析失败，错误响应的 `data` 中会包含 `parseId`，便于后续继续查询任务失败态
+- 当前解析任务会同步写入本地桥接仓储，记录 `requestId`、状态与时间戳信息
 
 ## 当前依赖配置
 - `A12_LLM_API_BASE_URL`
@@ -45,5 +47,7 @@
 
 ## 对接约束
 - 长期目标仍应支持异步任务模式。
-- 当前 demo 虽保留 `parseId` 和查询接口，但提交时已完成解析，可直接查询完整结果。
+- 当前 demo 虽保留 `parseId` 和查询接口，但提交成功时已完成解析，可直接查询完整结果。
+- 当前失败场景也会保留 `parseId`，便于统一走查询接口查看失败态。
+- 当前任务记录的桥接持久化位置为 `temp/ai-generate/tasks/tasks.json`，仅作为接入真实基础设施前的过渡实现。
 - 统一响应结构为 `code / msg / data / requestId`。

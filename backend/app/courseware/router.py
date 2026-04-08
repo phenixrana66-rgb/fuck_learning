@@ -11,7 +11,7 @@ router = APIRouter(tags=["courseware"])
 @router.post("/lesson/parse")
 def create_parse_task_endpoint(payload: ParseRequest, request: Request) -> dict:
     verify_signature_placeholder(payload.enc, payload.time)
-    data = create_parse_task(payload)
+    data = create_parse_task(payload, request_id=getattr(request.state, "request_id", None))
     return success_response(request, data.model_dump(), msg="课件解析任务已创建")
 
 

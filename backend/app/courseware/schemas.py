@@ -20,11 +20,12 @@ class ParseRequest(AppBaseModel):
 
 class ParseAcceptedData(AppBaseModel):
     parseId: str
-    fileInfo: FileInfo
-    structurePreview: StructurePreview
+    fileInfo: FileInfo | None = None
+    structurePreview: StructurePreview | None = None
     taskStatus: ParseTaskStatus
 
 
 class ParseQueryData(ParseAcceptedData):
     cir: CIR | None = None
     progressPercent: int = Field(default=25, ge=0, le=100)
+    errorMessage: str | None = None

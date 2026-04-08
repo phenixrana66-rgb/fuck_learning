@@ -35,13 +35,16 @@
 - `parser/pptx_reader.py` 已能读取本地或远程 `.pptx` 文件，提取 slide 标题、正文、表格和备注
 - `parser/llm_client.py` 已能通过 OpenAI 兼容 `chat/completions` 接口生成章节结构
 - `rest-client/lesson-parse.http` 已提供可直接联调的解析请求样例
+- 解析任务状态已统一收口到 `tasks/service.py`，成功态结果与失败态错误都可按 `parseId` 查询
+- 解析任务记录已可桥接落到本地文件仓储，并生成 `temp` 下的任务日志，服务重启后仍可恢复查询
 
 当前仍以 demo / 占位为主的点：
 
 - `common/security.py` 还是 `verify_signature_placeholder`
 - 多个 `service.py` 仍使用内存字典或示例返回
 - 当前 PPT 解析 demo 仅支持 `.pptx`，不支持 `.pdf` 与旧 `.ppt`
-- `courseware` 解析结果和任务状态仍保存在进程内字典，尚未落 MySQL / Redis
+- `courseware` 解析任务仍是进程内内存态，尚未落 MySQL / Redis，但已不再额外维护 `_PARSE_TASKS`
+- 当前解析任务仍未接 MySQL / Redis / Dramatiq，但已通过本地文件仓储实现临时持久化桥接
 - 真实 MySQL / Alembic / Dramatiq / Redis / MinIO / TTS / ASR 尚未全接通
 - 只有解析链接入了 LLM；脚本、问答、续讲仍未消费真实结构化结果
 
@@ -57,7 +60,9 @@
 ### 当前解析链 demo 的接手要点
 
 - 接口：`POST /api/v1/lesson/parse`、`GET /api/v1/lesson/parse/{parseId}`
-- 现状：`POST` 内同步完成 `.pptx` 读取、LLM 调用、`structurePreview` 和 `cir` 生成，因此当前返回的 `taskStatus` 已直接为 `completed`
+- 现状：`POST` 内同步完成 `.pptx` 读取、LLM 调用、`structurePreview` 和 `cir` 生成，因此成功时返回的 `taskStatus` 仍为 `completed`
+- 补充：若解析失败，`POST` 错误响应会返回 `parseId`，随后可通过 `GET` 查询 `failed` 状态与错误信息
+- 桥接持久化：当前任务记录文件默认落在 `temp/ai-generate/tasks/tasks.json`，对应日志落在 `temp/ai-generate/tasks/logs/`
 - 配置：需要 `A12_LLM_API_BASE_URL`、`A12_LLM_API_KEY`、`A12_LLM_MODEL`、`A12_LLM_TIMEOUT_SECONDS`
 - 调试：优先使用 `rest-client/lesson-parse.http` 与 `examples/demo-courseware.pptx`
 
