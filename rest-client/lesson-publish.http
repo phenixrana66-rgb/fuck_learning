@@ -3,7 +3,7 @@
 @scriptId = script20260406000000000000
 @audioId = audio20260406000000000000
 
-### 发布智课（把 @scriptId 和 @audioId 替换成前一步返回值）
+### 发布智课（把 @coursewareId / @scriptId / @audioId 替换成前一步返回值，其中 @coursewareId 来自 parse 完成结果中的 cir.coursewareId）
 POST {{baseUrl}}/api/v1/lesson/publish
 Content-Type: application/json
 

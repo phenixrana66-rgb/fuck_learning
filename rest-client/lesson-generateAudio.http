@@ -9,6 +9,6 @@ Content-Type: application/json
   "scriptId": "{{scriptId}}",
   "voiceType": "female_standard",
   "audioFormat": "mp3",
-  "sectionIds": ["sec001", "sec002"],
+  "sectionIds": [],
   "enc": "demo-signature"
 }

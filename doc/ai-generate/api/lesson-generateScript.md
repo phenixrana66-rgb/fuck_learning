@@ -23,7 +23,15 @@
 - `audioGenerateUrl`：后续音频生成接口地址
 - `requestId`：请求追踪 ID
 
+## 当前代码行为（截至本次实现）
+- 当前 `generateScript` 会读取已完成的 `parseId` 对应解析结果；
+- 若解析任务不存在或尚未完成，会直接返回错误；
+- 当前脚本段落会基于 `parse` 产出的 `CIR.nodes` 生成，而不是固定示例段落；
+- `sectionName`、`relatedChapterId`、`relatedPage`、`keyPoints` 会尽量继承解析结果中的真实结构；
+- 当前脚本仍保存在进程内 `_SCRIPT_STORE`，重启服务后会丢失。
+
 ## 对接约束
 - 首版可同步实现，批量或长耗时场景允许异步化。
 - 输出必须允许教师继续编辑，不直接替代教师意图。
+- 当前 happy path 要求先完成 `lesson/parse`，再使用返回的 `parseId` 调用本接口。
 - 统一响应结构为 `code / msg / data / requestId`。

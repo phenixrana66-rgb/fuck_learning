@@ -38,6 +38,7 @@
 - 解析任务状态已统一收口到 `tasks/service.py`，成功态结果与失败态错误都可按 `parseId` 查询
 - 解析任务记录已可桥接落到本地文件仓储，并生成 `temp` 下的任务日志，服务重启后仍可恢复查询
 - `POST /api/v1/lesson/parse` 已改为先返回 `processing`，解析执行转入本地后台路径
+- `script / lesson` 已能基于真实 parse 结果形成最小 happy path：`generateScript -> generateAudio -> publish -> play`
 
 当前仍以 demo / 占位为主的点：
 
@@ -47,7 +48,7 @@
 - `courseware` 解析任务仍未落 MySQL / Redis，但提交与执行已经拆开，不再是同步完成式接口
 - 当前解析任务仍未接 MySQL / Redis / Dramatiq，但已通过本地文件仓储实现临时持久化桥接
 - 真实 MySQL / Alembic / Dramatiq / Redis / MinIO / TTS / ASR 尚未全接通
-- 只有解析链接入了 LLM；脚本、问答、续讲仍未消费真实结构化结果
+- 只有解析链接入了 LLM；问答、续讲仍未消费真实结构化结果
 
 ## 四、默认下一步优先级
 
