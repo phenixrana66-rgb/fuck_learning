@@ -3,3 +3,10 @@ dist/
 __pycache__/
 .pycache/
 .codex/
+
+###
+
+/.sisyphus/
+/doc/
+/temp/
+/examples/
