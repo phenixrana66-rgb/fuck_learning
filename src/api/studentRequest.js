@@ -1,0 +1,64 @@
+﻿import axios from 'axios'
+import { ElMessage } from 'element-plus'
+import { buildSignedPayload } from '@/utils/sign'
+import { getPlatformToken } from '@/utils/platform'
+
+const studentService = axios.create({
+  baseURL: import.meta.env.VITE_STUDENT_API_BASE || '/student-api',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json; charset=UTF-8'
+  }
+})
+
+studentService.interceptors.request.use(
+  (config) => {
+    const token = getPlatformToken()
+    const data = config.data || {}
+
+    config.method = 'post'
+    config.data = buildSignedPayload(data)
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+      config.headers['X-Platform-Token'] = token
+    }
+
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+studentService.interceptors.response.use(
+  (response) => {
+    const res = response.data || {}
+
+    if (res.code === 200 || res.code === 0) {
+      return res
+    }
+
+    const message = res.msg || '学生端接口请求失败'
+    ElMessage.error(message)
+    return Promise.reject(res)
+  },
+  (error) => {
+    const status = error?.response?.status
+    const fallback = error?.response?.data?.msg || error.message || '学生端接口请求失败'
+    let message = fallback
+
+    if (status === 401) message = '免登鉴权失败，请重新从学习通入口进入'
+    if (status === 403) message = '当前账号无权访问该学生端能力'
+    if (status === 404) message = '学生端接口不存在'
+    if (status === 500) message = '学生端服务异常'
+
+    ElMessage.error(message)
+    return Promise.reject({
+      code: status || -1,
+      msg: message,
+      data: null,
+      requestId: ''
+    })
+  }
+)
+
+export default studentService

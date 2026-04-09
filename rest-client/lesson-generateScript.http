@@ -1,0 +1,14 @@
+@baseUrl = http://127.0.0.1:8000
+@parseId = parse20260406000000000000
+
+### 结构化讲稿生成（先完成 lesson-parse，再把 parseId 填到这里）
+POST {{baseUrl}}/api/v1/lesson/generateScript
+Content-Type: application/json
+
+{
+  "parseId": "{{parseId}}",
+  "teachingStyle": "standard",
+  "speechSpeed": "normal",
+  "customOpening": "同学们好，今天我们一起学习人工智能导论。",
+  "enc": "demo-signature"
+}

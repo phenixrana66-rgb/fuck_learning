@@ -1,0 +1,24 @@
+@baseUrl = http://127.0.0.1:8000
+
+### 使用顺序建议
+# 1. platform-syncCourse.http
+# 2. platform-syncUser.http
+# 3. lesson-parse.http
+# 4. lesson-generateScript.http
+# 5. scripts-get-by-scriptId.http
+# 6. scripts-put-by-scriptId.http
+# 7. lesson-generateAudio.http
+# 8. lesson-publish.http
+# 9. lesson-play.http
+# 10. qa-voiceToText.http
+# 11. qa-interact.http
+# 12. qa-session-get-by-sessionId.http
+# 13. progress-track.http
+# 14. progress-adjust.http
+
+### 说明
+# - 当前很多接口是内存态 demo，进程重启后 scriptId / audioId / lessonId / sessionId 都会丢失。
+# - 建议在同一次服务启动期间，按上述顺序逐步执行并把返回值回填到各文件顶部变量。
+# - PPT 解析 demo 需要先配置 A12_LLM_API_KEY，并确保 lesson-parse.http 中 fileUrl 指向可访问的 .pptx 文件。
+# - 当前完整 happy path 建议先拿到 parse 完成结果，再从 `cir.coursewareId` 回填 lesson-publish.http 中的 @coursewareId。
+# - 当前 generateAudio 若想覆盖整份脚本，可直接传空的 `sectionIds`。

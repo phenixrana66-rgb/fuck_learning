@@ -1,0 +1,19 @@
+@baseUrl = http://127.0.0.1:8000
+@parseId = parse20260406000000000000
+
+### 创建 PPT 解析任务（接口 fileType 仍传 "ppt"，但当前 demo 只接受 .pptx 文件）
+POST {{baseUrl}}/api/v1/lesson/parse
+Content-Type: application/json
+
+{
+  "schoolId": "school-demo",
+  "userId": "teacher-demo",
+  "courseId": "course-ai-001",
+  "fileType": "ppt",
+  "fileUrl": "file:///E:/CodeWarehouse/A12chaoxin/code/examples/01总论.pptx",
+  "isExtractKeyPoint": true,
+  "enc": "demo-signature"
+}
+
+### 查询解析结果（把 @parseId 替换成上一个请求返回值）
+GET {{baseUrl}}/api/v1/lesson/parse/{{parseId}}

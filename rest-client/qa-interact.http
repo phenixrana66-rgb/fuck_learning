@@ -1,0 +1,20 @@
+@baseUrl = http://127.0.0.1:8000
+@sessionId = session-demo-001
+@lessonId = lesson20260406000000000000
+
+### 问答交互
+POST {{baseUrl}}/api/v1/qa/interact
+Content-Type: application/json
+
+{
+  "schoolId": "school-demo",
+  "userId": "student-demo",
+  "courseId": "course-ai-001",
+  "lessonId": "{{lessonId}}",
+  "sessionId": "{{sessionId}}",
+  "questionType": "text",
+  "questionContent": "人工智能和机器学习是什么关系？",
+  "currentSectionId": "sec001",
+  "historyQa": [],
+  "enc": "demo-signature"
+}

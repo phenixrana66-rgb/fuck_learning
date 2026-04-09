@@ -1,0 +1,15 @@
+@baseUrl = http://127.0.0.1:8000
+@lessonId = lesson20260406000000000000
+
+### 学生端播放装配（把 @lessonId 替换成 publish 返回值）
+POST {{baseUrl}}/api/v1/lesson/play
+Content-Type: application/json
+
+{
+  "lessonId": "{{lessonId}}",
+  "userId": "student-demo",
+  "resumeContext": {
+    "currentSectionId": "sec001"
+  },
+  "enc": "demo-signature"
+}

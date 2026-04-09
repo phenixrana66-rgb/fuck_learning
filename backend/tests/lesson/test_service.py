@@ -1,0 +1,153 @@
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from backend.app.cir.schemas import CIR, CirChapter, LessonNode
+from backend.app.common.exceptions import ApiError
+from backend.app.courseware.schemas import ParseRequest
+from backend.app.courseware.service import create_parse_task, run_parse_task
+from backend.app.lesson.schemas import GenerateAudioRequest, PlayRequest, PublishRequest
+from backend.app.lesson.service import clear_lessons, generate_audio, play_lesson, publish_lesson
+from backend.app.parser.schemas import FileInfo, StructurePreview
+from backend.app.script.schemas import GenerateScriptRequest
+from backend.app.script.service import clear_scripts, generate_script
+from backend.app.tasks.repository import configure_task_storage, reset_task_storage
+from backend.app.tasks.service import clear_tasks
+
+
+class LessonServiceTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        configure_task_storage(self.temp_dir.name)
+        clear_tasks()
+        clear_scripts()
+        clear_lessons()
+        self.parse_payload = ParseRequest(
+            schoolId="school-001",
+            userId="teacher-001",
+            courseId="course-001",
+            fileType="ppt",
+            fileUrl="file:///tmp/demo.pptx",
+            isExtractKeyPoint=True,
+            enc="demo-signature",
+        )
+
+    def tearDown(self) -> None:
+        clear_tasks()
+        clear_scripts()
+        clear_lessons()
+        reset_task_storage()
+        self.temp_dir.cleanup()
+
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_generate_audio_publish_and_play_form_demo_chain(self, mock_parse_courseware, mock_build_cir) -> None:
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId="cw-course-001",
+            title="人工智能导论",
+            chapters=[
+                CirChapter(
+                    chapterId="course-001-chap-001",
+                    chapterName="第一章",
+                    nodes=[
+                        LessonNode(nodeId="node-01-01", nodeName="什么是人工智能", pageRefs=[1, 2], keyPoints=["定义"], summary="介绍人工智能的基础定义。"),
+                        LessonNode(nodeId="node-01-02", nodeName="人工智能的应用", pageRefs=[3], keyPoints=["案例"], summary="说明人工智能在课堂中的使用场景。"),
+                    ],
+                )
+            ],
+        )
+        accepted = create_parse_task(self.parse_payload)
+        run_parse_task(accepted.parseId, self.parse_payload)
+        script = generate_script(
+            GenerateScriptRequest(
+                parseId=accepted.parseId,
+                teachingStyle="standard",
+                speechSpeed="normal",
+                customOpening=None,
+                enc="demo-signature",
+            )
+        )
+
+        audio = generate_audio(
+            GenerateAudioRequest(
+                scriptId=script.scriptId,
+                voiceType="female_standard",
+                audioFormat="mp3",
+                sectionIds=[],
+                enc="demo-signature",
+            )
+        )
+        publish = publish_lesson(
+            PublishRequest(
+                coursewareId="cw-course-001",
+                scriptId=script.scriptId,
+                audioId=audio["audioId"],
+                publisherId="teacher-demo",
+                enc="demo-signature",
+            )
+        )
+        play = play_lesson(
+            PlayRequest(
+                lessonId=publish["lessonId"],
+                userId="student-demo",
+                resumeContext={"currentSectionId": script.scriptStructure[0].sectionId},
+                enc="demo-signature",
+            )
+        )
+
+        self.assertEqual(audio["taskStatus"], "completed")
+        self.assertEqual(len(audio["sectionAudios"]), len(script.scriptStructure))
+        self.assertEqual(publish["publishStatus"], "published")
+        self.assertEqual(play["nodeSequence"], ["node-01-01", "node-01-02"])
+        self.assertEqual(play["scriptRefs"][0]["scriptId"], script.scriptId)
+        self.assertEqual(play["audioRefs"][0]["audioId"], audio["audioId"])
+
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_publish_rejects_mismatched_courseware(self, mock_parse_courseware, mock_build_cir) -> None:
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId="cw-course-001",
+            title="人工智能导论",
+            chapters=[CirChapter(chapterId="course-001-chap-001", chapterName="第一章", nodes=[LessonNode(nodeId="node-01-01", nodeName="什么是人工智能", pageRefs=[1], keyPoints=[], summary="介绍人工智能。")])],
+        )
+        accepted = create_parse_task(self.parse_payload)
+        run_parse_task(accepted.parseId, self.parse_payload)
+        script = generate_script(
+            GenerateScriptRequest(
+                parseId=accepted.parseId,
+                teachingStyle="standard",
+                speechSpeed="normal",
+                customOpening=None,
+                enc="demo-signature",
+            )
+        )
+        audio = generate_audio(
+            GenerateAudioRequest(scriptId=script.scriptId, voiceType="female_standard", audioFormat="mp3", sectionIds=[], enc="demo-signature")
+        )
+
+        with self.assertRaises(ApiError) as context:
+            publish_lesson(
+                PublishRequest(
+                    coursewareId="cw-course-999",
+                    scriptId=script.scriptId,
+                    audioId=audio["audioId"],
+                    publisherId="teacher-demo",
+                    enc="demo-signature",
+                )
+            )
+
+        self.assertEqual(context.exception.status_code, 409)
+
+    def test_play_rejects_missing_lesson(self) -> None:
+        with self.assertRaises(ApiError) as context:
+            play_lesson(PlayRequest(lessonId="lesson-missing", userId="student-demo", resumeContext=None, enc="demo-signature"))
+
+        self.assertEqual(context.exception.status_code, 404)

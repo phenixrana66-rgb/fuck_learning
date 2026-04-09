@@ -1,0 +1,5 @@
+@baseUrl = http://127.0.0.1:8000
+@sessionId = session-demo-001
+
+### 查询问答会话（把 @sessionId 替换成 interact 使用的 sessionId）
+GET {{baseUrl}}/api/v1/qa/session/{{sessionId}}

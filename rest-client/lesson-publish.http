@@ -1,0 +1,16 @@
+@baseUrl = http://127.0.0.1:8000
+@coursewareId = cw-course-ai-001
+@scriptId = script20260406000000000000
+@audioId = audio20260406000000000000
+
+### 发布智课（把 @coursewareId / @scriptId / @audioId 替换成前一步返回值，其中 @coursewareId 来自 parse 完成结果中的 cir.coursewareId）
+POST {{baseUrl}}/api/v1/lesson/publish
+Content-Type: application/json
+
+{
+  "coursewareId": "{{coursewareId}}",
+  "scriptId": "{{scriptId}}",
+  "audioId": "{{audioId}}",
+  "publisherId": "teacher-demo",
+  "enc": "demo-signature"
+}

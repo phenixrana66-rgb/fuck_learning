@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+alembic
+dramatiq
+redis
+httpx
+python-multipart
+orjson
+asyncpg
+pgvector
+minio
+python-pptx>=0.6.22
+PyMuPDF
