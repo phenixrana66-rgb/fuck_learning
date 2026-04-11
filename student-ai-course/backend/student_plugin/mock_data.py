@@ -33,6 +33,7 @@ COURSE_BLUEPRINTS = [
         "units": [
             ("基本概念", ["轴向拉伸与压缩", "应力与应变", "材料力学性能"]),
             ("强度与变形", ["剪切与挤压", "扭转变形", "梁的弯曲"]),
+            ("压杆稳定", ["压杆稳定"]),
         ],
     },
     {
@@ -156,17 +157,60 @@ def _build_units(unit_specs, lesson_id):
     for unit_index, (unit_title, chapters) in enumerate(unit_specs, start=1):
         chapter_items = []
         for chapter_index, chapter_title in enumerate(chapters, start=1):
-            chapter_items.append(
-                {
-                    "chapterId": f"{lesson_id}-U{unit_index}-C{chapter_index}",
-                    "chapterTitle": chapter_title,
-                    "progressPercent": 0,
-                    "masteryPercent": 0,
-                    "pageNo": page_no,
-                    "summary": f"围绕“{chapter_title}”展开知识讲解、课件学习与课堂习题训练。",
-                    "knowledgePoints": [chapter_title, unit_title, "核心概念"],
-                }
-            )
+            chapter_payload = {
+                "chapterId": f"{lesson_id}-U{unit_index}-C{chapter_index}",
+                "chapterTitle": chapter_title,
+                "progressPercent": 0,
+                "masteryPercent": 0,
+                "pageNo": page_no,
+                "summary": f"围绕“{chapter_title}”展开知识讲解、课件学习与课堂习题训练。",
+                "knowledgePoints": [chapter_title, unit_title, "核心概念"],
+            }
+
+            if lesson_id == "L10001" and unit_title == "压杆稳定" and chapter_title == "压杆稳定":
+                chapter_payload["guideContent"] = (
+                    "本章围绕压杆稳定的基本概念、临界载荷、欧拉公式以及工程中的稳定校核展开。"
+                    "学习时建议先完成课件页浏览，再结合章节练习巩固关键公式与工程应用。"
+                )
+                chapter_payload["learningPages"] = [
+                    {
+                        "pageNo": 1,
+                        "pageTitle": "稳定平衡条件",
+                        "pageSummary": "理解压杆处于稳定平衡时的受力与位移特征。",
+                        "pptPageUrl": "/lesson-previews/pressure-stability/page-1.svg",
+                        "parsedContent": "本页介绍压杆稳定平衡的基本条件，帮助建立后续临界载荷分析的力学基础。",
+                    },
+                    {
+                        "pageNo": 2,
+                        "pageTitle": "临界载荷",
+                        "pageSummary": "掌握压杆发生失稳时的临界载荷概念。",
+                        "pptPageUrl": "/lesson-previews/pressure-stability/page-2.svg",
+                        "parsedContent": "本页说明临界载荷的定义，以及影响临界载荷大小的主要因素。",
+                    },
+                    {
+                        "pageNo": 3,
+                        "pageTitle": "欧拉公式",
+                        "pageSummary": "理解欧拉公式的形式和适用前提。",
+                        "pptPageUrl": "/lesson-previews/pressure-stability/page-3.svg",
+                        "parsedContent": "本页围绕欧拉公式展开，帮助学生理解理想压杆稳定分析的经典计算式。",
+                    },
+                    {
+                        "pageNo": 4,
+                        "pageTitle": "长细比影响",
+                        "pageSummary": "认识长细比与失稳风险之间的关系。",
+                        "pptPageUrl": "/lesson-previews/pressure-stability/page-4.svg",
+                        "parsedContent": "本页分析长细比变化对压杆稳定承载能力的影响，是工程校核中的关键指标。",
+                    },
+                    {
+                        "pageNo": 5,
+                        "pageTitle": "工程应用",
+                        "pageSummary": "结合工程案例理解压杆稳定校核。",
+                        "pptPageUrl": "/lesson-previews/pressure-stability/page-5.svg",
+                        "parsedContent": "本页用工程场景说明压杆稳定分析在结构设计和校核中的实际应用。",
+                    },
+                ]
+
+            chapter_items.append(chapter_payload)
             page_no += 1
         units.append(
             {

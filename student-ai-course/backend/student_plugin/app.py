@@ -1,11 +1,20 @@
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from config import Config
+from db import get_db
 from services.chaoxing_adapter import ChaoxingAdapter
+from services.db_learning_service import (
+    enhance_player_with_db,
+    get_db_progress_state,
+    get_section_detail,
+    interact_with_section_context,
+    mark_page_read,
+)
 from services.learning_service import LearningService
 from services.signing import verify_signature
 
@@ -70,7 +79,7 @@ async def handle_api_error(_request: Request, exc: ApiError):
 
 @app.exception_handler(Exception)
 async def handle_unexpected_error(_request: Request, _exc: Exception):
-    return response(500, "学生端服务异常", None)
+    return response(500, "学生端服务异常")
 
 
 @app.post("/auth/verify")
@@ -85,16 +94,23 @@ async def auth_verify(request: Request):
 
 
 @app.post("/api/v1/getStudentLessonList")
-async def get_student_lesson_list(request: Request):
+async def get_student_lesson_list(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
-    data = {"lessons": adapter.get_student_lessons(payload.get("studentId"))}
-    return response(200, "success", data)
+    student_id = payload.get("studentId")
+    lessons = adapter.get_student_lessons(student_id)
+    merged = [enhance_player_with_db(db, lesson, student_id) for lesson in lessons]
+    return response(200, "success", {"lessons": merged})
 
 
 @app.post("/api/v1/progress/get")
-async def get_progress(request: Request):
+async def get_progress(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
-    return response(200, "success", adapter.get_progress(payload.get("lessonId")))
+    student_id = payload.get("studentId")
+    lesson_id = payload.get("lessonId")
+    db_progress = get_db_progress_state(db, student_id, lesson_id)
+    if db_progress:
+        return response(200, "success", db_progress)
+    return response(200, "success", adapter.get_progress(lesson_id))
 
 
 @app.post("/api/v1/progress/track")
@@ -115,10 +131,44 @@ async def track_progress(request: Request):
     return response(200, "success", updated)
 
 
-@app.post("/api/v1/lesson/play")
-async def lesson_play(request: Request):
+@app.post("/api/v1/progress/page/read")
+async def progress_page_read(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
-    return response(200, "success", adapter.play_lesson(payload.get("lessonId")))
+    data = mark_page_read(
+        db,
+        payload.get("studentId"),
+        payload.get("lessonId"),
+        payload.get("sectionId"),
+        payload.get("lessonPageId"),
+        payload.get("pageNo"),
+    )
+    if not data:
+        raise ApiError(404, "章节页面不存在")
+    return response(200, "success", data)
+
+
+@app.post("/api/v1/lesson/play")
+async def lesson_play(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    lesson_id = payload.get("lessonId")
+    student_id = payload.get("studentId")
+    player = adapter.play_lesson(lesson_id)
+    merged = enhance_player_with_db(db, player, student_id)
+    return response(200, "success", merged)
+
+
+@app.post("/api/v1/lesson/section/detail")
+async def lesson_section_detail(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    data = get_section_detail(
+        db,
+        payload.get("studentId"),
+        payload.get("lessonId"),
+        payload.get("sectionId"),
+    )
+    if not data:
+        raise ApiError(404, "知识学习内容不存在")
+    return response(200, "success", data)
 
 
 @app.post("/api/v1/qa/voiceToText")
@@ -129,8 +179,20 @@ async def qa_voice_to_text(request: Request):
 
 
 @app.post("/api/v1/qa/interact")
-async def qa_interact(request: Request):
+async def qa_interact(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
+    section_id = payload.get("sectionId")
+    if section_id:
+        data = interact_with_section_context(
+            db,
+            payload.get("lessonId"),
+            section_id,
+            payload.get("question", ""),
+            payload.get("pageNo"),
+        )
+        if data:
+            return response(200, "success", data)
+
     data = learning_service.interact(
         payload.get("lessonId"),
         payload.get("question", ""),

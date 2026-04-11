@@ -8,7 +8,8 @@
     lastStudyAt: '2026-03-29 09:10',
     units: [
       { unitTitle: '基本概念', chapters: ['轴向拉伸与压缩', '应力与应变', '材料力学性能'] },
-      { unitTitle: '强度与变形', chapters: ['剪切与挤压', '扭转变形', '梁的弯曲'] }
+      { unitTitle: '强度与变形', chapters: ['剪切与挤压', '扭转变形', '梁的弯曲'] },
+      { unitTitle: '压杆稳定', chapters: ['压杆稳定'] }
     ]
   },
   {
@@ -85,6 +86,27 @@
   }
 ]
 
+function buildPressureStabilityPages() {
+  const pageSummaries = {
+    1: '理解压杆稳定平衡条件与基本受力状态。',
+    2: '掌握临界载荷的定义与核心判断依据。',
+    3: '理解欧拉公式的形式、假设条件与适用范围。',
+    4: '认识长细比变化对压杆稳定性的直接影响。',
+    5: '结合工程案例理解压杆稳定校核。'
+  }
+
+  return Array.from({ length: 65 }, (_, index) => {
+    const pageNo = index + 1
+    return {
+      pageNo,
+      pageTitle: `第 ${pageNo} 页`,
+      pageSummary: pageSummaries[pageNo] || `查看压杆稳定课件第 ${pageNo} 页内容。`,
+      pptPageUrl: `/lesson-previews/pressure-stability/page-${pageNo}.png`,
+      parsedContent: pageSummaries[pageNo] || `本页为压杆稳定课件第 ${pageNo} 页，建议结合 AI 学习导读继续理解重点。`
+    }
+  })
+}
+
 function buildUnits(lessonId, unitSpecs) {
   let pageNo = 1
   return unitSpecs.map((unit, unitIndex) => ({
@@ -100,6 +122,12 @@ function buildUnits(lessonId, unitSpecs) {
         summary: `围绕“${chapterTitle}”展开知识讲解、课件学习与课堂习题训练。`,
         knowledgePoints: [chapterTitle, unit.unitTitle, '核心概念']
       }
+
+      if (lessonId === 'L10001' && unit.unitTitle === '压杆稳定' && chapterTitle === '压杆稳定') {
+        chapter.guideContent = '本章围绕压杆稳定的基本概念、临界载荷、欧拉公式以及工程中的稳定校核展开。建议先按页完成课件学习，再结合 AI 导读梳理关键公式与工程应用。'
+        chapter.learningPages = buildPressureStabilityPages()
+      }
+
       pageNo += 1
       return chapter
     })

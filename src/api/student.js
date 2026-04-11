@@ -35,6 +35,13 @@ export function playStudentLesson(data) {
   })
 }
 
+export function getStudentSectionDetail(data) {
+  return request({
+    url: '/api/v1/lesson/section/detail',
+    data
+  })
+}
+
 export function voiceToText(data) {
   return request({
     url: '/api/v1/qa/voiceToText',
@@ -52,6 +59,13 @@ export function interactWithLesson(data) {
 export function adjustStudentProgress(data) {
   return request({
     url: '/api/v1/progress/adjust',
+    data
+  })
+}
+
+export function markStudentPageRead(data) {
+  return request({
+    url: '/api/v1/progress/page/read',
     data
   })
 }

@@ -18,6 +18,11 @@ const routes = [
     component: () => import('@/views/student/Player.vue')
   },
   {
+    path: '/student/knowledge-learning/:lessonId/:sectionId?',
+    name: 'StudentKnowledgeLearning',
+    component: () => import('@/views/student/KnowledgeLearning.vue')
+  },
+  {
     path: '/teacher/login',
     name: 'TeacherLogin',
     component: () => import('@/views/teacher/Login.vue')
@@ -51,7 +56,13 @@ const routes = [
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  scrollBehavior() {
+    return {
+      left: 0,
+      top: 0
+    }
+  }
 })
 
 router.beforeEach((to, from, next) => {

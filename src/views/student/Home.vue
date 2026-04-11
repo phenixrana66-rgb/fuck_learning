@@ -796,6 +796,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
+  align-items: stretch;
 }
 
 .student-course-item {
@@ -807,7 +808,7 @@ onBeforeUnmount(() => {
   background: #fff;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  min-height: 374px;
+  height: 374px;
 }
 
 .student-course-item:hover {

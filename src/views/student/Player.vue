@@ -93,7 +93,7 @@
                   <el-progress :percentage="chapter.progressPercent" :stroke-width="8" :show-text="false" />
                 </div>
                 <div class="student-chapter-footer-row">
-                  <el-button type="primary" @click.stop="markChapterLearned(chapter)">记录学习</el-button>
+                  <el-button type="primary" @click.stop="goToKnowledgeLearning(chapter)">进入学习</el-button>
                 </div>
               </div>
             </article>
@@ -370,7 +370,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -380,7 +380,6 @@ import {
   interactWithLesson,
   playStudentLesson,
   resumeStudentLesson,
-  trackStudentProgress,
   verifyStudentAuth,
   voiceToText
 } from '@/api/student'
@@ -399,6 +398,7 @@ import {
 } from '@/utils/platform'
 
 const route = useRoute()
+const router = useRouter()
 const topbarNavRef = ref(null)
 const lesson = ref({ units: [], aiTools: [] })
 const fallbackProfile = {
@@ -701,6 +701,20 @@ function setActiveChapter(chapter) {
   activeChapterId.value = chapter.chapterId
 }
 
+function goToKnowledgeLearning(chapter) {
+  if (!chapter?.chapterId) return
+  router.push({
+    name: 'StudentKnowledgeLearning',
+    params: {
+      lessonId: lessonId.value,
+      sectionId: chapter.sectionId || ''
+    },
+    query: {
+      chapterId: chapter.chapterId
+    }
+  })
+}
+
 function setPrimaryNavButton(element, value) {
   if (!element) {
     delete primaryNavRefs.value[value]
@@ -721,6 +735,7 @@ function updateNavIndicator() {
 
 function switchView(value) {
   activeView.value = value
+  window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
 }
 
 function getChapterStatusLabel(chapter) {
@@ -820,38 +835,6 @@ async function adjustLearningRhythm(mode) {
   }
 }
 
-async function markChapterLearned(chapter) {
-  try {
-    const res = await trackStudentProgress({
-      studentId: studentProfile.value.studentId,
-      lessonId: lessonId.value,
-      currentTime: chapter.pageNo * 90,
-      anchorId: `${lessonId.value}-A${chapter.pageNo}`,
-      anchorTitle: chapter.chapterTitle,
-      pageNo: chapter.pageNo,
-      progressPercent: 100,
-      understandingLevel: progressState.value.understandingLevel || 'partial',
-      weakPoints: progressState.value.weakPoints || []
-    })
-
-    chapter.progressPercent = 100
-    progressState.value = {
-      ...progressState.value,
-      ...res.data,
-      pageNo: chapter.pageNo,
-      anchorTitle: chapter.chapterTitle,
-      progressPercent: overallProgress.value
-    }
-    lesson.value.currentPage = chapter.pageNo
-    lesson.value.currentKnowledgePointName = chapter.chapterTitle
-    activeChapterId.value = chapter.chapterId
-    syncLessonCache()
-    ElMessage.success('已记录当前章节学习进度')
-  } catch (error) {
-    ElMessage.error(error?.msg || '学习进度记录失败')
-  }
-}
-
 async function bootstrapStudent() {
   const token = ensurePlatformToken('student_demo_token_001')
 
@@ -912,7 +895,9 @@ async function loadLesson() {
     progressState.value = getDefaultProgressState(lesson.value)
   }
 
-  const targetChapter = allChapters.value.find((chapter) => chapter.pageNo === progressState.value.pageNo) || allChapters.value[0]
+  const targetChapter = allChapters.value.find((chapter) => chapter.sectionId === progressState.value.sectionId)
+    || allChapters.value.find((chapter) => chapter.pageNo === progressState.value.pageNo)
+    || allChapters.value[0]
   activeChapterId.value = targetChapter?.chapterId || ''
 
   const cachedSessions = getStudentQaSessions(lessonId.value)

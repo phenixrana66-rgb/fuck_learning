@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 
 DEFAULT_DATABASE_URL = (
-    "mysql+pymysql://root:password@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4"
+    "mysql+pymysql://root:123456@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4"
 )
 
 
