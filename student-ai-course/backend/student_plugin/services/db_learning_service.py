@@ -97,6 +97,29 @@ def _find_teacher_name(db: Session, lesson: Lesson) -> str:
     return teacher.user_name if teacher else ""
 
 
+def get_student_profile_from_db(db: Session, student_identifier: str | int | None) -> dict | None:
+    student_db_id = _resolve_user_id(db, student_identifier)
+    if not student_db_id:
+        return None
+
+    student = (
+        db.query(User)
+        .options(joinedload(User.school))
+        .filter(User.id == student_db_id, User.role == "student")
+        .first()
+    )
+    if not student:
+        return None
+
+    return {
+        "studentId": student.user_no,
+        "userName": student.user_name,
+        "studentName": student.user_name,
+        "schoolName": student.school.school_name if student.school else "",
+        "collegeName": (student.school.school_name if student.school else "") or "",
+    }
+
+
 def _find_section(db: Session, lesson_db_id: int, section_identifier: str | int | None) -> LessonSection | None:
     if section_identifier in (None, ""):
         return None
@@ -433,6 +456,113 @@ def get_section_detail(
         ],
         "pages": pages,
     }
+
+
+def save_recent_chapter_visit(
+    db: Session,
+    student_id: str | int | None,
+    lesson_identifier: str | int | None,
+    section_identifier: str | int | None,
+    page_no: int | None,
+) -> dict | None:
+    lesson = _find_lesson(db, lesson_identifier)
+    student_db_id = _resolve_user_id(db, student_id)
+    if not lesson or not student_db_id:
+        return None
+
+    section = _find_section(db, lesson.id, section_identifier)
+    if not section:
+        return None
+
+    safe_page_no = int(page_no or 1)
+    anchor = _find_section_anchor(section, safe_page_no)
+    resume_record = ResumeRecord(
+        student_id=student_db_id,
+        course_id=lesson.course_id,
+        lesson_id=lesson.id,
+        section_id=section.id,
+        anchor_id=anchor.id if anchor else None,
+        page_no=safe_page_no,
+        resume_time_sec=anchor.start_time_sec if anchor else 0,
+        resume_type="manual",
+    )
+    db.add(resume_record)
+    db.commit()
+
+    return {
+        "lessonId": lesson.lesson_no,
+        "sectionId": str(section.id),
+        "pageNo": safe_page_no,
+        "savedAt": resume_record.created_at.strftime("%Y-%m-%d %H:%M") if resume_record.created_at else "",
+    }
+
+
+def get_recent_chapter_visits(
+    db: Session,
+    student_id: str | int | None,
+    limit: int = 3,
+) -> list[dict]:
+    student_db_id = _resolve_user_id(db, student_id)
+    if not student_db_id:
+        return []
+
+    rows = (
+        db.query(ResumeRecord)
+        .filter(
+            ResumeRecord.student_id == student_db_id,
+            ResumeRecord.section_id.isnot(None),
+            ResumeRecord.page_no.isnot(None),
+        )
+        .order_by(ResumeRecord.created_at.desc(), ResumeRecord.id.desc())
+        .all()
+    )
+
+    if not rows:
+        return []
+
+    lesson_ids = {row.lesson_id for row in rows if row.lesson_id}
+    section_ids = {row.section_id for row in rows if row.section_id}
+
+    lessons = {
+        lesson.id: lesson
+        for lesson in db.query(Lesson).options(joinedload(Lesson.course)).filter(Lesson.id.in_(lesson_ids)).all()
+    }
+    sections = {
+        section.id: section
+        for section in db.query(LessonSection).filter(LessonSection.id.in_(section_ids)).all()
+    }
+
+    result: list[dict] = []
+    seen: set[tuple[int, int]] = set()
+    for row in rows:
+        if not row.lesson_id or not row.section_id:
+            continue
+        dedupe_key = (row.lesson_id, row.section_id)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        lesson = lessons.get(row.lesson_id)
+        section = sections.get(row.section_id)
+        if not lesson or not section:
+            continue
+
+        result.append(
+            {
+                "lessonId": lesson.lesson_no,
+                "courseName": lesson.course.course_name if lesson.course else lesson.lesson_name,
+                "chapterId": str(section.source_chapter_id or section.id),
+                "chapterTitle": section.section_name,
+                "sectionId": str(section.id),
+                "pageNo": row.page_no or 1,
+                "lastExitedAt": row.created_at.strftime("%Y-%m-%d %H:%M") if row.created_at else "",
+                "exitedAt": int(row.created_at.timestamp() * 1000) if row.created_at else 0,
+            }
+        )
+        if len(result) >= limit:
+            break
+
+    return result
 
 
 def mark_page_read(

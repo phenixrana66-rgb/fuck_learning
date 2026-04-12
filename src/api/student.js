@@ -14,6 +14,20 @@ export function getStudentLessonList(data) {
   })
 }
 
+export function getStudentRecentChapters(data) {
+  return request({
+    url: '/api/v1/recentChapters/list',
+    data
+  })
+}
+
+export function saveStudentRecentChapter(data) {
+  return request({
+    url: '/api/v1/recentChapters/save',
+    data
+  })
+}
+
 export function getStudentProgress(data) {
   return request({
     url: '/api/v1/progress/get',
@@ -52,6 +66,20 @@ export function voiceToText(data) {
 export function interactWithLesson(data) {
   return request({
     url: '/api/v1/qa/interact',
+    data
+  })
+}
+
+export function getStudentQaSessions(data) {
+  return request({
+    url: '/api/v1/qa/sessions/list',
+    data
+  })
+}
+
+export function saveStudentQaSession(data) {
+  return request({
+    url: '/api/v1/qa/sessions/save',
     data
   })
 }

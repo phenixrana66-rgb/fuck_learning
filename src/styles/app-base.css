@@ -1,5 +1,5 @@
 :root {
-  --student-serif-font: SimSun, "Songti SC", "STSong", "Noto Serif SC", serif;
+  --student-serif-font: SimHei, "Heiti SC", "STHeiti", "Microsoft YaHei", sans-serif;
   --app-sans-font: "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
 }
 
@@ -29,6 +29,7 @@ select {
 
 .student-home,
 .student-player-page,
+.knowledge-page,
 .student-home button,
 .student-home input,
 .student-home textarea,
@@ -36,7 +37,11 @@ select {
 .student-player-page button,
 .student-player-page input,
 .student-player-page textarea,
-.student-player-page select {
+.student-player-page select,
+.knowledge-page button,
+.knowledge-page input,
+.knowledge-page textarea,
+.knowledge-page select {
   font-family: var(--student-serif-font);
 }
 

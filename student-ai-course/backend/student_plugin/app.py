@@ -11,10 +11,14 @@ from services.chaoxing_adapter import ChaoxingAdapter
 from services.db_learning_service import (
     enhance_player_with_db,
     get_db_progress_state,
+    get_recent_chapter_visits,
     get_section_detail,
+    get_student_profile_from_db,
     interact_with_section_context,
     mark_page_read,
+    save_recent_chapter_visit,
 )
+from services.db_qa_service import get_qa_sessions, save_qa_session
 from services.learning_service import LearningService
 from services.signing import verify_signature
 
@@ -83,11 +87,17 @@ async def handle_unexpected_error(_request: Request, _exc: Exception):
 
 
 @app.post("/auth/verify")
-async def auth_verify(request: Request):
+async def auth_verify(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
     token = payload.get("token") or request.headers.get("X-Platform-Token", "")
     try:
         data = adapter.verify(token)
+        db_student = get_student_profile_from_db(
+            db,
+            payload.get("studentId") or data.get("student", {}).get("studentId"),
+        )
+        if db_student:
+            data["student"] = {**data.get("student", {}), **db_student}
         return response(200, "success", data)
     except PermissionError:
         raise ApiError(401, "免登 token 无效")
@@ -98,8 +108,33 @@ async def get_student_lesson_list(request: Request, db: Session = Depends(get_db
     payload = await require_signature(request)
     student_id = payload.get("studentId")
     lessons = adapter.get_student_lessons(student_id)
-    merged = [enhance_player_with_db(db, lesson, student_id) for lesson in lessons]
+    try:
+        merged = [enhance_player_with_db(db, lesson, student_id) for lesson in lessons]
+    except Exception:
+        merged = lessons
     return response(200, "success", {"lessons": merged})
+
+
+@app.post("/api/v1/recentChapters/list")
+async def recent_chapter_list(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    items = get_recent_chapter_visits(db, payload.get("studentId"), payload.get("limit") or 3)
+    return response(200, "success", {"items": items})
+
+
+@app.post("/api/v1/recentChapters/save")
+async def recent_chapter_save(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    data = save_recent_chapter_visit(
+        db,
+        payload.get("studentId"),
+        payload.get("lessonId"),
+        payload.get("sectionId"),
+        payload.get("pageNo"),
+    )
+    if not data:
+        raise ApiError(404, "最近学习记录保存失败")
+    return response(200, "success", data)
 
 
 @app.post("/api/v1/progress/get")
@@ -153,7 +188,10 @@ async def lesson_play(request: Request, db: Session = Depends(get_db)):
     lesson_id = payload.get("lessonId")
     student_id = payload.get("studentId")
     player = adapter.play_lesson(lesson_id)
-    merged = enhance_player_with_db(db, player, student_id)
+    try:
+        merged = enhance_player_with_db(db, player, student_id)
+    except Exception:
+        merged = player
     return response(200, "success", merged)
 
 
@@ -199,6 +237,28 @@ async def qa_interact(request: Request, db: Session = Depends(get_db)):
         payload.get("anchorId"),
         payload.get("pageNo"),
     )
+    return response(200, "success", data)
+
+
+@app.post("/api/v1/qa/sessions/list")
+async def qa_sessions_list(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    items = get_qa_sessions(db, payload.get("studentId"), payload.get("lessonId"))
+    return response(200, "success", {"sessions": items})
+
+
+@app.post("/api/v1/qa/sessions/save")
+async def qa_sessions_save(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    data = save_qa_session(
+        db,
+        payload.get("studentId"),
+        payload.get("lessonId"),
+        payload.get("sectionId"),
+        payload.get("session"),
+    )
+    if not data:
+        raise ApiError(404, "问答会话保存失败")
     return response(200, "success", data)
 
 

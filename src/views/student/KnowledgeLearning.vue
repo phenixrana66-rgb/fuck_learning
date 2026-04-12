@@ -1,7 +1,14 @@
-<template>
+﻿<template>
   <div class="knowledge-page">
     <header class="knowledge-topbar">
-      <div class="knowledge-brand">
+      <div
+        class="knowledge-brand"
+        role="button"
+        tabindex="0"
+        @click="goStudentHome"
+        @keydown.enter.prevent="goStudentHome"
+        @keydown.space.prevent="goStudentHome"
+      >
         <div class="knowledge-brand-mark"></div>
         <div class="knowledge-brand-name">泛雅</div>
       </div>
@@ -47,7 +54,7 @@
                 @click="setActivePage(page.pageNo)"
               >
                 <div class="thumbnail-media">
-                  <img :src="page.imageUrl" :alt="`第 ${page.pageNo} 页`" loading="lazy" />
+                  <img :src="page.imageUrl" :alt="`第 ${page.pageNo} 页缩略图`" loading="lazy" />
                   <span class="thumbnail-page-badge">{{ page.pageNo }}</span>
                 </div>
               </button>
@@ -166,10 +173,15 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getStudentSectionDetail, interactWithLesson, markStudentPageRead } from '@/api/student'
+import {
+  getStudentSectionDetail,
+  interactWithLesson,
+  markStudentPageRead,
+  saveStudentRecentChapter
+} from '@/api/student'
 import { findFrontendTestLesson } from '@/mock/studentLessons'
 import { getStudentProfile } from '@/utils/platform'
 
@@ -178,8 +190,8 @@ const route = useRoute()
 
 const fallbackProfile = {
   studentId: 'S2026001',
-  studentName: '左睿涛',
-  collegeName: '材料与能源学院'
+  studentName: '',
+  collegeName: ''
 }
 
 const studentProfile = ref({ ...fallbackProfile, ...getStudentProfile() })
@@ -209,6 +221,7 @@ const thumbnailRefs = ref({})
 
 const lessonId = computed(() => String(route.params.lessonId || ''))
 const chapterId = computed(() => String(route.query.chapterId || ''))
+const restorePageNo = computed(() => Number(route.query.pageNo || 0))
 const sectionId = computed(() => String(route.params.sectionId || detail.value.sectionId || chapterId.value || ''))
 const pages = computed(() => detail.value.pages || [])
 const totalPages = computed(() => pages.value.length)
@@ -292,7 +305,7 @@ function keepThumbnailVisible() {
 async function loadSectionDetail() {
   const fallback = normalizeFallbackDetail()
   detail.value = fallback
-  activePageNo.value = fallback.currentPageNo || 1
+  activePageNo.value = restorePageNo.value || fallback.currentPageNo || 1
 
   if (!sectionId.value) return
 
@@ -306,7 +319,10 @@ async function loadSectionDetail() {
       ...fallback,
       ...(res.data || {})
     }
-    activePageNo.value = Number(detail.value.currentPageNo || detail.value.pages?.[0]?.pageNo || 1)
+    const firstPageNo = Number(detail.value.pages?.[0]?.pageNo || 1)
+    const targetPageNo = Number(restorePageNo.value || detail.value.currentPageNo || firstPageNo)
+    const hasTargetPage = (detail.value.pages || []).some((page) => Number(page.pageNo) === targetPageNo)
+    activePageNo.value = hasTargetPage ? targetPageNo : firstPageNo
   } catch (error) {
     ElMessage.warning(error?.msg || '知识学习内容加载失败，已切换为本地演示数据')
   } finally {
@@ -364,6 +380,19 @@ function fillQuestion(question) {
   questionText.value = question
 }
 
+
+function persistRecentVisit() {
+  if (!lessonId.value || !chapterId.value || !sectionId.value) return
+  saveStudentRecentChapter({
+    studentId: studentProfile.value.studentId,
+    lessonId: lessonId.value,
+    sectionId: sectionId.value,
+    pageNo: activePageNo.value || 1
+  }).catch(() => {
+    console.warn('save recent chapter visit failed')
+  })
+}
+
 async function submitQuestion() {
   const question = questionText.value.trim()
   if (!question || asking.value) return
@@ -400,9 +429,18 @@ async function submitQuestion() {
 }
 
 function goBack() {
+  persistRecentVisit()
   router.push({
     name: 'StudentPlayer',
     params: { lessonId: lessonId.value },
+    query: route.query.token ? { token: route.query.token } : {}
+  })
+}
+
+function goStudentHome() {
+  persistRecentVisit()
+  router.push({
+    name: 'StudentHome',
     query: route.query.token ? { token: route.query.token } : {}
   })
 }
@@ -416,10 +454,20 @@ watch(activePageNo, async () => {
 })
 
 onMounted(async () => {
+  window.addEventListener('pagehide', persistRecentVisit)
   await loadSectionDetail()
   if (activePage.value) {
     syncPageRead(activePage.value)
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pagehide', persistRecentVisit)
+  persistRecentVisit()
+})
+
+onBeforeRouteLeave(() => {
+  persistRecentVisit()
 })
 </script>
 
@@ -452,6 +500,13 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 14px;
+  cursor: pointer;
+}
+
+.knowledge-brand:focus-visible {
+  outline: 2px solid rgba(82, 126, 246, 0.45);
+  outline-offset: 6px;
+  border-radius: 16px;
 }
 
 .knowledge-brand-mark {

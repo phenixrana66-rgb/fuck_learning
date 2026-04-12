@@ -128,3 +128,17 @@ export function getStudentQaSessions(lessonId) {
   const cache = JSON.parse(localStorage.getItem('studentQaSessions') || '{}')
   return cache[lessonId] || []
 }
+
+export function saveStudentRecentChapterVisit(visit) {
+  if (!visit?.lessonId || !visit?.chapterId) return
+  const list = JSON.parse(localStorage.getItem('studentRecentChapterVisits') || '[]')
+  const normalized = Array.isArray(list) ? list : []
+  const filtered = normalized.filter((item) => !(item.lessonId === visit.lessonId && item.chapterId === visit.chapterId))
+  filtered.unshift(visit)
+  localStorage.setItem('studentRecentChapterVisits', JSON.stringify(filtered.slice(0, 3)))
+}
+
+export function getStudentRecentChapterVisits() {
+  const list = JSON.parse(localStorage.getItem('studentRecentChapterVisits') || '[]')
+  return Array.isArray(list) ? list : []
+}

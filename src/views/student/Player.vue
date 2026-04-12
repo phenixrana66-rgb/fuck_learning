@@ -1,7 +1,14 @@
 ﻿<template>
   <div class="student-player-page">
     <header class="student-player-topbar">
-      <div class="student-topbar-brand">
+      <div
+        class="student-topbar-brand"
+        role="button"
+        tabindex="0"
+        @click="goStudentHome"
+        @keydown.enter.prevent="goStudentHome"
+        @keydown.space.prevent="goStudentHome"
+      >
         <div class="student-topbar-brand-mark"></div>
         <div class="student-topbar-brand-name">泛雅</div>
       </div>
@@ -258,6 +265,20 @@
                 </div>
               </div>
             </div>
+            <div v-else class="student-ai-welcome">
+              <div class="student-ai-welcome-suggestions">
+                <button
+                  v-for="question in aiSuggestedQuestions"
+                  :key="question"
+                  type="button"
+                  class="student-ai-suggestion-chip"
+                  @click="submitSuggestedQuestion(question)"
+                >
+                  {{ question }}
+                </button>
+              </div>
+              <div class="student-ai-welcome-spacer"></div>
+            </div>
           </div>
 
           <div class="student-ai-input-area">
@@ -375,11 +396,13 @@ import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
   adjustStudentProgress,
+  getStudentQaSessions as fetchStudentQaSessions,
   getStudentLessonList,
   getStudentProgress,
   interactWithLesson,
   playStudentLesson,
   resumeStudentLesson,
+  saveStudentQaSession as persistStudentQaSession,
   verifyStudentAuth,
   voiceToText
 } from '@/api/student'
@@ -464,6 +487,14 @@ const filteredAiTools = computed(() => {
     id: tool.id,
     name: tool.name
   }))
+})
+const aiSuggestedQuestions = computed(() => {
+  const chapterTitle = activeChapter.value.chapterTitle || lesson.value.currentKnowledgePointName || '当前章节'
+  return [
+    `帮我概括《${chapterTitle}》的重点`,
+    `《${chapterTitle}》里的核心公式之间有什么关系`,
+    `《${chapterTitle}》在工程里通常怎么应用`
+  ]
 })
 const latestAssistantMessage = computed(() => [...chatList.value].reverse().find((item) => item.role === 'assistant') || null)
 const latestResumePoint = computed(() => ({
@@ -570,17 +601,28 @@ function getSessionDisplayTitle(session) {
   return session?.title || '未命名问答'
 }
 
-function persistQaSessions() {
+async function persistQaSessions(targetSessionId = activeSessionId.value) {
   const normalized = qaSessions.value
     .map((session, index) => normalizeSession(session, index))
     .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
   qaSessions.value = normalized
   saveStudentQaSessions(lessonId.value, normalized)
-  const currentSession = normalized.find((session) => session.sessionId === activeSessionId.value)
+  const currentSession = normalized.find((session) => session.sessionId === targetSessionId)
   saveStudentQaHistory(lessonId.value, buildHistoryPairsFromMessages(currentSession?.messages || []))
+  if (!currentSession) return
+  try {
+    await persistStudentQaSession({
+      studentId: studentProfile.value.studentId,
+      lessonId: lessonId.value,
+      sectionId: activeChapter.value.sectionId || progressState.value.sectionId || '',
+      session: currentSession
+    })
+  } catch {
+    // use local cache as non-blocking fallback
+  }
 }
 
-function syncActiveSessionFromChatList() {
+async function syncActiveSessionFromChatList() {
   if (!chatList.value.length) return
   const now = Date.now()
   const firstQuestion = chatList.value.find((item) => item.role === 'user')?.content || ''
@@ -599,7 +641,7 @@ function syncActiveSessionFromChatList() {
     qaSessions.value.unshift(nextSession)
   }
   activeSessionId.value = nextSession.sessionId
-  persistQaSessions()
+  await persistQaSessions(nextSession.sessionId)
 }
 
 function loadSessionIntoChat(session) {
@@ -607,9 +649,9 @@ function loadSessionIntoChat(session) {
   chatList.value = cloneMessages(session?.messages || [])
 }
 
-function openQaSession(sessionId) {
+async function openQaSession(sessionId) {
   if (sessionId === activeSessionId.value) return
-  syncActiveSessionFromChatList()
+  await syncActiveSessionFromChatList()
   const target = qaSessions.value.find((session) => session.sessionId === sessionId)
   if (!target) return
   cancelSessionTitleEdit()
@@ -626,7 +668,7 @@ function cancelSessionTitleEdit() {
   editingSessionTitle.value = ''
 }
 
-function commitSessionTitleEdit(sessionId) {
+async function commitSessionTitleEdit(sessionId) {
   const target = qaSessions.value.find((session) => session.sessionId === sessionId)
   if (!target) {
     cancelSessionTitleEdit()
@@ -634,7 +676,7 @@ function commitSessionTitleEdit(sessionId) {
   }
   target.title = createSessionTitle(editingSessionTitle.value || target.title)
   target.updatedAt = Date.now()
-  persistQaSessions()
+  await persistQaSessions(sessionId)
   cancelSessionTitleEdit()
 }
 
@@ -736,6 +778,13 @@ function updateNavIndicator() {
 function switchView(value) {
   activeView.value = value
   window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+}
+
+function goStudentHome() {
+  router.push({
+    name: 'StudentHome',
+    query: route.query.token ? { token: route.query.token } : {}
+  })
 }
 
 function getChapterStatusLabel(chapter) {
@@ -900,14 +949,34 @@ async function loadLesson() {
     || allChapters.value[0]
   activeChapterId.value = targetChapter?.chapterId || ''
 
-  const cachedSessions = getStudentQaSessions(lessonId.value)
-  if (cachedSessions.length) {
-    qaSessions.value = cachedSessions.map((session, index) => normalizeSession(session, index))
-  } else {
-    const cachedHistory = getStudentQaHistory(lessonId.value)
-    qaSessions.value = cachedHistory.length ? [buildLegacySession(cachedHistory)] : []
-    if (qaSessions.value.length) {
-      persistQaSessions()
+  try {
+    const sessionRes = await fetchStudentQaSessions({
+      studentId: studentProfile.value.studentId,
+      lessonId: lessonId.value
+    })
+    const remoteSessions = sessionRes.data?.sessions || []
+    if (remoteSessions.length) {
+      qaSessions.value = remoteSessions.map((session, index) => normalizeSession(session, index))
+      saveStudentQaSessions(lessonId.value, qaSessions.value)
+    } else {
+      const cachedSessions = getStudentQaSessions(lessonId.value)
+      if (cachedSessions.length) {
+        qaSessions.value = cachedSessions.map((session, index) => normalizeSession(session, index))
+      } else {
+        const cachedHistory = getStudentQaHistory(lessonId.value)
+        qaSessions.value = cachedHistory.length ? [buildLegacySession(cachedHistory)] : []
+        if (qaSessions.value.length) {
+          await persistQaSessions(qaSessions.value[0]?.sessionId)
+        }
+      }
+    }
+  } catch {
+    const cachedSessions = getStudentQaSessions(lessonId.value)
+    if (cachedSessions.length) {
+      qaSessions.value = cachedSessions.map((session, index) => normalizeSession(session, index))
+    } else {
+      const cachedHistory = getStudentQaHistory(lessonId.value)
+      qaSessions.value = cachedHistory.length ? [buildLegacySession(cachedHistory)] : []
     }
   }
   activeSessionId.value = ''
@@ -945,12 +1014,13 @@ async function askQuestion(question, source = 'text') {
       role: 'assistant',
       content: res.data.answer,
       relatedPoints: res.data.relatedKnowledgePoints,
+      understandingLevel: res.data.understandingLevel,
       understandingLabel: res.data.understandingLabel,
       anchorTitle: res.data.resumeAnchor?.anchorTitle,
       resumePageNo: res.data.resumeAnchor?.pageNo
     })
 
-    syncActiveSessionFromChatList()
+    await syncActiveSessionFromChatList()
     syncLessonCache()
     questionText.value = ''
   } finally {
@@ -964,6 +1034,11 @@ async function submitTextQuestion() {
     return
   }
   await askQuestion(questionText.value.trim(), 'text')
+}
+
+async function submitSuggestedQuestion(question) {
+  if (!question) return
+  await askQuestion(question, 'text')
 }
 
 function fileToBase64(file) {
@@ -1025,9 +1100,9 @@ function toggleAiTools() {
   aiToolsVisible.value = !aiToolsVisible.value
 }
 
-function startNewConversation() {
+async function startNewConversation() {
   if (chatList.value.length) {
-    syncActiveSessionFromChatList()
+    await syncActiveSessionFromChatList()
   }
   activeSessionId.value = ''
   chatList.value = []
@@ -1085,6 +1160,16 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.student-topbar-brand {
+  cursor: pointer;
+}
+
+.student-topbar-brand:focus-visible {
+  outline: 2px solid rgba(82, 126, 246, 0.45);
+  outline-offset: 6px;
+  border-radius: 16px;
 }
 
 .student-topbar-brand-mark {
@@ -1687,7 +1772,7 @@ onBeforeUnmount(() => {
 }
 
 .student-ai-page {
-  --student-ai-card-height: 720px;
+  --student-ai-card-height: 620px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   grid-template-areas: "chat sidebar";
@@ -1703,9 +1788,9 @@ onBeforeUnmount(() => {
 .student-ai-chat-card {
   grid-area: chat;
   height: var(--student-ai-card-height);
-  padding: 28px;
+  padding: 22px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) 20%;
+  grid-template-rows: auto minmax(0, 1fr) 25%;
   background: rgba(255, 255, 255, 0.9);
 }
 
@@ -1717,7 +1802,7 @@ onBeforeUnmount(() => {
 }
 
 .student-ai-chat-header.compact {
-  padding-bottom: 10px;
+  padding-bottom: 6px;
 }
 
 .student-ai-chat-header-main {
@@ -1752,24 +1837,72 @@ onBeforeUnmount(() => {
 
 .student-ai-chat-body {
   min-height: 0;
-  padding: 16px 4px 20px 0;
+  padding: 8px 2px 10px 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .student-ai-chat-body.empty {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
+  padding-right: 0;
+}
+
+.student-ai-chat-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.student-ai-welcome {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+}
+
+.student-ai-welcome-suggestions {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.student-ai-welcome-spacer {
+  min-height: 0;
+}
+
+.student-ai-suggestion-chip {
+  width: fit-content;
+  max-width: 100%;
+  padding: 15px 22px;
+  border-radius: 999px;
+  border: 1px solid #d8e4f7;
+  background: #ffffff;
+  color: #466ab0;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.student-ai-suggestion-chip:hover {
+  background: #f7fbff;
+  border-color: #c8d8f2;
+  transform: translateY(-1px);
 }
 
 .student-chat-list {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   align-content: start;
 }
 
 .student-chat-item {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .student-chat-role {
@@ -1777,15 +1910,23 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.student-chat-item.is-user .student-chat-role {
+  justify-self: end;
+  text-align: right;
+}
+
 .student-chat-bubble {
   max-width: 86%;
-  padding: 18px 20px 16px;
-  border-radius: 24px;
+  padding: 14px 16px 12px;
+  border-radius: 20px;
   background: linear-gradient(180deg, #ffffff, #f7faff);
   border: 0;
   color: #24345d;
-  line-height: 1.8;
+  line-height: 1.65;
   box-shadow: 0 12px 28px rgba(101, 128, 176, 0.08);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .student-chat-item.is-user {
@@ -1799,6 +1940,8 @@ onBeforeUnmount(() => {
 
 .student-chat-content {
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .student-chat-points {
@@ -1833,9 +1976,9 @@ onBeforeUnmount(() => {
 
 .student-ai-input-area {
   min-height: 0;
-  padding: 18px 22px;
+  padding: 14px 18px;
   border: 0;
-  border-radius: 30px;
+  border-radius: 24px;
   background:
     radial-gradient(circle at 14% 16%, rgba(255, 255, 255, 0.48), transparent 24%),
     linear-gradient(180deg, #eef4ff, #e6eefc);
@@ -1919,9 +2062,9 @@ onBeforeUnmount(() => {
   background: transparent;
   color: #24345d;
   box-shadow: none;
-  padding: 8px 4px 0;
-  font-size: 15px;
-  line-height: 1.8;
+  padding: 4px 2px 0;
+  font-size: 14px;
+  line-height: 1.65;
 }
 
 .student-ai-input-area :deep(.el-textarea__inner:focus) {
@@ -2050,6 +2193,13 @@ onBeforeUnmount(() => {
   max-height: none;
   overflow-y: auto;
   padding-right: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.student-ai-history-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .student-ai-history-item {
@@ -2146,7 +2296,7 @@ onBeforeUnmount(() => {
   }
 
   .student-ai-chat-card {
-    height: 640px;
+    height: 580px;
   }
 
   .student-ai-sidebar-shell,
@@ -2207,7 +2357,7 @@ onBeforeUnmount(() => {
   }
 
   .student-ai-chat-card {
-    height: 600px;
+    height: 540px;
   }
 }
 

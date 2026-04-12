@@ -4,11 +4,11 @@
       <div class="student-home-hero-main">
         <div class="student-home-identity">
           <el-avatar :size="76" class="student-home-avatar">
-            {{ heroStudentName.slice(0, 1) }}
+            {{ heroAvatarText }}
           </el-avatar>
 
           <div class="student-home-user-block">
-            <div class="student-home-greet">Hi，{{ heroStudentName }}同学</div>
+            <div class="student-home-greet">{{ heroStudentDisplayName }}</div>
             <div class="student-home-meta">{{ heroCollegeName }}</div>
           </div>
         </div>
@@ -36,7 +36,6 @@
           <div class="student-card-header">
             <div>
               <h2>课程入口</h2>
-              <p>首页课程总进度按各章节学习进度平均值计算。当前测试数据初始均为 0%。</p>
             </div>
             <div class="student-card-actions">
               <el-segmented v-model="activeFilter" :options="filterOptions" />
@@ -50,7 +49,7 @@
           </div>
           <div v-else class="student-course-grid">
             <article
-              v-for="lesson in filteredLessons"
+              v-for="lesson in paginatedLessons"
               :key="lesson.lessonId"
               class="student-course-item"
               @click="openLesson(lesson)"
@@ -71,6 +70,25 @@
               </div>
             </article>
           </div>
+          <div v-if="!loading && !loadError && filteredLessons.length > 6" class="student-course-pagination">
+            <button
+              type="button"
+              class="student-pagination-button"
+              :disabled="coursePage <= 1"
+              @click="changeCoursePage(coursePage - 1)"
+            >
+              上一页
+            </button>
+            <div class="student-course-pagination-meta">{{ coursePage }} / {{ totalCoursePages }}</div>
+            <button
+              type="button"
+              class="student-pagination-button"
+              :disabled="coursePage >= totalCoursePages"
+              @click="changeCoursePage(coursePage + 1)"
+            >
+              下一页
+            </button>
+          </div>
         </section>
       </div>
 
@@ -89,7 +107,6 @@
                 学习通知
                 <span v-if="unreadCount > 0" class="student-side-link-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
               </div>
-              <div class="student-side-link-desc">查看最新未读提醒与课程更新通知。</div>
             </div>
             <el-icon><ArrowRight /></el-icon>
 
@@ -128,7 +145,6 @@
           <div class="student-side-link" @click="showHelp = true">
             <div>
               <div class="student-side-link-title">使用说明</div>
-              <div class="student-side-link-desc">课程详情页默认进入知识学习，可在顶部切换 AI 互动室。</div>
             </div>
             <el-icon><ArrowRight /></el-icon>
           </div>
@@ -137,43 +153,29 @@
         <section class="student-side-card student-history-side-card">
           <div class="student-side-card-header">
             <h3>最近学习记录</h3>
-            <p>保留最近 3 条课程学习与问答记录。</p>
           </div>
 
-          <div v-if="historyLessons.length === 0" class="student-side-empty">
-            当前暂无学习记录。
+          <div v-if="recentChapterVisits.length === 0" class="student-side-empty">
+            暂无学习记录
           </div>
           <div v-else class="student-history-side-list">
-            <article
-              v-for="lesson in historyLessons"
-              :key="lesson.lessonId"
+            <button
+              v-for="item in recentChapterVisits"
+              :key="`${item.lessonId}-${item.chapterId}`"
               class="student-history-side-item"
+              type="button"
+              @click="openRecentChapter(item)"
             >
               <div class="student-history-side-main">
-                <div class="student-history-side-title">{{ lesson.courseName }}</div>
-                <div class="student-history-side-summary">{{ getHistorySummary(lesson) }}</div>
-                <div class="student-history-side-meta">{{ lesson.lastStudyAt || '最近已学习' }}</div>
+                <div class="student-history-side-title">{{ item.courseName }}</div>
+                <div class="student-history-side-summary">当前章节：{{ item.chapterTitle }}</div>
+                <div class="student-history-side-meta">{{ item.lastExitedAt || '最近已学习' }}</div>
               </div>
-              <el-button text type="primary" @click.stop="openHistory(lesson)">查看问答</el-button>
-            </article>
+            </button>
           </div>
         </section>
       </aside>
     </main>
-
-    <el-drawer v-model="historyVisible" title="问答记录" size="460px">
-      <div v-if="selectedHistory.length === 0" class="student-empty student-drawer-empty">当前课程暂无问答记录。</div>
-      <div v-else class="student-history-chat">
-        <div v-for="item in selectedHistory" :key="item.id" class="student-history-chat-item">
-          <div class="student-history-chat-question">Q：{{ item.question }}</div>
-          <div class="student-history-chat-answer">A：{{ item.answer }}</div>
-          <div class="student-history-chat-meta">
-            <span>{{ item.anchorTitle }}</span>
-            <span>理解程度：{{ item.understandingLabel }}</span>
-          </div>
-        </div>
-      </div>
-    </el-drawer>
 
     <el-dialog v-model="showHelp" title="学生端使用说明" width="620px">
       <div class="student-help-text">
@@ -195,11 +197,12 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import {
+  getStudentRecentChapters,
   getStudentLessonList,
   getStudentNotificationDetail,
   getStudentNotifications,
@@ -212,7 +215,6 @@ import {
   getPlatformToken,
   getStudentLessonListCache,
   getStudentProfile,
-  getStudentQaHistory,
   saveStudentLessonList,
   saveStudentProfile
 } from '@/utils/platform'
@@ -221,9 +223,8 @@ const router = useRouter()
 const loading = ref(true)
 const loadError = ref('')
 const activeFilter = ref('all')
-const historyVisible = ref(false)
+const coursePage = ref(1)
 const showHelp = ref(false)
-const selectedHistory = ref([])
 const notifications = ref([])
 const notificationPanelVisible = ref(false)
 const notificationDetailVisible = ref(false)
@@ -234,8 +235,8 @@ const supportsHover = ref(false)
 
 const fallbackProfile = {
   studentId: 'S2026001',
-  studentName: '左睿涛',
-  collegeName: '计算机与软件学院',
+  studentName: '',
+  collegeName: '',
   studyDays: 0
 }
 
@@ -244,6 +245,7 @@ const studentProfile = ref({
   ...getStudentProfile()
 })
 const lessonList = ref([])
+const recentChapterVisits = ref([])
 const filterOptions = [
   { label: '全部', value: 'all' },
   { label: '进行中', value: 'inProgress' },
@@ -252,8 +254,10 @@ const filterOptions = [
 
 let closeTimer = null
 
-const heroStudentName = computed(() => studentProfile.value.studentName || fallbackProfile.studentName)
-const heroCollegeName = computed(() => studentProfile.value.collegeName || fallbackProfile.collegeName)
+const heroStudentName = computed(() => String(studentProfile.value.studentName || '').trim())
+const heroAvatarText = computed(() => heroStudentName.value.slice(0, 1) || '')
+const heroStudentDisplayName = computed(() => (heroStudentName.value ? `${heroStudentName.value}同学` : ''))
+const heroCollegeName = computed(() => String(studentProfile.value.collegeName || '').trim())
 
 const COURSE_THEME_MAP = [
   {
@@ -484,12 +488,11 @@ const filteredLessons = computed(() => {
   return lessonList.value.filter((item) => item.status === activeFilter.value)
 })
 
-const historyLessons = computed(() => {
-  return [...lessonList.value]
-    .sort((a, b) => new Date(b.lastStudyAt || 0) - new Date(a.lastStudyAt || 0))
-    .slice(0, 3)
+const totalCoursePages = computed(() => Math.max(1, Math.ceil(filteredLessons.value.length / 6)))
+const paginatedLessons = computed(() => {
+  const start = (coursePage.value - 1) * 6
+  return filteredLessons.value.slice(start, start + 6)
 })
-
 async function bootstrapStudent() {
   loading.value = true
   loadError.value = ''
@@ -526,11 +529,35 @@ async function bootstrapStudent() {
       ...fallbackProfile,
       ...studentProfile.value
     }
-    lessonList.value = []
-    loadError.value = error?.msg || '课程数据加载失败'
-    ElMessage.error(loadError.value)
+    const cachedLessons = (getStudentLessonListCache() || []).map(normalizeLesson)
+    if (cachedLessons.length > 0) {
+      lessonList.value = cachedLessons
+      loadError.value = ''
+    } else {
+      const fallbackLessons = getFrontendTestLessons().map(normalizeLesson)
+      lessonList.value = fallbackLessons
+      loadError.value = ''
+    }
+    ElMessage.error(error?.msg || '课程数据加载失败，已切换到本地演示数据')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadRecentChapterVisits() {
+  if (!studentProfile.value.studentId) {
+    recentChapterVisits.value = []
+    return
+  }
+
+  try {
+    const res = await getStudentRecentChapters({
+      studentId: studentProfile.value.studentId,
+      limit: 3
+    })
+    recentChapterVisits.value = res.data?.items || []
+  } catch (_error) {
+    recentChapterVisits.value = []
   }
 }
 
@@ -611,18 +638,38 @@ function openLesson(lesson) {
   router.push(`/student/player/${lesson.lessonId}`)
 }
 
-function openHistory(lesson) {
-  selectedHistory.value = getStudentQaHistory(lesson.lessonId)
-  historyVisible.value = true
+function openRecentChapter(item) {
+  router.push({
+    name: 'StudentKnowledgeLearning',
+    params: {
+      lessonId: item.lessonId,
+      sectionId: item.sectionId || ''
+    },
+    query: {
+      ...(getPlatformToken() ? { token: getPlatformToken() } : {}),
+      ...(item.chapterId ? { chapterId: item.chapterId } : {}),
+      ...(item.pageNo ? { pageNo: String(item.pageNo) } : {})
+    }
+  })
 }
 
 function getLessonProgress(lesson) {
   return calculateLessonProgress(lesson)
 }
 
-function getHistorySummary(lesson) {
-  return `当前章节 ${lesson.currentChapter} · 进度 ${getLessonProgress(lesson)}% · 问答 ${lesson.questionCount || 0} 条`
+function changeCoursePage(page) {
+  coursePage.value = Math.min(Math.max(1, page), totalCoursePages.value)
 }
+
+watch(activeFilter, () => {
+  coursePage.value = 1
+})
+
+watch(totalCoursePages, (value) => {
+  if (coursePage.value > value) {
+    coursePage.value = value
+  }
+})
 
 onMounted(async () => {
   supportsHover.value = window.matchMedia('(hover: hover)').matches
@@ -635,6 +682,7 @@ onMounted(async () => {
 
   await bootstrapStudent()
   await loadNotifications()
+  await loadRecentChapterVisits()
 })
 
 onBeforeUnmount(() => {
@@ -727,7 +775,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 24px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .student-home-main {
@@ -751,6 +799,12 @@ onBeforeUnmount(() => {
   padding: 26px 28px;
 }
 
+.student-course-card {
+  min-height: 806px;
+  display: flex;
+  flex-direction: column;
+}
+
 .student-card-header {
   display: flex;
   justify-content: space-between;
@@ -765,13 +819,6 @@ onBeforeUnmount(() => {
   color: #1a2b57;
   font-size: 26px;
   font-weight: 600;
-}
-
-.student-card-header p {
-  margin: 10px 0 0;
-  color: #7a86a0;
-  font-size: 14px;
-  line-height: 1.8;
 }
 
 .student-card-actions {
@@ -795,7 +842,8 @@ onBeforeUnmount(() => {
 .student-course-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 16px;
   align-items: stretch;
 }
 
@@ -808,7 +856,7 @@ onBeforeUnmount(() => {
   background: #fff;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  height: 374px;
+  height: 318px;
 }
 
 .student-course-item:hover {
@@ -818,7 +866,7 @@ onBeforeUnmount(() => {
 }
 
 .student-course-cover {
-  height: 168px;
+  height: 136px;
   position: relative;
   background-color: #eef4fc;
   background-position: center;
@@ -835,23 +883,23 @@ onBeforeUnmount(() => {
 }
 
 .student-course-content {
-  padding: 20px;
+  padding: 16px 18px;
   display: flex;
   flex: 1;
   flex-direction: column;
 }
 
 .student-course-title {
-  font-size: 19px;
+  font-size: 17px;
   color: #1c2a52;
-  line-height: 1.5;
-  min-height: 56px;
+  line-height: 1.45;
+  min-height: 48px;
 }
 
 .student-course-teacher {
-  margin-top: 10px;
+  margin-top: 8px;
   color: #7f8aa2;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .student-course-meta-row,
@@ -859,9 +907,9 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 10px;
   color: #6b7793;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .student-course-meta-row strong,
@@ -873,22 +921,56 @@ onBeforeUnmount(() => {
 
 .student-course-content :deep(.el-progress) {
   margin-top: auto;
+  padding-top: 10px;
+}
+
+.student-course-pagination {
+  margin-top: auto;
+  padding-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.student-pagination-button {
+  height: 34px;
+  min-width: 84px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid #d7e3f7;
+  background: #fff;
+  color: #315186;
+  font-size: 13px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.student-pagination-button:hover:not(:disabled) {
+  border-color: #a7c0ef;
+  background: #f7fbff;
+}
+
+.student-pagination-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.student-course-pagination-meta {
+  min-width: 72px;
+  text-align: center;
+  color: #6c7a97;
+  font-size: 13px;
 }
 
 .student-home-side {
   display: grid;
   gap: 24px;
+  grid-template-rows: auto 1fr;
 }
 
 .student-side-card-header h3 {
   margin: 0;
-}
-
-.student-side-card-header p {
-  margin: 10px 0 0;
-  color: #7b86a1;
-  font-size: 13px;
-  line-height: 1.7;
 }
 
 .student-side-link {
@@ -916,10 +998,7 @@ onBeforeUnmount(() => {
 }
 
 .student-side-link-desc {
-  margin-top: 8px;
-  color: #7b86a1;
-  font-size: 14px;
-  line-height: 1.7;
+  display: none;
 }
 
 .student-side-link-badge {
@@ -1081,58 +1160,78 @@ onBeforeUnmount(() => {
 
 .student-history-side-card {
   padding-top: 24px;
+  display: flex;
+  flex-direction: column;
 }
 
 .student-side-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-top: 18px;
-  padding: 18px 16px;
-  border-radius: 18px;
-  background: #fbfcff;
-  border: 1px dashed #d7e0f0;
   color: #8490aa;
-  font-size: 13px;
-  line-height: 1.8;
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: center;
 }
 
 .student-history-side-list {
   margin-top: 18px;
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 402px;
 }
 
 .student-history-side-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: start;
-  padding: 16px 0;
-  border-top: 1px solid #edf2f8;
+  display: block;
+  flex: 0 0 126px;
+  width: 100%;
+  min-height: 126px;
+  text-align: left;
+  padding: 18px 6px;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-.student-history-side-item:first-child {
-  padding-top: 0;
-  border-top: 0;
+.student-history-side-item + .student-history-side-item {
+  border-top: 1px solid #e9edf4;
+}
+
+.student-history-side-item:hover {
+  background: #f7faff;
+}
+
+.student-history-side-main {
+  display: grid;
+  align-content: center;
+  min-height: 100%;
 }
 
 .student-history-side-title {
   color: #1c2a52;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.5;
+  font-weight: 600;
 }
 
 .student-history-side-summary,
 .student-history-side-meta {
   color: #7f8aa2;
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .student-history-side-summary {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .student-history-side-meta {
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .student-notification-fade-enter-active,
@@ -1157,6 +1256,7 @@ onBeforeUnmount(() => {
 
   .student-course-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
   }
 
   .student-notification-panel {
@@ -1199,10 +1299,7 @@ onBeforeUnmount(() => {
 
   .student-course-grid {
     grid-template-columns: 1fr;
-  }
-
-  .student-history-side-item {
-    grid-template-columns: 1fr;
+    grid-template-rows: auto;
   }
 
   .student-notification-panel {
