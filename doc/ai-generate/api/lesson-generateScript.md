@@ -28,7 +28,7 @@
 - 若解析任务不存在或尚未完成，会直接返回错误；
 - 当前脚本段落会基于 `parse` 产出的 `CIR.nodes` 生成，而不是固定示例段落；
 - `sectionName`、`relatedChapterId`、`relatedPage`、`keyPoints` 会尽量继承解析结果中的真实结构；
-- 当前脚本仍保存在进程内 `_SCRIPT_STORE`，重启服务后会丢失。
+- 当前脚本主记录会持久化到数据库表 `script_records`，服务重启后仍可查询与更新。
 
 ## 对接约束
 - 首版可同步实现，批量或长耗时场景允许异步化。

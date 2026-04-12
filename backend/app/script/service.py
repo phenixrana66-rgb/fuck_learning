@@ -2,11 +2,11 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from backend.app.common.exceptions import ApiError
+from backend.app.courseware.schemas import ParseQueryData
 from backend.app.courseware.service import get_parse_task
 from backend.app.parser.schemas import ParseTaskStatus
+from backend.app.script.repository import clear_script_records, load_script, save_script
 from backend.app.script.schemas import GenerateScriptRequest, ScriptDetail, ScriptSection, ScriptSummary, UpdateScriptRequest
-
-_SCRIPT_STORE: dict[str, ScriptDetail] = {}
 
 
 def generate_script(payload: GenerateScriptRequest) -> ScriptSummary:
@@ -23,7 +23,7 @@ def generate_script(payload: GenerateScriptRequest) -> ScriptSummary:
         speechSpeed=payload.speechSpeed,
         scriptStructure=sections,
     )
-    _SCRIPT_STORE[script_id] = detail
+    save_script(detail)
     return ScriptSummary(
         scriptId=script_id,
         scriptStructure=sections,
@@ -33,7 +33,7 @@ def generate_script(payload: GenerateScriptRequest) -> ScriptSummary:
 
 
 def get_script(script_id: str) -> ScriptDetail:
-    script = _SCRIPT_STORE.get(script_id)
+    script = load_script(script_id)
     if not script:
         raise ApiError(code=404, msg="脚本不存在", status_code=404)
     return script
@@ -43,14 +43,15 @@ def update_script(script_id: str, payload: UpdateScriptRequest) -> ScriptDetail:
     script = get_script(script_id)
     script.scriptStructure = payload.scriptStructure
     script.version += 1
+    save_script(script)
     return script
 
 
 def clear_scripts() -> None:
-    _SCRIPT_STORE.clear()
+    clear_script_records()
 
 
-def _build_script_sections(parse_result, payload: GenerateScriptRequest) -> list[ScriptSection]:
+def _build_script_sections(parse_result: ParseQueryData, payload: GenerateScriptRequest) -> list[ScriptSection]:
     if parse_result.cir is None:
         raise ApiError(code=500, msg="解析结果缺少 CIR", status_code=500)
 

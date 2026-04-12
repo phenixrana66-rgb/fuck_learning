@@ -1,8 +1,10 @@
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from backend.app.cir.schemas import CIR, CirChapter, LessonNode
+from backend.app.common.db import configure_database_url, reset_database_url
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.schemas import ParseRequest
 from backend.app.courseware.service import create_parse_task, run_parse_task
@@ -16,9 +18,13 @@ from backend.app.tasks.service import clear_tasks
 
 
 class LessonServiceTestCase(unittest.TestCase):
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
+    parse_payload: ParseRequest | None = None
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        configure_task_storage(self.temp_dir.name)
+        configure_task_storage(Path(self.temp_dir.name) / "logs")
+        configure_database_url(f"sqlite+pysqlite:///{Path(self.temp_dir.name) / 'lesson-test.db'}")
         clear_tasks()
         clear_scripts()
         clear_lessons()
@@ -36,12 +42,16 @@ class LessonServiceTestCase(unittest.TestCase):
         clear_tasks()
         clear_scripts()
         clear_lessons()
+        reset_database_url()
         reset_task_storage()
+        assert self.temp_dir is not None
         self.temp_dir.cleanup()
 
     @patch("backend.app.courseware.service.build_cir")
     @patch("backend.app.courseware.service.parse_courseware")
     def test_generate_audio_publish_and_play_form_demo_chain(self, mock_parse_courseware, mock_build_cir) -> None:
+        parse_payload = self.parse_payload
+        assert parse_payload is not None
         mock_parse_courseware.return_value = (
             FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
@@ -60,8 +70,8 @@ class LessonServiceTestCase(unittest.TestCase):
                 )
             ],
         )
-        accepted = create_parse_task(self.parse_payload)
-        run_parse_task(accepted.parseId, self.parse_payload)
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
         script = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
@@ -109,6 +119,8 @@ class LessonServiceTestCase(unittest.TestCase):
     @patch("backend.app.courseware.service.build_cir")
     @patch("backend.app.courseware.service.parse_courseware")
     def test_publish_rejects_mismatched_courseware(self, mock_parse_courseware, mock_build_cir) -> None:
+        parse_payload = self.parse_payload
+        assert parse_payload is not None
         mock_parse_courseware.return_value = (
             FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
@@ -118,8 +130,8 @@ class LessonServiceTestCase(unittest.TestCase):
             title="人工智能导论",
             chapters=[CirChapter(chapterId="course-001-chap-001", chapterName="第一章", nodes=[LessonNode(nodeId="node-01-01", nodeName="什么是人工智能", pageRefs=[1], keyPoints=[], summary="介绍人工智能。")])],
         )
-        accepted = create_parse_task(self.parse_payload)
-        run_parse_task(accepted.parseId, self.parse_payload)
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
         script = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
