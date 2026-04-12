@@ -19,6 +19,7 @@ temp/
 .env.development.local
 .env.test.local
 .env.production.local
+config.local.py
 node_modules/
 dist/
 __pycache__/
