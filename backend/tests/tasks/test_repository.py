@@ -2,8 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from backend.app.common.db import configure_database_url, reset_database_url
 from backend.app.tasks.repository import (
     append_task_log,
+    clear_task_records,
     clear_task_storage_files,
     configure_task_storage,
     get_task_log_path,
@@ -16,17 +18,26 @@ from backend.app.tasks.schemas import TaskRecord
 
 
 class TaskRepositoryTestCase(unittest.TestCase):
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
+    log_root: Path | None = None
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        configure_task_storage(self.temp_dir.name)
+        self.log_root = Path(self.temp_dir.name) / "logs"
+        configure_task_storage(self.log_root)
+        configure_database_url(f"sqlite+pysqlite:///{Path(self.temp_dir.name) / 'tasks-test.db'}")
+        clear_task_records()
         clear_task_storage_files()
 
     def tearDown(self) -> None:
+        clear_task_records()
         clear_task_storage_files()
+        reset_database_url()
         reset_task_storage()
+        assert self.temp_dir is not None
         self.temp_dir.cleanup()
 
-    def test_save_task_persists_record_to_disk(self) -> None:
+    def test_save_task_persists_record_to_database(self) -> None:
         task = TaskRecord(
             taskId="task-001",
             taskType="lesson.parse",
@@ -40,9 +51,12 @@ class TaskRepositoryTestCase(unittest.TestCase):
         save_task(task)
         reloaded = load_task("task-001")
 
-        self.assertTrue(get_tasks_file_path().exists())
         self.assertIsNotNone(reloaded)
+        assert reloaded is not None
         self.assertEqual(reloaded.requestId, "req-001")
+
+    def test_get_tasks_file_path_points_to_default_sqlite_artifact_name(self) -> None:
+        self.assertEqual(get_tasks_file_path().name, "tasks.sqlite3")
 
     def test_append_task_log_creates_deterministic_log_file(self) -> None:
         append_task_log("task-001", "[2026-04-08T12:00:00+00:00] 任务已创建")
@@ -66,4 +80,6 @@ class TaskRepositoryTestCase(unittest.TestCase):
 
         clear_task_storage_files()
 
-        self.assertFalse(Path(self.temp_dir.name).exists())
+        assert self.log_root is not None
+        self.assertTrue(self.log_root.exists())
+        self.assertFalse(get_task_log_path("task-001").exists())

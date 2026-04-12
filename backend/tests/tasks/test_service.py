@@ -1,6 +1,8 @@
 import unittest
 import tempfile
+from pathlib import Path
 
+from backend.app.common.db import configure_database_url, reset_database_url
 from backend.app.common.exceptions import ApiError
 from backend.app.tasks.repository import configure_task_storage, get_task_log_path, reset_task_storage
 from backend.app.tasks.service import (
@@ -15,14 +17,19 @@ from backend.app.tasks.service import (
 
 
 class TaskServiceTestCase(unittest.TestCase):
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        configure_task_storage(self.temp_dir.name)
+        configure_task_storage(Path(self.temp_dir.name) / "logs")
+        configure_database_url(f"sqlite+pysqlite:///{Path(self.temp_dir.name) / 'tasks-service.db'}")
         clear_tasks()
 
     def tearDown(self) -> None:
         clear_tasks()
+        reset_database_url()
         reset_task_storage()
+        assert self.temp_dir is not None
         self.temp_dir.cleanup()
 
     def test_create_task_uses_processing_as_initial_status(self) -> None:
@@ -60,6 +67,7 @@ class TaskServiceTestCase(unittest.TestCase):
 
         self.assertEqual(task.status, "failed")
         self.assertIsNotNone(task.error)
+        assert task.error is not None
         self.assertEqual(task.error.code, 400)
         self.assertEqual(task.error.data["parseId"], "task-001")
 
@@ -75,14 +83,17 @@ class TaskServiceTestCase(unittest.TestCase):
         task = get_task("task-001")
 
         self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.taskId, "task-001")
 
     def test_task_record_survives_repository_reload(self) -> None:
+        assert self.temp_dir is not None
         create_task("task-001", "lesson.parse", {"courseId": "course-001"})
 
         reset_task_storage()
-        configure_task_storage(self.temp_dir.name)
+        configure_task_storage(Path(self.temp_dir.name) / "logs")
         task = get_task("task-001")
 
         self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.taskId, "task-001")

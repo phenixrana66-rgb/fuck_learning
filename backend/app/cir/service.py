@@ -1,30 +1,33 @@
-from backend.app.cir.schemas import CIR, CirChapter, KnowledgeAnchor, LessonNode
-from backend.app.parser.schemas import StructurePreview
+from backend.app.cir.schemas import CIR, CirChapter, CirSlideContent, KnowledgeAnchor, LessonNode
+from backend.app.parser.schemas import ExtractedPresentation, ExtractedSlide, StructurePreview
 
 
-def build_cir(courseware_id: str, preview: StructurePreview) -> CIR:
+def build_cir(courseware_id: str, preview: StructurePreview, extracted: ExtractedPresentation) -> CIR:
     chapters: list[CirChapter] = []
     previous_node_id: str | None = None
+    slide_lookup = {slide.slideNumber: slide for slide in extracted.slides}
 
     for chapter_index, preview_chapter in enumerate(preview.chapters, start=1):
         nodes: list[LessonNode] = []
         for node_index, subchapter in enumerate(preview_chapter.subChapters, start=1):
             node_id = f"node-{chapter_index:02d}-{node_index:02d}"
             page_start = int(subchapter.pageRange.split("-")[0])
+            page_refs = _page_refs_from_range(subchapter.pageRange)
             anchors = [
                 KnowledgeAnchor(
                     anchorId=f"anchor-{chapter_index:02d}-{node_index:02d}",
                     label=subchapter.subChapterName,
                     pageRef=page_start,
                     nodeRef=node_id,
-                    sourceSpan=f"第{page_start}页至第{_page_refs_from_range(subchapter.pageRange)[-1]}页涉及{subchapter.subChapterName}的课件内容",
+                    sourceSpan=f"第{page_start}页至第{page_refs[-1]}页涉及{subchapter.subChapterName}的课件内容",
                 )
             ]
             nodes.append(
                 LessonNode(
                     nodeId=node_id,
                     nodeName=subchapter.subChapterName,
-                    pageRefs=_page_refs_from_range(subchapter.pageRange),
+                    pageRefs=page_refs,
+                    pageContents=_collect_page_contents(page_refs, slide_lookup),
                     keyPoints=[
                         f"理解{subchapter.subChapterName}的核心内容",
                         f"掌握与{subchapter.subChapterName}相关的重点知识",
@@ -59,3 +62,21 @@ def build_cir(courseware_id: str, preview: StructurePreview) -> CIR:
 def _page_refs_from_range(page_range: str) -> list[int]:
     start, end = page_range.split("-")
     return list(range(int(start), int(end) + 1))
+
+
+def _collect_page_contents(page_refs: list[int], slide_lookup: dict[int, ExtractedSlide]) -> list[CirSlideContent]:
+    page_contents: list[CirSlideContent] = []
+    for page_ref in page_refs:
+        slide = slide_lookup.get(page_ref)
+        if slide is None:
+            continue
+        page_contents.append(
+            CirSlideContent(
+                slideNumber=slide.slideNumber,
+                title=slide.title,
+                bodyTexts=slide.bodyTexts,
+                tableTexts=slide.tableTexts,
+                notes=slide.notes,
+            )
+        )
+    return page_contents

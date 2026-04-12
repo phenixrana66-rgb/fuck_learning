@@ -11,10 +11,19 @@ class KnowledgeAnchor(AppBaseModel):
     sourceSpan: str
 
 
+class CirSlideContent(AppBaseModel):
+    slideNumber: int
+    title: str | None = None
+    bodyTexts: list[str] = Field(default_factory=list)
+    tableTexts: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
 class LessonNode(AppBaseModel):
     nodeId: str
     nodeName: str
     pageRefs: list[int] = Field(default_factory=list)
+    pageContents: list[CirSlideContent] = Field(default_factory=list)
     keyPoints: list[str] = Field(default_factory=list)
     summary: str
     anchors: list[KnowledgeAnchor] = Field(default_factory=list)

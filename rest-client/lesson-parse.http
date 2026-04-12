@@ -1,5 +1,5 @@
 @baseUrl = http://127.0.0.1:8000
-@parseId = parse20260406000000000000
+@parseId = parse20260412105250938ad9
 
 ### 创建 PPT 解析任务（接口 fileType 仍传 "ppt"，但当前 demo 只接受 .pptx 文件）
 POST {{baseUrl}}/api/v1/lesson/parse

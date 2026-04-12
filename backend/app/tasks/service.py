@@ -1,14 +1,15 @@
 from datetime import UTC, datetime
+from typing import Any
 
 from backend.app.common.exceptions import ApiError
-from backend.app.tasks.repository import append_task_log, clear_task_storage_files, load_task, save_task
+from backend.app.tasks.repository import append_task_log, clear_task_records, clear_task_storage_files, load_task, save_task
 from backend.app.tasks.schemas import TaskError, TaskRecord
 
 
 def create_task(
     task_id: str,
     task_type: str,
-    payload: dict,
+    payload: dict[str, Any],
     progress_percent: int = 0,
     request_id: str | None = None,
 ) -> TaskRecord:
@@ -43,7 +44,7 @@ def mark_task_processing(task_id: str, progress_percent: int) -> TaskRecord:
     return upsert_task(task)
 
 
-def mark_task_completed(task_id: str, result: dict, progress_percent: int = 100) -> TaskRecord:
+def mark_task_completed(task_id: str, result: dict[str, Any], progress_percent: int = 100) -> TaskRecord:
     task = require_task(task_id)
     task.status = "completed"
     task.progressPercent = progress_percent
@@ -55,7 +56,7 @@ def mark_task_completed(task_id: str, result: dict, progress_percent: int = 100)
     return upsert_task(task)
 
 
-def mark_task_failed(task_id: str, code: int | None, msg: str, data: dict | None = None) -> TaskRecord:
+def mark_task_failed(task_id: str, code: int | None, msg: str, data: dict[str, Any] | None = None) -> TaskRecord:
     task = require_task(task_id)
     task.status = "failed"
     task.error = TaskError(code=code, msg=msg, data=data or {})
@@ -77,6 +78,7 @@ def require_task(task_id: str) -> TaskRecord:
 
 
 def clear_tasks() -> None:
+    clear_task_records()
     clear_task_storage_files()
 
 
