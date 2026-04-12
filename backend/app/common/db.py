@@ -7,13 +7,14 @@ from typing import Any
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.bootstrap import bootstrap_backend_common
 from backend.app.common.config import get_settings
 
+bootstrap_backend_common()
 
-class Base(DeclarativeBase):
-    pass
+from chaoxing_db.base import Base
 
 
 _database_url_override: str | None = None
@@ -110,6 +111,15 @@ def session_scope() -> Generator[Session, None, None]:
         session.close()
 
 
+def get_db() -> Generator[Session, None, None]:
+    init_db()
+    session = get_session_factory()()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 def _reset_engine_state() -> None:
     global _engine, _session_factory, _schema_initialized
     if _engine is not None:
@@ -120,5 +130,4 @@ def _reset_engine_state() -> None:
 
 
 def _load_model_modules() -> None:
-    import_module("backend.app.tasks.models")
-    import_module("backend.app.script.models")
+    import_module("backend.app.common.model_registry")

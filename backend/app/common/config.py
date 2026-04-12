@@ -19,6 +19,10 @@ class Settings(BaseModel):
     db_password: str = "123456"
     db_name: str = "chaoxing_ai_course"
     db_echo: bool = False
+    static_key: str = "chaoxing-ai-static-key"
+    mock_mode: bool = True
+    teacher_test_platform_token: str = "test_token_001"
+    default_audio_url: str = "https://www.w3schools.com/html/horse.mp3"
     llm_api_base_url: str = "http://10.195.20.215:13010/v1"
     llm_api_key: str | None = None
     llm_model: str = "gpt-5.1-codex-mini"
@@ -49,6 +53,12 @@ def get_settings() -> Settings:
         db_password=getenv("A12_DB_PASSWORD", str(merged_defaults["db_password"])),
         db_name=getenv("A12_DB_NAME", str(merged_defaults["db_name"])),
         db_echo=_getenv_bool("A12_DB_ECHO", bool(merged_defaults["db_echo"])),
+        static_key=getenv("A12_STATIC_KEY", str(merged_defaults["static_key"])),
+        mock_mode=_getenv_bool("A12_MOCK_MODE", bool(merged_defaults["mock_mode"])),
+        teacher_test_platform_token=getenv(
+            "A12_TEACHER_TEST_PLATFORM_TOKEN", str(merged_defaults["teacher_test_platform_token"])
+        ),
+        default_audio_url=getenv("A12_DEFAULT_AUDIO_URL", str(merged_defaults["default_audio_url"])),
         llm_api_base_url=getenv("A12_LLM_API_BASE_URL", str(merged_defaults["llm_api_base_url"])),
         llm_api_key=getenv("A12_LLM_API_KEY", _get_optional_str(merged_defaults["llm_api_key"])),
         llm_model=getenv("A12_LLM_MODEL", str(merged_defaults["llm_model"])),
