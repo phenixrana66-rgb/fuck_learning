@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DECIMAL, DateTime, Enum, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+JsonValue = dict[str, Any] | list[Any]
 
 
 class StudentLessonProgress(Base):
@@ -20,7 +23,7 @@ class StudentLessonProgress(Base):
     current_unit_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_units.id"))
     current_section_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_sections.id"))
     current_anchor_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_section_anchors.id"))
-    last_page_no: Mapped[int | None]
+    last_page_no: Mapped[int | None] = mapped_column(nullable=True)
     last_operate_time: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -36,7 +39,7 @@ class StudentSectionProgress(Base):
     unit_id: Mapped[int] = mapped_column(ForeignKey("lesson_units.id"), nullable=False)
     section_id: Mapped[int] = mapped_column(ForeignKey("lesson_sections.id"), nullable=False)
     current_anchor_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_section_anchors.id"))
-    last_page_no: Mapped[int | None]
+    last_page_no: Mapped[int | None] = mapped_column(nullable=True)
     progress_percent: Mapped[float] = mapped_column(DECIMAL(5, 2), default=0.00, nullable=False)
     mastery_percent: Mapped[float] = mapped_column(DECIMAL(5, 2), default=0.00, nullable=False)
     understanding_level: Mapped[str | None] = mapped_column(Enum("none", "partial", "full", name="section_understanding_level"))
@@ -76,8 +79,8 @@ class ResumeRecord(Base):
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), nullable=False)
     section_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_sections.id"))
     anchor_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_section_anchors.id"))
-    page_no: Mapped[int | None]
-    resume_time_sec: Mapped[int | None]
+    page_no: Mapped[int | None] = mapped_column(nullable=True)
+    resume_time_sec: Mapped[int | None] = mapped_column(nullable=True)
     resume_type: Mapped[str] = mapped_column(Enum("auto", "manual", "ai_recommended", name="resume_type"), default="auto", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
@@ -91,7 +94,7 @@ class ProgressTrackLog(Base):
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), nullable=False)
     section_id: Mapped[int] = mapped_column(ForeignKey("lesson_sections.id"), nullable=False)
     anchor_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_section_anchors.id"))
-    page_no: Mapped[int | None]
+    page_no: Mapped[int | None] = mapped_column(nullable=True)
     qa_answer_id: Mapped[int | None] = mapped_column(ForeignKey("qa_answers.id"))
     track_source: Mapped[str] = mapped_column(
         Enum("page_read", "qa", "practice", "manual", name="progress_track_source"), default="page_read", nullable=False
@@ -115,10 +118,10 @@ class ProgressAdjustRecord(Base):
         Enum("keep", "review", "advance", "supplement", name="progress_adjust_type"), default="keep", nullable=False
     )
     continue_section_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_sections.id"))
-    recommended_page_no: Mapped[int | None]
+    recommended_page_no: Mapped[int | None] = mapped_column(nullable=True)
     recommended_anchor_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_section_anchors.id"))
     supplement_content: Mapped[str | None] = mapped_column(Text)
-    adjust_payload: Mapped[dict | list | None] = mapped_column(JSON)
+    adjust_payload: Mapped[JsonValue | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 
@@ -140,5 +143,5 @@ class StudentSectionMasteryLog(Base):
     qa_contribution: Mapped[float] = mapped_column(DECIMAL(5, 2), default=0.00, nullable=False)
     final_mastery_percent: Mapped[float] = mapped_column(DECIMAL(5, 2), default=0.00, nullable=False)
     rule_version: Mapped[str] = mapped_column(String(32), default="v1", nullable=False)
-    detail_json: Mapped[dict | list | None] = mapped_column(JSON)
+    detail_json: Mapped[JsonValue | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)

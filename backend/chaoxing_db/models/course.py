@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DECIMAL, DateTime, Enum, ForeignKey, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+if TYPE_CHECKING:
+    from .lesson import Lesson
+    from .platform import Platform, School, User
+    from .practice import ChapterPractice
+    from .teacher_content import ChapterParseTask, ChapterPptAsset, ChapterScript
+
+JsonValue = dict[str, Any] | list[Any]
 
 
 class Course(Base):
@@ -17,7 +26,7 @@ class Course(Base):
     school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False)
     term: Mapped[str | None] = mapped_column(String(32))
     credit: Mapped[float | None] = mapped_column(DECIMAL(4, 1))
-    period: Mapped[int | None]
+    period: Mapped[int | None] = mapped_column(nullable=True)
     course_cover_url: Mapped[str | None] = mapped_column(String(255))
     course_status: Mapped[str] = mapped_column(
         Enum("draft", "published", "archived", name="course_status"), default="draft", nullable=False
@@ -42,7 +51,7 @@ class CoursePlatformBinding(Base):
     platform_id: Mapped[int] = mapped_column(ForeignKey("platforms.id"), nullable=False)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False)
     external_course_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    raw_payload: Mapped[dict | list | None] = mapped_column(JSON)
+    raw_payload: Mapped[JsonValue | None] = mapped_column(JSON)
     sync_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     platform: Mapped["Platform"] = relationship(back_populates="course_bindings")

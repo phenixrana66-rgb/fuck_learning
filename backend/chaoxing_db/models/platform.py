@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+if TYPE_CHECKING:
+    from .course import Course, CourseClass, CourseMember, CoursePlatformBinding
+
+JsonValue = dict[str, Any] | list[Any]
 
 
 class Platform(Base):
@@ -68,8 +74,8 @@ class UserPlatformBinding(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     external_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
     external_role: Mapped[str] = mapped_column(String(16), nullable=False)
-    related_course_ids: Mapped[dict | list | None] = mapped_column(JSON)
-    raw_payload: Mapped[dict | list | None] = mapped_column(JSON)
+    related_course_ids: Mapped[JsonValue | None] = mapped_column(JSON)
+    raw_payload: Mapped[JsonValue | None] = mapped_column(JSON)
     sync_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     platform: Mapped["Platform"] = relationship(back_populates="user_bindings")

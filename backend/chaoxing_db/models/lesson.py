@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+if TYPE_CHECKING:
+    from .course import Course
 
 
 class Lesson(Base):
@@ -80,7 +84,7 @@ class LessonSectionPage(Base):
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), nullable=False)
     section_id: Mapped[int] = mapped_column(ForeignKey("lesson_sections.id"), nullable=False)
     source_ppt_asset_id: Mapped[int | None] = mapped_column(ForeignKey("chapter_ppt_assets.id"))
-    source_page_no: Mapped[int | None]
+    source_page_no: Mapped[int | None] = mapped_column(nullable=True)
     page_no: Mapped[int] = mapped_column(nullable=False)
     page_title: Mapped[str | None] = mapped_column(String(255))
     page_summary: Mapped[str | None] = mapped_column(Text)
@@ -101,8 +105,8 @@ class LessonSectionAnchor(Base):
     lesson_page_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_section_pages.id"))
     anchor_code: Mapped[str] = mapped_column(String(64), nullable=False)
     anchor_title: Mapped[str] = mapped_column(String(255), nullable=False)
-    page_no: Mapped[int | None]
-    start_time_sec: Mapped[int | None]
+    page_no: Mapped[int | None] = mapped_column(nullable=True)
+    start_time_sec: Mapped[int | None] = mapped_column(nullable=True)
     sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
 
     section: Mapped["LessonSection"] = relationship(back_populates="anchors")

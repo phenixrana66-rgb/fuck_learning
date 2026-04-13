@@ -3,14 +3,14 @@ from __future__ import annotations
 import base64
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from backend.app.common.db import session_scope
 from backend.app.common.config import get_settings
-from backend.app.courseware.service import execute_parse_pipeline
-from chaoxing_db.models import (
+from backend.chaoxing_db.models import (
     ChapterAudioAsset,
     ChapterKnowledgeNode,
     ChapterParseResult,
@@ -29,11 +29,13 @@ from chaoxing_db.models import (
     User,
     UserPlatformBinding,
 )
+from backend.app.courseware.service import execute_parse_pipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_ROOT = PROJECT_ROOT / "examples"
 MOCK_REMOTE_PREFIX = "/mock-remote/examples"
 SCRIPT_LABELS = {"standard": "标准", "detail": "详细", "simple": "简洁"}
+JsonDict = dict[str, Any]
 
 
 def _get_teacher_by_token(db: Session, token: str | None) -> User:
@@ -48,7 +50,7 @@ def _get_teacher_by_token(db: Session, token: str | None) -> User:
     raise PermissionError("token 无效")
 
 
-def sync_user(db: Session, token: str | None) -> dict:
+def sync_user(db: Session, token: str | None) -> JsonDict:
     teacher = _get_teacher_by_token(db, token)
     school = db.query(School).filter(School.id == teacher.school_id).first()
     binding = (
@@ -70,7 +72,7 @@ def require_teacher(db: Session, token: str | None) -> User:
     return _get_teacher_by_token(db, token)
 
 
-def sync_courses(db: Session, teacher: User) -> dict:
+def sync_courses(db: Session, teacher: User) -> JsonDict:
     memberships = (
         db.query(CourseMember)
         .filter(CourseMember.user_id == teacher.id, CourseMember.member_role == "teacher")
@@ -249,7 +251,7 @@ def _ensure_parse_result(db: Session, task: ChapterParseTask, file_info, preview
     return result
 
 
-def _build_tree(db: Session, task_id: int) -> list[dict]:
+def _build_tree(db: Session, task_id: int) -> list[JsonDict]:
     nodes = (
         db.query(ChapterKnowledgeNode)
         .filter(ChapterKnowledgeNode.parse_task_id == task_id)
@@ -259,7 +261,7 @@ def _build_tree(db: Session, task_id: int) -> list[dict]:
     return [{"id": node.node_code, "name": node.node_name, "children": []} for node in nodes]
 
 
-def upload_parse(db: Session, teacher: User, course_id: str, file_name: str, file_content: str | None, base_url: str) -> dict:
+def upload_parse(db: Session, teacher: User, course_id: str, file_name: str, file_content: str | None, base_url: str) -> JsonDict:
     course = _resolve_course(db, course_id)
     if not course:
         raise ValueError("courseId 不能为空或课程不存在")
@@ -325,7 +327,7 @@ def run_teacher_parse_task(parse_id: str) -> None:
             db.commit()
 
 
-def get_parse_status(db: Session, parse_id: str) -> dict:
+def get_parse_status(db: Session, parse_id: str) -> JsonDict:
     task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == parse_id).first()
     if not task:
         raise LookupError("parseId 不存在")
@@ -341,7 +343,7 @@ def _build_script_content(script_type: str, chapter_name: str, parse_no: str) ->
     return f"《{label}讲稿》\nparseId：{parse_no}\n\n本节内容围绕《{chapter_name}》展开。\n先介绍核心背景与学习目标，再讲解关键概念、典型问题和课堂总结。"
 
 
-def generate_script(db: Session, parse_id: str, script_type: str) -> dict:
+def generate_script(db: Session, parse_id: str, script_type: str) -> JsonDict:
     task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == parse_id).first()
     if not task:
         raise LookupError("parseId 不存在")
@@ -364,7 +366,7 @@ def generate_script(db: Session, parse_id: str, script_type: str) -> dict:
     return {"scriptId": script.script_no, "parseId": parse_id, "scriptType": script_type, "scriptContent": content, "status": "success"}
 
 
-def generate_audio(db: Session, script_id: str, voice_type: str) -> dict:
+def generate_audio(db: Session, script_id: str, voice_type: str) -> JsonDict:
     script = db.query(ChapterScript).filter(ChapterScript.script_no == script_id).first()
     if not script:
         raise LookupError("scriptId 不存在")

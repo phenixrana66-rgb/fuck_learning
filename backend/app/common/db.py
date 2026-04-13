@@ -14,7 +14,7 @@ from backend.app.common.config import get_settings
 
 bootstrap_backend_common()
 
-from chaoxing_db.base import Base
+from backend.chaoxing_db.base import Base
 
 
 _database_url_override: str | None = None

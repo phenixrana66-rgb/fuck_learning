@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session, joinedload
 
 from backend.app.student_runtime.db_learning_service import _find_lesson, _find_section, _find_section_anchor, _resolve_user_id
-from chaoxing_db.models import QAAnswer, QAMessage, QAMessageKnowledgeRef, QASession
+from backend.chaoxing_db.models import QAAnswer, QAMessage, QAMessageKnowledgeRef, QASession
 
 QA_UNDERSTANDING_LEVEL_MAP = {"未理解": "none", "部分理解": "partial", "完全理解": "full", "none": "none", "partial": "partial", "full": "full"}
 QA_UNDERSTANDING_LABEL_MAP = {"none": "未理解", "partial": "部分理解", "full": "完全理解"}
+JsonDict = dict[str, Any]
 
 
 def _timestamp_ms(value: datetime | None) -> int:
@@ -43,7 +45,7 @@ def _resolve_answer_anchor_title(db: Session, answer: QAAnswer | None, section_n
     if not answer:
         return section_name
     if answer.recommended_anchor_id:
-        from chaoxing_db.models import LessonSectionAnchor
+        from backend.chaoxing_db.models import LessonSectionAnchor
 
         anchor = db.query(LessonSectionAnchor).filter(LessonSectionAnchor.id == answer.recommended_anchor_id).first()
         if anchor and anchor.anchor_title:
@@ -51,7 +53,7 @@ def _resolve_answer_anchor_title(db: Session, answer: QAAnswer | None, section_n
     return section_name
 
 
-def get_qa_sessions(db: Session, student_identifier, lesson_identifier):
+def get_qa_sessions(db: Session, student_identifier, lesson_identifier) -> list[JsonDict]:
     lesson = _find_lesson(db, lesson_identifier)
     student_db_id = _resolve_user_id(db, student_identifier)
     if not lesson or not student_db_id:
@@ -59,18 +61,19 @@ def get_qa_sessions(db: Session, student_identifier, lesson_identifier):
     sessions = db.query(QASession).options(joinedload(QASession.messages), joinedload(QASession.answers).joinedload(QAAnswer.knowledge_refs)).filter(QASession.student_id == student_db_id, QASession.lesson_id == lesson.id).order_by(QASession.updated_at.desc(), QASession.id.desc()).all()
     result = []
     for session in sessions:
-        section_name = _find_section(db, lesson.id, session.current_section_id).section_name if session.current_section_id else (lesson.course.course_name if lesson.course else "")
+        current_section = _find_section(db, lesson.id, session.current_section_id) if session.current_section_id else None
+        section_name = current_section.section_name if current_section else (lesson.course.course_name if lesson.course else "")
         messages = sorted(session.messages or [], key=lambda item: (item.created_at or datetime.min, item.id))
         answers_by_message_id = {answer.assistant_message_id: answer for answer in (session.answers or [])}
         first_question = next((item.message_content for item in messages if item.role == "user"), "")
-        payload_messages = []
+        payload_messages: list[JsonDict] = []
         for message in messages:
-            item = {"id": f"db-msg-{message.id}", "role": message.role, "content": message.message_content, "createdAt": _timestamp_ms(message.created_at)}
+            item: JsonDict = {"id": f"db-msg-{message.id}", "role": message.role, "content": message.message_content, "createdAt": _timestamp_ms(message.created_at)}
             if message.role == "assistant":
                 answer = answers_by_message_id.get(message.id)
                 item["relatedPoints"] = [ref.knowledge_name for ref in sorted(answer.knowledge_refs or [], key=lambda row: (row.sort_no, row.id))] if answer else []
                 item["understandingLevel"] = answer.understanding_level if answer else None
-                item["understandingLabel"] = QA_UNDERSTANDING_LABEL_MAP.get(answer.understanding_level) if answer else None
+                item["understandingLabel"] = QA_UNDERSTANDING_LABEL_MAP.get(answer.understanding_level, "") if answer and answer.understanding_level else None
                 item["anchorTitle"] = _resolve_answer_anchor_title(db, answer, section_name)
                 item["resumePageNo"] = answer.recommended_page_no if answer else None
             payload_messages.append(item)
@@ -78,7 +81,7 @@ def get_qa_sessions(db: Session, student_identifier, lesson_identifier):
     return result
 
 
-def save_qa_session(db: Session, student_identifier, lesson_identifier, section_identifier, session_payload):
+def save_qa_session(db: Session, student_identifier, lesson_identifier, section_identifier, session_payload) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     student_db_id = _resolve_user_id(db, student_identifier)
     if not lesson or not student_db_id or not isinstance(session_payload, dict):

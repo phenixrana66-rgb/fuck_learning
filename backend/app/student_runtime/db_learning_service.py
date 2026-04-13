@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from chaoxing_db.models import ChapterPptAsset, ChapterParseResult, Lesson, LessonSection, LessonSectionAnchor, LessonSectionPage, LessonUnit, ProgressTrackLog, ResumeRecord, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionMasteryLog, StudentSectionProgress, User
+from backend.chaoxing_db.models import ChapterPptAsset, ChapterParseResult, Lesson, LessonSection, LessonSectionAnchor, LessonSectionPage, LessonUnit, ProgressTrackLog, ResumeRecord, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionMasteryLog, StudentSectionProgress, User
 
 UNDERSTANDING_LABELS = {"weak": "未理解", "partial": "部分理解", "complete": "完全理解"}
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PREVIEW_ROOT = PROJECT_ROOT / "public" / "lesson-previews"
+JsonDict = dict[str, Any]
 
 
 def _round_int(value) -> int:
@@ -60,7 +61,7 @@ def _find_teacher_name(db: Session, lesson: Lesson) -> str:
     return teacher.user_name if teacher else ""
 
 
-def get_student_profile_from_db(db: Session, student_identifier: str | int | None) -> dict | None:
+def get_student_profile_from_db(db: Session, student_identifier: str | int | None) -> JsonDict | None:
     student_db_id = _resolve_user_id(db, student_identifier)
     if not student_db_id:
         return None
@@ -152,13 +153,13 @@ def _find_section_anchor(section: LessonSection, page_no: int | None = None) -> 
     return eligible[-1] if eligible else anchors[0]
 
 
-def _build_db_chapter(section: LessonSection, unit_title: str, progress: StudentSectionProgress | None, fallback_page_no: int) -> dict:
+def _build_db_chapter(section: LessonSection, unit_title: str, progress: StudentSectionProgress | None, fallback_page_no: int) -> JsonDict:
     knowledge_points = [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))]
     return {"chapterId": f"db-section-{section.id}", "sectionId": str(section.id), "chapterTitle": section.section_name, "progressPercent": _round_int(progress.progress_percent if progress else 0), "masteryPercent": _round_int(progress.mastery_percent if progress else 0), "pageNo": fallback_page_no, "summary": section.section_summary or f"围绕“{section.section_name}”展开课件学习、知识导读与章节练习。", "knowledgePoints": knowledge_points[:3] or [section.section_name, unit_title, "核心概念"]}
 
 
-def enhance_player_with_db(db: Session, player: dict, student_id: str | int | None) -> dict:
-    player_copy = deepcopy(player or {})
+def enhance_player_with_db(db: Session, player: JsonDict, student_id: str | int | None) -> JsonDict:
+    player_copy = cast(JsonDict, deepcopy(player or {}))
     if not player_copy.get("lessonId"):
         return player_copy
     lesson = _find_lesson(db, player_copy.get("lessonId"))
@@ -166,19 +167,20 @@ def enhance_player_with_db(db: Session, player: dict, student_id: str | int | No
         return player_copy
     student_db_id = _resolve_user_id(db, student_id)
     progress_map = _get_section_progress_map(db, student_db_id, lesson.id)
-    units = player_copy.get("units", [])
+    units = cast(list[JsonDict], player_copy.get("units", []))
     max_page_no = 0
     for unit in units:
         for chapter in unit.get("chapters", []):
             max_page_no = max(max_page_no, int(chapter.get("pageNo") or 0))
-    unit_by_title = {unit.get("unitTitle"): unit for unit in units}
+    unit_by_title = {cast(str, unit.get("unitTitle", "")): unit for unit in units if isinstance(unit, dict)}
     for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id)):
         unit_payload = unit_by_title.get(unit.unit_title)
         if not unit_payload:
             unit_payload = {"unitId": f"db-unit-{unit.id}", "unitTitle": unit.unit_title, "chapters": []}
             units.append(unit_payload)
             unit_by_title[unit.unit_title] = unit_payload
-        chapters_by_title = {chapter.get("chapterTitle"): chapter for chapter in unit_payload.get("chapters", [])}
+        chapters = cast(list[JsonDict], unit_payload.setdefault("chapters", []))
+        chapters_by_title = {cast(str, chapter.get("chapterTitle", "")): chapter for chapter in chapters if isinstance(chapter, dict)}
         for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id)):
             max_page_no += 1
             progress = progress_map.get(section.id)
@@ -187,7 +189,7 @@ def enhance_player_with_db(db: Session, player: dict, student_id: str | int | No
             if existing:
                 existing.update(db_chapter)
             else:
-                unit_payload.setdefault("chapters", []).append(db_chapter)
+                chapters.append(db_chapter)
     chapters = [chapter for unit in units for chapter in unit.get("chapters", [])]
     player_copy["units"] = units
     player_copy["teacherName"] = _find_teacher_name(db, lesson) or player_copy.get("teacherName", "")
@@ -197,7 +199,7 @@ def enhance_player_with_db(db: Session, player: dict, student_id: str | int | No
     return player_copy
 
 
-def get_db_progress_state(db: Session, student_id: str | int | None, lesson_identifier: str | int | None) -> dict | None:
+def get_db_progress_state(db: Session, student_id: str | int | None, lesson_identifier: str | int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     student_db_id = _resolve_user_id(db, student_id)
     if not lesson or not student_db_id:
@@ -215,7 +217,7 @@ def get_db_progress_state(db: Session, student_id: str | int | None, lesson_iden
     return {"sectionId": str(lesson_progress.current_section_id) if lesson_progress.current_section_id else "", "anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else "", "pageNo": lesson_progress.last_page_no or (anchor.page_no if anchor else 1) or 1, "currentTime": (anchor.start_time_sec if anchor else 0) or 0, "progressPercent": _round_int(lesson_progress.total_progress), "understandingLevel": "partial", "weakPoints": []}
 
 
-def get_section_detail(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None) -> dict | None:
+def get_section_detail(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     if not lesson:
         return None
@@ -250,7 +252,7 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
     return {"lessonId": lesson.lesson_no, "lessonDbId": lesson.id, "courseName": lesson.course.course_name if lesson.course else lesson.lesson_name, "teacherName": teacher_name, "unitTitle": section.unit.unit_title if section.unit else "", "sectionId": str(section.id), "sectionTitle": section.section_name, "progressPercent": _round_int(progress.progress_percent if progress else 0), "masteryPercent": _round_int(progress.mastery_percent if progress else 0), "practicePercent": _round_int(practice_attempt.accuracy_percent if practice_attempt and practice_attempt.accuracy_percent is not None else 0), "currentPageNo": current_page_no, "aiGuideContent": ((parse_result.normalized_content if parse_result else None) or (parse_result.chapter_summary if parse_result else None) or section.section_summary or ""), "knowledgePoints": [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))], "pages": pages}
 
 
-def save_recent_chapter_visit(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None, page_no: int | None) -> dict | None:
+def save_recent_chapter_visit(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None, page_no: int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     student_db_id = _resolve_user_id(db, student_id)
     if not lesson or not student_db_id:
@@ -266,7 +268,7 @@ def save_recent_chapter_visit(db: Session, student_id: str | int | None, lesson_
     return {"lessonId": lesson.lesson_no, "sectionId": str(section.id), "pageNo": safe_page_no, "savedAt": resume_record.created_at.strftime("%Y-%m-%d %H:%M") if resume_record.created_at else ""}
 
 
-def get_recent_chapter_visits(db: Session, student_id: str | int | None, limit: int = 3) -> list[dict]:
+def get_recent_chapter_visits(db: Session, student_id: str | int | None, limit: int = 3) -> list[JsonDict]:
     student_db_id = _resolve_user_id(db, student_id)
     if not student_db_id:
         return []
@@ -296,7 +298,7 @@ def get_recent_chapter_visits(db: Session, student_id: str | int | None, limit: 
     return result
 
 
-def mark_page_read(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None, lesson_page_id: str | int | None, page_no: int | None) -> dict | None:
+def mark_page_read(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None, lesson_page_id: str | int | None, page_no: int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     student_db_id = _resolve_user_id(db, student_id)
     if not lesson or not student_db_id or section_identifier in (None, "") or lesson_page_id in (None, ""):
@@ -314,10 +316,10 @@ def mark_page_read(db: Session, student_id: str | int | None, lesson_identifier:
     now = datetime.now()
     progress_row = db.query(StudentPageProgress).filter(StudentPageProgress.student_id == student_db_id, StudentPageProgress.lesson_page_id == page.id).first()
     if not progress_row:
-        progress_row = StudentPageProgress(student_id=student_db_id, course_id=lesson.course_id, lesson_id=lesson.id, section_id=section.id, lesson_page_id=page.id, page_no=page.page_no, read_percent=Decimal("100.00"), is_completed=True, stay_seconds=0, first_read_at=now, last_read_at=now, completed_at=now)
+        progress_row = StudentPageProgress(student_id=student_db_id, course_id=lesson.course_id, lesson_id=lesson.id, section_id=section.id, lesson_page_id=page.id, page_no=page.page_no, read_percent=100.0, is_completed=True, stay_seconds=0, first_read_at=now, last_read_at=now, completed_at=now)
         db.add(progress_row)
     else:
-        progress_row.read_percent = Decimal("100.00")
+        progress_row.read_percent = 100.0
         progress_row.is_completed = True
         progress_row.last_read_at = now
         progress_row.completed_at = progress_row.completed_at or now
@@ -365,7 +367,7 @@ def mark_page_read(db: Session, student_id: str | int | None, lesson_identifier:
     return {"sectionId": str(section.id), "sectionTitle": section.section_name, "pageNo": page.page_no, "anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else "", "progressPercent": progress_percent, "masteryPercent": mastery_percent, "overallProgress": total_progress, "overallMastery": overall_mastery}
 
 
-def interact_with_section_context(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None, question: str, page_no: int | None) -> dict | None:
+def interact_with_section_context(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None, question: str, page_no: int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     if not lesson:
         return None

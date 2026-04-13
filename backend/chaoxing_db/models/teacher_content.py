@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+if TYPE_CHECKING:
+    from .course import CourseChapter
+
+JsonValue = dict[str, Any] | list[Any]
 
 
 class ChapterPptAsset(Base):
@@ -18,8 +24,8 @@ class ChapterPptAsset(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_type: Mapped[str] = mapped_column(Enum("ppt", "pptx", "pdf", name="ppt_asset_type"), nullable=False)
     file_url: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_size: Mapped[int | None]
-    page_count: Mapped[int | None]
+    file_size: Mapped[int | None] = mapped_column(nullable=True)
+    page_count: Mapped[int | None] = mapped_column(nullable=True)
     upload_status: Mapped[str] = mapped_column(
         Enum("uploaded", "parsing", "parsed", "failed", name="ppt_upload_status"), default="uploaded", nullable=False
     )
@@ -65,11 +71,11 @@ class ChapterParseResult(Base):
     chapter_id: Mapped[int] = mapped_column(ForeignKey("course_chapters.id"), nullable=False)
     ppt_asset_id: Mapped[int] = mapped_column(ForeignKey("chapter_ppt_assets.id"), nullable=False)
     chapter_summary: Mapped[str | None] = mapped_column(Text)
-    parsed_outline: Mapped[dict | list | None] = mapped_column(JSON)
-    key_points: Mapped[dict | list | None] = mapped_column(JSON)
-    formulas: Mapped[dict | list | None] = mapped_column(JSON)
-    charts: Mapped[dict | list | None] = mapped_column(JSON)
-    page_mapping: Mapped[dict | list | None] = mapped_column(JSON)
+    parsed_outline: Mapped[JsonValue | None] = mapped_column(JSON)
+    key_points: Mapped[JsonValue | None] = mapped_column(JSON)
+    formulas: Mapped[JsonValue | None] = mapped_column(JSON)
+    charts: Mapped[JsonValue | None] = mapped_column(JSON)
+    page_mapping: Mapped[JsonValue | None] = mapped_column(JSON)
     raw_llm_output: Mapped[str | None] = mapped_column(Text)
     normalized_content: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
@@ -93,8 +99,8 @@ class ChapterKnowledgeNode(Base):
     )
     level_no: Mapped[int] = mapped_column(default=1, nullable=False)
     is_key_point: Mapped[bool] = mapped_column(default=False, nullable=False)
-    page_start: Mapped[int | None]
-    page_end: Mapped[int | None]
+    page_start: Mapped[int | None] = mapped_column(nullable=True)
+    page_end: Mapped[int | None] = mapped_column(nullable=True)
     sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
 
     parse_task: Mapped["ChapterParseTask"] = relationship(back_populates="knowledge_nodes")
@@ -135,7 +141,7 @@ class ChapterScriptSection(Base):
     section_code: Mapped[str] = mapped_column(String(64), nullable=False)
     section_name: Mapped[str] = mapped_column(String(255), nullable=False)
     section_content: Mapped[str] = mapped_column(Text, nullable=False)
-    duration_sec: Mapped[int | None]
+    duration_sec: Mapped[int | None] = mapped_column(nullable=True)
     related_node_id: Mapped[int | None] = mapped_column(ForeignKey("chapter_knowledge_nodes.id"))
     related_page_range: Mapped[str | None] = mapped_column(String(64))
     sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -153,9 +159,9 @@ class ChapterAudioAsset(Base):
     voice_type: Mapped[str] = mapped_column(String(32), nullable=False)
     audio_format: Mapped[str] = mapped_column(String(16), default="mp3", nullable=False)
     audio_url: Mapped[str] = mapped_column(String(255), nullable=False)
-    total_duration_sec: Mapped[int | None]
-    file_size: Mapped[int | None]
-    bit_rate: Mapped[int | None]
+    total_duration_sec: Mapped[int | None] = mapped_column(nullable=True)
+    file_size: Mapped[int | None] = mapped_column(nullable=True)
+    bit_rate: Mapped[int | None] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(
         Enum("generated", "published", name="audio_asset_status"), default="generated", nullable=False
     )

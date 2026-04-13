@@ -34,7 +34,7 @@
 - 一个根目录 Vue / Vite 前端：`src/`
 - 一个统一 FastAPI 后端入口：`backend/app/main.py`
 - 一套共享 MySQL 主库：`chaoxing_ai_course`
-- 一套共享 ORM：`backend-common/chaoxing_db`
+- 一套共享 ORM：`backend/chaoxing_db`
 
 ### 1. 前端现状
 
@@ -72,18 +72,14 @@
 
 ### 5. 兼容入口与遗留目录
 
-以下目录当前保留，但已不是主运行时，只是兼容入口：
+学生、教师遗留 plugin 包装入口如仍存在，也已不是主运行时，只是待清理的兼容壳。
 
-- `student-ai-course/backend/student_plugin/app.py`
-- `teacher-ai-course/backend/teacher_plugin/app.py`
-
-它们现在导出的都是统一后的 `backend.app.main:app`。
+当前真实运行应始终以 `backend.app.main:app` 为准。
 
 仍需要留意的遗留项：
 
-- `student-ai-course/README.md` 仍保留旧的双后端启动口径
-- `teacher-ai-course/README.md` 仍保留旧的双后端启动口径
-- `teacher-ai-course/mock/server.js` 是旧 Node mock，不是当前默认运行时
+- 学生端与教师端旧目录已经删除，仓库只保留根目录统一后端
+- 旧 Node mock 已不属于当前默认运行时范围
 
 ## 四、当前统一后端迁移进度判断
 
@@ -94,14 +90,14 @@
 - 前端已经统一到根目录单一 Vite 工程
 - 后端已经统一到 `backend.app.main`
 - 学生 `/student-api/*` 与教师 `/api/v1/*` 两套路由已被单一后端承接
-- `backend-common` 已作为共享 ORM / 数据层接入统一后端
+- `backend/chaoxing_db` 已作为共享 ORM / 数据层接入统一后端
 - `task_records` 与 `script_records` 已形成真实数据库主记录落点
 
 ### 已完成但仍带兼容性质的部分
 
 - 教师端仍依赖 `compat/router.py` 承接旧接口语义
 - 学生端仍保留 `adapter.py` 作为 mock / 内存底座
-- 学生、教师旧 backend 目录仍存在，但已退化为兼容壳
+- 学生、教师旧 backend 目录即使保留，也只应视为待删除兼容壳
 
 ### 尚未完全收口的部分
 
@@ -123,7 +119,7 @@
 - 运行入口以 `backend.app.main:app` 为准
 - 学生接口前缀保持 `/student-api`
 - 教师接口前缀保持 `/api`
-- 根目录 `README.md` 与两个 plugin README 已基本反映统一后端口径
+- 根目录 `README.md` 应作为统一后端的主启动说明
 - `doc/ai-generate/` 下的其他文档若仍按旧的模块拆分理解仓库，应优先以代码与根 README 为准
 
 ## 六、如果下次继续开发，先读什么

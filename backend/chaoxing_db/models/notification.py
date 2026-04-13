@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+JsonValue = dict[str, Any] | list[Any]
 
 
 class Notification(Base):
@@ -49,6 +52,6 @@ class ApiCallLog(Base):
     role: Mapped[str | None] = mapped_column(String(16))
     api_path: Mapped[str] = mapped_column(String(255), nullable=False)
     status_code: Mapped[int] = mapped_column(nullable=False)
-    request_json: Mapped[dict | list | None] = mapped_column(JSON)
-    response_json: Mapped[dict | list | None] = mapped_column(JSON)
+    request_json: Mapped[JsonValue | None] = mapped_column(JSON)
+    response_json: Mapped[JsonValue | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)

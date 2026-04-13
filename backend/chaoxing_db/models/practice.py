@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DECIMAL, DateTime, Enum, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+if TYPE_CHECKING:
+    from .course import CourseChapter
+
+JsonValue = dict[str, Any] | list[Any]
 
 
 class ChapterPractice(Base):
@@ -24,7 +30,7 @@ class ChapterPractice(Base):
     )
     total_score: Mapped[float] = mapped_column(DECIMAL(8, 2), default=100.00, nullable=False)
     item_count: Mapped[int] = mapped_column(default=0, nullable=False)
-    time_limit_minutes: Mapped[int | None]
+    time_limit_minutes: Mapped[int | None] = mapped_column(nullable=True)
     publish_status: Mapped[str] = mapped_column(
         Enum("draft", "published", "closed", name="practice_publish_status"), default="draft", nullable=False
     )
@@ -49,8 +55,8 @@ class ChapterPracticeItem(Base):
         nullable=False,
     )
     stem: Mapped[str] = mapped_column(Text, nullable=False)
-    options_json: Mapped[dict | list | None] = mapped_column(JSON)
-    correct_answer_json: Mapped[dict | list | None] = mapped_column(JSON)
+    options_json: Mapped[JsonValue | None] = mapped_column(JSON)
+    correct_answer_json: Mapped[JsonValue | None] = mapped_column(JSON)
     analysis_text: Mapped[str | None] = mapped_column(Text)
     score: Mapped[float] = mapped_column(DECIMAL(8, 2), default=0.00, nullable=False)
     sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -71,9 +77,9 @@ class StudentPracticeAttempt(Base):
     section_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_sections.id"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime)
-    duration_seconds: Mapped[int | None]
+    duration_seconds: Mapped[int | None] = mapped_column(nullable=True)
     total_score: Mapped[float | None] = mapped_column(DECIMAL(8, 2))
-    correct_count: Mapped[int | None]
+    correct_count: Mapped[int | None] = mapped_column(nullable=True)
     accuracy_percent: Mapped[float | None] = mapped_column(DECIMAL(5, 2))
     grading_status: Mapped[str] = mapped_column(
         Enum("pending", "graded", name="practice_grading_status"), default="pending", nullable=False
@@ -94,9 +100,9 @@ class StudentPracticeAnswer(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     attempt_id: Mapped[int] = mapped_column(ForeignKey("student_practice_attempts.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("chapter_practice_items.id"), nullable=False)
-    student_answer_json: Mapped[dict | list | None] = mapped_column(JSON)
+    student_answer_json: Mapped[JsonValue | None] = mapped_column(JSON)
     answer_text: Mapped[str | None] = mapped_column(Text)
-    is_correct: Mapped[bool | None]
+    is_correct: Mapped[bool | None] = mapped_column(nullable=True)
     earned_score: Mapped[float | None] = mapped_column(DECIMAL(8, 2))
     teacher_comment: Mapped[str | None] = mapped_column(Text)
     graded_at: Mapped[datetime | None] = mapped_column(DateTime)

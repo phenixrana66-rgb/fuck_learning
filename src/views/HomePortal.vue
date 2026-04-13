@@ -46,7 +46,7 @@
         <ul class="portal-role-points">
           <li>默认进入学生首页</li>
           <li>自动附带 `student_demo_token_001`</li>
-          <li>依赖本地 Flask 学生后端</li>
+          <li>统一由根目录 FastAPI backend 提供接口</li>
         </ul>
         <RouterLink class="portal-link" to="/student/home?token=student_demo_token_001">
           打开学生端
@@ -62,7 +62,7 @@
         <ul class="portal-role-points">
           <li>先进入教师登录页</li>
           <li>仍由登录页输入或接收 token</li>
-          <li>根目录 `npm run dev` 会一并启动 mock</li>
+          <li>教师兼容接口也由同一个 backend 承接</li>
         </ul>
         <RouterLink class="portal-link" to="/teacher/login">
           打开教师端
@@ -88,8 +88,8 @@
         <div class="portal-step">
           <div class="portal-step-index">02</div>
           <div>
-            <h3>如需学生端，启动 Flask 后端</h3>
-            <code>cd student-ai-course/backend/student_plugin && python app.py</code>
+            <h3>启动统一 FastAPI 后端</h3>
+            <code>python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload</code>
           </div>
         </div>
 
@@ -104,11 +104,11 @@
 
       <div class="portal-notes">
         <div class="portal-note">
-          <span>学生端后端</span>
-          <strong>http://localhost:5000</strong>
+          <span>统一后端</span>
+          <strong>http://localhost:3001</strong>
         </div>
         <div class="portal-note">
-          <span>教师端 mock</span>
+          <span>教师兼容接口</span>
           <strong>http://localhost:3001</strong>
         </div>
         <div class="portal-note">

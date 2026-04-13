@@ -4,15 +4,13 @@
 
 - 前端：仓库根目录下的 Vite 项目
 - 统一后端入口：`backend.app.main`
-- 共享 ORM：`backend-common/chaoxing_db`
+- 共享 ORM：`backend/chaoxing_db`
 - 建表与测试数据：`docs/mysql建表.sql`、`docs/init_test_data.sql`
 
 ## 目录说明
 
 - `src/`：前端代码，学生端和教师端共用同一个 Vite 工程
-- `student-ai-course/backend/student_plugin/`：学生端兼容入口目录，当前复用统一 backend
-- `teacher-ai-course/backend/teacher_plugin/`：教师端兼容入口目录，当前复用统一 backend
-- `backend-common/chaoxing_db/`：共享 SQLAlchemy 模型、Session、Base
+- `backend/`：仓库唯一后端目录，包含 FastAPI 应用与共享 SQLAlchemy 模型
 - `public/lesson-previews/pressure-stability/`：压杆稳定章节的测试页图资源
 - `docs/mysql建表.sql`：MySQL 建表脚本
 - `docs/init_test_data.sql`：初始化测试数据脚本
@@ -89,10 +87,11 @@ cd D:\服务外包（学习通）\xuexitong\fuck_learning
 npm install
 ```
 
-### 1. 启动统一后端
+### 1. 安装后端依赖并启动统一后端
 
 ```powershell
 cd D:\服务外包（学习通）\xuexitong\fuck_learning
+pip install -r requirements.txt
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload
 ```
 
@@ -123,7 +122,7 @@ npm run dev:web
 
 ## 依赖更新后怎么启动
 
-如果后端依赖有变更，请在仓库根目录对应的 Python 环境里重新安装依赖后，再启动统一后端。
+如果后端依赖有变更，请在仓库根目录对应的 Python 环境里重新执行 `pip install -r requirements.txt` 后，再启动统一后端。
 
 ## 最新访问方式
 
@@ -200,7 +199,7 @@ http://localhost:5173/student/home?token=student_demo_token_001
 
 当前仓库已将这两个问题修正：
 
-- 双端 `requirements.txt` 已加入 `cryptography`
+- 根目录 `requirements.txt` 已加入 `PyMySQL` 与 `cryptography`
 - 默认 `DATABASE_URL` 已改成 `root:123456`
 
 如果你本机后续改了 MySQL 密码，请记得同步设置 `DATABASE_URL`。
@@ -216,6 +215,4 @@ npm run build
 ## 相关文件
 
 - [根 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/README.md)
-- [学生端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/student-ai-course/backend/student_plugin/README.md)
-- [教师端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/teacher-ai-course/backend/teacher_plugin/README.md)
 - [MySQL 建表说明](/D:/服务外包（学习通）/xuexitong/fuck_learning/docs/MySQL建表执行说明.md)

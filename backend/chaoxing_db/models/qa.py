@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DECIMAL, DateTime, Enum, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+JsonValue = dict[str, Any] | list[Any]
 
 
 class QASession(Base):
@@ -59,10 +62,10 @@ class QAAnswer(Base):
     answer_type: Mapped[str] = mapped_column(Enum("text", "mixed", name="qa_answer_type"), default="text")
     understanding_level: Mapped[str | None] = mapped_column(Enum("none", "partial", "full", name="qa_understanding_level"))
     recommended_section_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_sections.id"))
-    recommended_page_no: Mapped[int | None]
+    recommended_page_no: Mapped[int | None] = mapped_column(nullable=True)
     recommended_anchor_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_section_anchors.id"))
-    next_sections_json: Mapped[dict | list | None] = mapped_column(JSON)
-    suggestions_json: Mapped[dict | list | None] = mapped_column(JSON)
+    next_sections_json: Mapped[JsonValue | None] = mapped_column(JSON)
+    suggestions_json: Mapped[JsonValue | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     session: Mapped["QASession"] = relationship(back_populates="answers")
@@ -93,10 +96,8 @@ class VoiceTranscript(Base):
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), nullable=False)
     section_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_sections.id"))
     audio_url: Mapped[str | None] = mapped_column(String(255))
-    duration_seconds: Mapped[int | None]
+    duration_seconds: Mapped[int | None] = mapped_column(nullable=True)
     language: Mapped[str] = mapped_column(String(16), default="zh-CN", nullable=False)
     transcript_text: Mapped[str] = mapped_column(Text, nullable=False)
     confidence_score: Mapped[float | None] = mapped_column(DECIMAL(5, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
-
-

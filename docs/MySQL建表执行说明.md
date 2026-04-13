@@ -100,10 +100,10 @@ SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/init_test_dat
 双端共用的 SQLAlchemy ORM 目录：
 
 ```powershell
-backend-common/chaoxing_db
+backend/chaoxing_db
 ```
 
-学生端和教师端都通过这套模型访问同一套 MySQL 主库。
+统一 backend 内的学生端与教师端运行时都通过这套模型访问同一套 MySQL 主库。
 
 ## 注意事项
 
