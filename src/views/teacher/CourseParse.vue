@@ -8,23 +8,23 @@
         :closable="false"
         show-icon
         style="margin-bottom: 16px"
-        title="支持 PPT / PPTX / PDF 文件，上传后系统将自动解析知识点结构"
+        title="当前仅支持 PPTX 文件，选择后系统将自动上传并解析知识点结构"
       />
 
       <div class="toolbar">
         <el-upload
+          ref="uploadRef"
           :auto-upload="false"
           :show-file-list="true"
           :limit="1"
-          :before-upload="beforeUpload"
-          accept=".ppt,.pptx,.pdf"
+          :on-change="handleFileChange"
+          :on-exceed="handleFileExceed"
+          :on-remove="handleFileRemove"
+          :disabled="submitting || polling"
+          accept=".pptx"
         >
-          <el-button>选择文件</el-button>
+          <el-button :loading="submitting">选择文件并解析</el-button>
         </el-upload>
-
-        <el-button type="primary" :loading="submitting" @click="submitParse">
-          上传并解析
-        </el-button>
 
         <el-button :disabled="!parseForm.parseId" @click="pollStatus">
           查询状态
@@ -90,6 +90,7 @@ import { getCurrentCourse, saveParseResult } from '@/utils/platform'
 
 const router = useRouter()
 const currentCourse = getCurrentCourse()
+const uploadRef = ref(null)
 
 const parseForm = ref({
   fileName: '',
@@ -112,21 +113,59 @@ const treeProps = {
 
 let pollTimer = null
 
-function beforeUpload(file) {
-  const isValid = /\.(ppt|pptx|pdf)$/i.test(file.name)
+function resetParseState() {
+  clearTimeout(pollTimer)
+  parseForm.value.parseId = ''
+  parseForm.value.status = ''
+  knowledgeTree.value = []
+  errorCode.value = ''
+  errorMsg.value = ''
+  progress.value = 0
+  polling.value = false
+}
+
+function handleFileExceed(files) {
+  uploadRef.value?.clearFiles()
+  const rawFile = files?.[0]
+  if (rawFile) {
+    handleSelectedFile(rawFile)
+  }
+}
+
+function handleFileRemove() {
+  clearTimeout(pollTimer)
+  parseForm.value.fileName = ''
+  parseForm.value.fileBase64 = ''
+  resetParseState()
+}
+
+function handleFileChange(file) {
+  const rawFile = file?.raw || file
+  if (!rawFile) return
+  handleSelectedFile(rawFile)
+}
+
+function handleSelectedFile(file) {
+  const isValid = /\.pptx$/i.test(file.name)
   if (!isValid) {
-    ElMessage.warning('仅支持 PPT/PPTX/PDF 文件')
-    return false
+    ElMessage.warning('当前仅支持 PPTX 文件')
+    uploadRef.value?.clearFiles()
+    return
   }
 
+  resetParseState()
   parseForm.value.fileName = file.name
   const reader = new FileReader()
   reader.readAsDataURL(file)
-  reader.onload = () => {
+  reader.onload = async () => {
     parseForm.value.fileBase64 = reader.result
+    await submitParse()
   }
-
-  return false
+  reader.onerror = () => {
+    ElMessage.error('课件文件读取失败，请重新选择')
+    uploadRef.value?.clearFiles()
+    parseForm.value.fileBase64 = ''
+  }
 }
 
 async function submitParse() {

@@ -20,7 +20,14 @@ from backend.app.script.service import generate_script as generate_main_script
 from backend.app.script.service import get_script, update_script
 from backend.app.teacher_runtime.services import generate_audio as generate_teacher_audio
 from backend.app.teacher_runtime.services import generate_script as generate_teacher_script
-from backend.app.teacher_runtime.services import get_parse_status, require_teacher, sync_courses, sync_user, upload_parse
+from backend.app.teacher_runtime.services import (
+    get_parse_status,
+    require_teacher,
+    run_teacher_parse_task,
+    sync_courses,
+    sync_user,
+    upload_parse,
+)
 
 router = APIRouter(tags=["compat"])
 
@@ -108,7 +115,15 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
         action = payload.get("action")
         try:
             if action == "upload":
-                data = upload_parse(db, teacher, payload.get("courseId"), payload.get("fileName"), payload.get("fileContent"))
+                data = upload_parse(
+                    db,
+                    teacher,
+                    payload.get("courseId"),
+                    payload.get("fileName"),
+                    payload.get("fileContent"),
+                    str(request.base_url),
+                )
+                Thread(target=run_teacher_parse_task, args=(data["parseId"],), daemon=True).start()
                 return teacher_response(request, data)
             if action == "status":
                 data = get_parse_status(db, payload.get("parseId"))

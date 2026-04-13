@@ -24,14 +24,13 @@ def create_parse_task(payload: ParseRequest, request_id: str | None = None) -> P
 def run_parse_task(parse_id: str, payload: ParseRequest) -> None:
     try:
         mark_task_processing(parse_id, progress_percent=10)
-        file_info, preview, extracted = parse_courseware(
+        file_info, preview, extracted, cir = execute_parse_pipeline(
             course_id=payload.courseId,
             file_url=payload.fileUrl,
             file_type=payload.fileType,
             is_extract_key_point=payload.isExtractKeyPoint,
         )
         mark_task_processing(parse_id, progress_percent=70)
-        cir = build_cir(courseware_id=f"cw-{payload.courseId}", preview=preview, extracted=extracted)
     except ApiError as exc:
         error_data = {**exc.data, "parseId": parse_id}
         mark_task_failed(parse_id, code=exc.code, msg=exc.msg, data=error_data)
@@ -48,6 +47,23 @@ def run_parse_task(parse_id: str, payload: ParseRequest) -> None:
             progressPercent=100,
         )
         mark_task_completed(parse_id, result=task.model_dump())
+
+
+def execute_parse_pipeline(
+    course_id: str,
+    file_url: str,
+    file_type: str,
+    is_extract_key_point: bool = True,
+    courseware_id: str | None = None,
+):
+    file_info, preview, extracted = parse_courseware(
+        course_id=course_id,
+        file_url=file_url,
+        file_type=file_type,
+        is_extract_key_point=is_extract_key_point,
+    )
+    cir = build_cir(courseware_id=courseware_id or f"cw-{course_id}", preview=preview, extracted=extracted)
+    return file_info, preview, extracted, cir
 
 
 

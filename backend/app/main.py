@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.common.config import get_settings
 from backend.app.common.exceptions import register_exception_handlers
@@ -7,6 +10,9 @@ from backend.app.compat.router import router as compat_router
 from backend.app.progress.router import router as progress_router
 from backend.app.qa.router import router as qa_router
 from backend.app.student_runtime.router import router as student_router
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_app() -> FastAPI:
@@ -19,6 +25,7 @@ def create_app() -> FastAPI:
     )
     app.middleware("http")(request_context_middleware)
     register_exception_handlers(app)
+    app.mount("/mock-remote/examples", StaticFiles(directory=str(PROJECT_ROOT / "examples")), name="mock-remote-examples")
 
     app.include_router(compat_router)
     app.include_router(qa_router, prefix=settings.api_prefix)
