@@ -10,6 +10,31 @@
 - [coding-guide/04-阅读导航.md](./coding-guide/04-阅读导航.md) - 面向日常编码的最小上下文入口、模块映射与联动顺序
 - [api/api-navigation.md](./api/api-navigation.md) - 15 个接口规划文件的总入口与链路阅读顺序
 
+## 当前仓库运行口径（2026-04 补充）
+
+当前仓库的**真实运行时**已经不是学生端、教师端各自单独启动的双后端模式，而是：
+
+- 一个根目录 Vite 前端：`src/`
+- 一个统一 FastAPI 后端入口：`backend/app/main.py`
+- 一套共享 MySQL 主库：`chaoxing_ai_course`
+- 一套共享 ORM：`backend-common/chaoxing_db`
+
+当前前后端联调口径：
+
+- 教师端请求前缀：`/api`
+- 学生端请求前缀：`/student-api`
+- Vite 代理目标：`http://127.0.0.1:3001`
+
+兼容入口目录仍保留，但它们现在不是主运行时，只用于兼容旧启动方式与旧目录结构：
+
+- `student-ai-course/backend/student_plugin/`
+- `teacher-ai-course/backend/teacher_plugin/`
+
+如果要了解“当前代码到底怎么跑”，请优先阅读：
+
+- [coding-guide/progress/current-status.md](./coding-guide/progress/current-status.md)
+- [coding-guide/02-后端模块与实现映射.md](./coding-guide/02-后端模块与实现映射.md)
+
 ## 推荐进入方式
 
 ### 看整体方向

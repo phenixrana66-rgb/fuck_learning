@@ -27,63 +27,104 @@
 - `project-architecture/05-核心数据模型设计.md` 已补入“逻辑对象 -> 首批物理表”的开发参考映射
 - `coding-guide/07-数据库持久化演进规划.md` 已补入“当前可直接用于开发的最小表清单、关键回链字段、关键约束与索引”
 
-## 三、当前 backend 代码状态（高层）
+## 三、当前仓库实际运行结构（2026-04 更新）
 
-当前 `backend/app` 已具备：
+当前仓库的真实运行口径已经收敛为：
 
-- `main.py` 主应用与 6 组业务路由挂载
-- `platform / courseware / script / lesson / qa / progress` 六个领域包
-- `common / parser / cir / tasks / observability` 支撑包
+- 一个根目录 Vue / Vite 前端：`src/`
+- 一个统一 FastAPI 后端入口：`backend/app/main.py`
+- 一套共享 MySQL 主库：`chaoxing_ai_course`
+- 一套共享 ORM：`backend-common/chaoxing_db`
 
-其中已经落地的较真实 demo 能力：
+### 1. 前端现状
 
-- `courseware / parser / cir` 已打通 **PPTX -> 文本抽取 -> LLM 结构化 -> StructurePreview / CIR** 主链
-- `parser/pptx_reader.py` 已能读取本地或远程 `.pptx` 文件，提取 slide 标题、正文、表格和备注
-- `parser/llm_client.py` 已能通过 OpenAI 兼容 `chat/completions` 接口生成章节结构
-- `rest-client/lesson-parse.http` 已提供可直接联调的解析请求样例
-- 解析任务状态已统一收口到 `tasks/service.py`，成功态结果与失败态错误都可按 `parseId` 查询
-- 解析任务主记录已通过 `tasks/models.py` + `tasks/repository.py` 落到数据库表 `task_records`
-- `POST /api/v1/lesson/parse` 已改为先返回 `processing`，解析执行转入本地后台路径
-- `script/models.py` + `script/repository.py` 已让脚本生成、查询、更新落到数据库表 `script_records`
-- `script / lesson` 已能基于真实 parse 结果形成最小 happy path：`generateScript -> generateAudio -> publish -> play`
-- `common/config.py` 与 `common/db.py` 已正式消费数据库连接配置，测试可切 SQLite，开发环境可连 MySQL
+- 当前只有一个根目录前端应用，入口是 `src/main.js`
+- 路由在 `src/router/index.js`，同一 SPA 同时承载学生端与教师端页面
+- Vite 代理在 `vite.config.js` 中统一配置为：
+  - `/api -> http://127.0.0.1:3001`
+  - `/student-api -> http://127.0.0.1:3001`
 
-当前仍以 demo / 占位为主的点：
+### 2. 后端现状
 
-- `common/security.py` 还是 `verify_signature_placeholder`
-- `lesson / qa / progress` 仍使用内存字典或示例返回
-- 当前 PPT 解析 demo 仅支持 `.pptx`，不支持 `.pdf` 与旧 `.ppt`
-- `courseware / cir` 的课件主记录、解析结果、节点树还没有完整落库
-- 当前解析任务尚未接 Redis / Dramatiq / MinIO，执行路径仍是本地后台路径
-- 真实 MySQL / Alembic / Dramatiq / Redis / MinIO / TTS / ASR 尚未全接通
-- 只有解析链接入了 LLM；问答、续讲仍未消费真实结构化结果
+当前唯一真实后端入口是 `backend/app/main.py`，当前实际挂载：
 
-## 四、当前验证状态（2026-04）
+- `compat_router`
+- `qa_router`
+- `progress_router`
+- `student_router`（前缀 `/student-api`）
 
-- 自动化测试：`python -m unittest discover -s backend/tests -p "test_*.py"` 已通过，22/22
-- 静态检查：`basedpyright` 当前已无 error，但仍存在 warning
-- 手工验收：SQLite 与 MySQL 两轮都已验证 parse/task/script 入库链
-- 验收输入：两轮手工验收都使用真实 `examples/01总论.pptx`
-- 已知限制：当前环境缺少 `A12_LLM_API_KEY`，所以手工验收对 outline 生成做了确定性 patch，未走真实外部 LLM
+这意味着当前仓库已经不再以“学生后端 + 教师后端分别作为正式主入口”的方式运行。
+
+### 3. 教师端链路现状
+
+- 教师前端仍走兼容接口前缀 `/api/v1/*`
+- 当前主要由 `backend/app/compat/router.py` 负责兼容分流
+- 兼容层会把教师旧 payload 分派到 `backend/app/teacher_runtime/services.py`
+- 因此教师链路当前实际形态是：`compat/router -> teacher_runtime/services`
+
+### 4. 学生端链路现状
+
+- 学生端统一挂到 `backend/app/student_runtime/router.py`
+- 对外接口前缀保持 `/student-api/*`
+- 当前内部形态不是纯数据库化，而是：
+  - `adapter.py` 提供兼容 mock / 内存底座
+  - `db_learning_service.py`、`db_qa_service.py` 提供数据库增强
+
+### 5. 兼容入口与遗留目录
+
+以下目录当前保留，但已不是主运行时，只是兼容入口：
+
+- `student-ai-course/backend/student_plugin/app.py`
+- `teacher-ai-course/backend/teacher_plugin/app.py`
+
+它们现在导出的都是统一后的 `backend.app.main:app`。
+
+仍需要留意的遗留项：
+
+- `student-ai-course/README.md` 仍保留旧的双后端启动口径
+- `teacher-ai-course/README.md` 仍保留旧的双后端启动口径
+- `teacher-ai-course/mock/server.js` 是旧 Node mock，不是当前默认运行时
+
+## 四、当前统一后端迁移进度判断
+
+基于本次全仓读取，可以把当前进度概括为：
+
+### 已完成的统一化
+
+- 前端已经统一到根目录单一 Vite 工程
+- 后端已经统一到 `backend.app.main`
+- 学生 `/student-api/*` 与教师 `/api/v1/*` 两套路由已被单一后端承接
+- `backend-common` 已作为共享 ORM / 数据层接入统一后端
+- `task_records` 与 `script_records` 已形成真实数据库主记录落点
+
+### 已完成但仍带兼容性质的部分
+
+- 教师端仍依赖 `compat/router.py` 承接旧接口语义
+- 学生端仍保留 `adapter.py` 作为 mock / 内存底座
+- 学生、教师旧 backend 目录仍存在，但已退化为兼容壳
+
+### 尚未完全收口的部分
+
+- `common/security.py` 在部分主链路中仍可见 placeholder 校验口径
+- `lesson / qa / progress` 并未全部完成统一、彻底的数据库化
+- 解析链虽然已接任务主记录，但完整对象存储、真正异步基础设施仍未全接入
 
 ## 五、默认下一步优先级
 
-建议下一步继续按这个顺序推进：
+如果后续继续推进，而不是仅做文档同步，建议优先级改为：
 
-1. 补齐解析链剩余真实依赖：`courseware / parser / cir / tasks`
-2. 在脚本已落库基础上补音频与发布链：`lesson`
-3. 问答证据链：`qa`
-4. 续讲与指标：`progress / observability`
+1. 以前端真实页面联调为主，确认教师端 `/api/v1/*` 与学生端 `/student-api/*` 在统一后端下完全可用
+2. 继续收口学生端 `adapter.py` 的 mock 兜底，让数据库结果逐步成为单一事实源
+3. 继续收口教师端兼容层，把 `compat/router.py` 中仍然偏旧接口语义的分流逐步压缩
+4. 再考虑补齐 `lesson / qa / progress` 的持久化与异步化
 
-### 当前解析链 demo 的接手要点
+### 当前接手要点
 
-- 接口：`POST /api/v1/lesson/parse`、`GET /api/v1/lesson/parse/{parseId}`
-- 现状：`POST` 仅创建任务并返回 `taskStatus=processing`，解析会在本地后台路径继续执行
-- 补充：若解析失败，需要通过 `GET` 查询 `failed` 状态与错误信息
-- 当前持久化：任务主记录进入数据库表 `task_records`，对应日志落在 `temp/ai-generate/tasks/logs/`
-- 配置：需要 `A12_LLM_API_BASE_URL`、`A12_LLM_API_KEY`、`A12_LLM_MODEL`、`A12_LLM_TIMEOUT_SECONDS`
-- 数据库：可通过 `A12_DB_URL` 或 `A12_DB_HOST / A12_DB_PORT / A12_DB_USER / A12_DB_PASSWORD / A12_DB_NAME / A12_DB_ECHO` 提供连接配置
-- 调试：优先使用 `rest-client/lesson-parse.http` 与 `examples/demo-courseware.pptx`
+- 运行入口以 `backend.app.main:app` 为准
+- 学生接口前缀保持 `/student-api`
+- 教师接口前缀保持 `/api`
+- 根目录 `README.md` 与两个 plugin README 已基本反映统一后端口径
+- `doc/ai-generate/` 下的其他文档若仍按旧的模块拆分理解仓库，应优先以代码与根 README 为准
 
 ## 六、如果下次继续开发，先读什么
 
