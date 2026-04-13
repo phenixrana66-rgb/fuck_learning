@@ -3,12 +3,10 @@ from fastapi import FastAPI
 from backend.app.common.config import get_settings
 from backend.app.common.exceptions import register_exception_handlers
 from backend.app.common.request_context import request_context_middleware
-from backend.app.courseware.router import router as courseware_router
-from backend.app.lesson.router import router as lesson_router
-from backend.app.platform.router import router as platform_router
+from backend.app.compat.router import router as compat_router
 from backend.app.progress.router import router as progress_router
 from backend.app.qa.router import router as qa_router
-from backend.app.script.router import router as script_router
+from backend.app.student_runtime.router import router as student_router
 
 
 def create_app() -> FastAPI:
@@ -22,12 +20,10 @@ def create_app() -> FastAPI:
     app.middleware("http")(request_context_middleware)
     register_exception_handlers(app)
 
-    app.include_router(platform_router, prefix=settings.api_prefix)
-    app.include_router(courseware_router, prefix=settings.api_prefix)
-    app.include_router(script_router, prefix=settings.api_prefix)
-    app.include_router(lesson_router, prefix=settings.api_prefix)
+    app.include_router(compat_router)
     app.include_router(qa_router, prefix=settings.api_prefix)
     app.include_router(progress_router, prefix=settings.api_prefix)
+    app.include_router(student_router, prefix="/student-api")
 
     return app
 

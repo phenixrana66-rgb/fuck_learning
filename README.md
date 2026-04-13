@@ -1,18 +1,17 @@
 # fuck_learning
 
-当前仓库采用统一前端 + 双 FastAPI 后端 + 一套 MySQL 主库：
+当前仓库采用统一前端 + 单 FastAPI 后端 + 一套 MySQL 主库：
 
 - 前端：仓库根目录下的 Vite 项目
-- 学生端后端：`student-ai-course/backend/student_plugin`
-- 教师端后端：`teacher-ai-course/backend/teacher_plugin`
+- 统一后端入口：`backend.app.main`
 - 共享 ORM：`backend-common/chaoxing_db`
 - 建表与测试数据：`docs/mysql建表.sql`、`docs/init_test_data.sql`
 
 ## 目录说明
 
 - `src/`：前端代码，学生端和教师端共用同一个 Vite 工程
-- `student-ai-course/backend/student_plugin/`：学生端 FastAPI
-- `teacher-ai-course/backend/teacher_plugin/`：教师端 FastAPI
+- `student-ai-course/backend/student_plugin/`：学生端兼容入口目录，当前复用统一 backend
+- `teacher-ai-course/backend/teacher_plugin/`：教师端兼容入口目录，当前复用统一 backend
 - `backend-common/chaoxing_db/`：共享 SQLAlchemy 模型、Session、Base
 - `public/lesson-previews/pressure-stability/`：压杆稳定章节的测试页图资源
 - `docs/mysql建表.sql`：MySQL 建表脚本
@@ -29,13 +28,12 @@
 ## 当前默认端口
 
 - 前端：`5173`
-- 学生端后端：`5000`
-- 教师端后端：`3001`
+- 统一后端：`3001`
 
 Vite 代理：
 
-- `/student-api -> http://localhost:5000`
-- `/api -> http://localhost:3001`
+- `/student-api -> http://127.0.0.1:3001`
+- `/api -> http://127.0.0.1:3001`
 
 ## 当前默认数据库连接
 
@@ -45,7 +43,7 @@ Vite 代理：
 mysql+pymysql://root:123456@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4
 ```
 
-如果你本机 MySQL 不是这个账号密码，需要在启动前先设置 `DATABASE_URL`，否则教师端和学生端都会在访问数据库时返回 500。
+如果你本机 MySQL 不是这个账号密码，需要在启动前先设置 `DATABASE_URL`，否则统一后端在访问数据库时会返回 500。
 
 PowerShell 设置方式：
 
@@ -53,7 +51,7 @@ PowerShell 设置方式：
 $env:DATABASE_URL="mysql+pymysql://root:你的密码@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4"
 ```
 
-建议每个后端终端都先设置一次，再启动服务。
+建议在启动统一后端前先设置一次。
 
 ## 初始化数据库
 
@@ -91,27 +89,14 @@ cd D:\服务外包（学习通）\xuexitong\fuck_learning
 npm install
 ```
 
-### 1. 启动学生端后端
+### 1. 启动统一后端
 
 ```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\student-ai-course\backend\student_plugin
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 5000 --reload
+cd D:\服务外包（学习通）\xuexitong\fuck_learning
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload
 ```
 
-### 2. 启动教师端后端
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\teacher-ai-course\backend\teacher_plugin
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 3001 --reload
-```
-
-### 3. 启动前端
+### 2. 启动前端
 
 ```powershell
 cd D:\服务外包（学习通）\xuexitong\fuck_learning
@@ -120,22 +105,13 @@ npm run dev:web
 
 ## 后续再次启动
 
-如果两个后端的 `.venv` 已经创建过，并且依赖没有变，只需要重新激活并启动。
+如果依赖已经装好，只需要重新启动统一后端与前端。
 
-### 学生端后端再次启动
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\student-ai-course\backend\student_plugin
-.venv\Scripts\activate
-uvicorn app:app --host 0.0.0.0 --port 5000 --reload
-```
-
-### 教师端后端再次启动
+### 统一后端再次启动
 
 ```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\teacher-ai-course\backend\teacher_plugin
-.venv\Scripts\activate
-uvicorn app:app --host 0.0.0.0 --port 3001 --reload
+cd D:\服务外包（学习通）\xuexitong\fuck_learning
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload
 ```
 
 ### 前端再次启动
@@ -147,25 +123,7 @@ npm run dev:web
 
 ## 依赖更新后怎么启动
 
-如果更新过任一后端的 `requirements.txt`，先重新安装依赖：
-
-### 学生端
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\student-ai-course\backend\student_plugin
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 5000 --reload
-```
-
-### 教师端
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\teacher-ai-course\backend\teacher_plugin
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 3001 --reload
-```
+如果后端依赖有变更，请在仓库根目录对应的 Python 环境里重新安装依赖后，再启动统一后端。
 
 ## 最新访问方式
 
@@ -214,11 +172,11 @@ http://localhost:5173/student/home?token=student_demo_token_001
 
 ### 学生端
 
-- `POST http://127.0.0.1:5000/auth/verify`
-- `POST http://127.0.0.1:5000/api/v1/getStudentLessonList`
-- `POST http://127.0.0.1:5000/api/v1/lesson/play`
-- `POST http://127.0.0.1:5000/api/v1/lesson/section/detail`
-- `POST http://127.0.0.1:5000/api/v1/progress/page/read`
+- `POST http://127.0.0.1:3001/student-api/auth/verify`
+- `POST http://127.0.0.1:3001/student-api/api/v1/getStudentLessonList`
+- `POST http://127.0.0.1:3001/student-api/api/v1/lesson/play`
+- `POST http://127.0.0.1:3001/student-api/api/v1/lesson/section/detail`
+- `POST http://127.0.0.1:3001/student-api/api/v1/progress/page/read`
 
 学生端新加的“压杆稳定”知识学习链路也已验证通过：
 

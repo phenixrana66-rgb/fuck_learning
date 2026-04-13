@@ -43,6 +43,24 @@ studentService.interceptors.response.use(
   },
   (error) => {
     const status = error?.response?.status
+    const rawMessage = error?.message || ''
+    const isLocalBackendUnavailable = !status && (
+      rawMessage.includes('Network Error') ||
+      rawMessage.includes('ECONNREFUSED') ||
+      rawMessage.includes('Failed to fetch')
+    )
+
+    if (isLocalBackendUnavailable) {
+      const message = '统一后端未启动，请先运行 backend FastAPI（127.0.0.1:3001），再执行 npm run dev:web'
+      ElMessage.error(message)
+      return Promise.reject({
+        code: 503,
+        msg: message,
+        data: null,
+        requestId: ''
+      })
+    }
+
     const fallback = error?.response?.data?.msg || error.message || '学生端接口请求失败'
     let message = fallback
 

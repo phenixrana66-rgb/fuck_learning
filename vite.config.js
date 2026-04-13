@@ -21,13 +21,12 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/student-api': {
-        target: 'http://localhost:5000',
+        target: 'http://127.0.0.1:3001',
         changeOrigin: true,
-        secure: false,
-        rewrite: (currentPath) => currentPath.replace(/^\/student-api/, '')
+        secure: false
       },
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://127.0.0.1:3001',
         changeOrigin: true,
         secure: false
       }
