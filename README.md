@@ -245,46 +245,11 @@ http://localhost:5173/student/home?token=student_demo_token_001
 
 ### 学生端
 
-<<<<<<< Updated upstream
-- `POST http://127.0.0.1:3001/student-api/auth/verify`
-- `POST http://127.0.0.1:3001/student-api/api/v1/getStudentLessonList`
-- `POST http://127.0.0.1:3001/student-api/api/v1/lesson/play`
-- `POST http://127.0.0.1:3001/student-api/api/v1/lesson/section/detail`
-- `POST http://127.0.0.1:3001/student-api/api/v1/progress/page/read`
-
-学生端新加的“压杆稳定”知识学习链路也已验证通过：
-
-- 章节详情可返回
-- 页级阅读进度可写回
-- 学习进度与掌握度会更新
-
-## 这次双端进不去的原因
-
-本次排查确认有两个实际问题：
-
-1. 后端依赖里缺少 `cryptography`
-   - MySQL 8 默认常用 `caching_sha2_password`
-   - 没有这个包时，PyMySQL 会直接报运行时错误
-
-2. 默认数据库连接串写的是错误密码
-   - 原先默认值是 `root:password`
-   - 你本机实际可用的是 `root:123456`
-   - 所以教师端输入 `test_token_001` 后，一查数据库就会返回 500
-   - 学生端访问数据库增强接口时也会表现成服务器异常
-
-当前仓库已将这两个问题修正：
-
-- 根目录 `requirements.txt` 已加入 `PyMySQL` 与 `cryptography`
-- 默认 `DATABASE_URL` 已改成 `root:123456`
-
-如果你本机后续改了 MySQL 密码，请记得同步设置 `DATABASE_URL`。
-=======
 - `POST /auth/verify`
 - `POST /api/v1/getStudentLessonList`
 - `POST /api/v1/lesson/play`
 - `POST /api/v1/lesson/section/detail`
 - `POST /api/v1/progress/page/read`
->>>>>>> Stashed changes
 
 ## 构建
 
@@ -297,9 +262,5 @@ npm run build
 ## 相关文件
 
 - [根 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/README.md)
-<<<<<<< Updated upstream
-- [MySQL 建表说明](/D:/服务外包（学习通）/xuexitong/fuck_learning/docs/MySQL建表执行说明.md)
-=======
 - [学生端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/student-ai-course/backend/student_plugin/README.md)
 - [教师端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/teacher-ai-course/backend/teacher_plugin/README.md)
->>>>>>> Stashed changes

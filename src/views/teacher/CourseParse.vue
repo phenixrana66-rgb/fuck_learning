@@ -7,13 +7,8 @@
         type="info"
         :closable="false"
         show-icon
-<<<<<<< Updated upstream
-        style="margin-bottom: 16px"
-        title="当前仅支持 PPTX 文件，选择后系统将自动上传并解析知识点结构"
-=======
         class="teacher-alert"
         title="支持 PPT、PPTX、PDF。上传后系统会解析章节结构、页图与知识点。"
->>>>>>> Stashed changes
       />
 
       <div class="toolbar">
@@ -31,14 +26,8 @@
           <el-button :loading="submitting">选择文件并解析</el-button>
         </el-upload>
 
-<<<<<<< Updated upstream
-        <el-button :disabled="!parseForm.parseId" @click="pollStatus">
-          查询状态
-        </el-button>
-=======
         <el-button type="primary" :loading="submitting" @click="submitParse">上传并解析</el-button>
         <el-button :disabled="!parseForm.parseId" @click="pollStatus">查询状态</el-button>
->>>>>>> Stashed changes
       </div>
 
       <el-form :model="parseForm" label-width="96px" class="teacher-form">
@@ -159,14 +148,8 @@ function handleFileChange(file) {
 function handleSelectedFile(file) {
   const isValid = /\.pptx$/i.test(file.name)
   if (!isValid) {
-<<<<<<< Updated upstream
-    ElMessage.warning('当前仅支持 PPTX 文件')
-    uploadRef.value?.clearFiles()
-    return
-=======
     ElMessage.warning('仅支持 PPT、PPTX、PDF 文件。')
     return false
->>>>>>> Stashed changes
   }
 
   resetParseState()
@@ -300,29 +283,3 @@ function goScriptPage() {
   router.push('/teacher/script-generate')
 }
 </script>
-<<<<<<< Updated upstream
-=======
-
-<style scoped>
-.teacher-card {
-  border-radius: 22px;
-  border: 1px solid #e7eef9;
-  box-shadow: 0 16px 36px rgba(53, 82, 136, 0.08);
-}
-
-.teacher-alert {
-  margin-bottom: 18px;
-}
-
-.teacher-form {
-  max-width: 760px;
-}
-
-.teacher-summary {
-  margin-bottom: 14px;
-  color: #5f7395;
-  font-size: 14px;
-  line-height: 1.8;
-}
-</style>
->>>>>>> Stashed changes
