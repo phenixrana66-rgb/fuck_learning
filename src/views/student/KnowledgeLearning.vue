@@ -39,6 +39,14 @@
               <div class="ppt-card-title">PPT 学习</div>
               <div class="ppt-card-subtitle">当前页 {{ activePageNo }} / {{ totalPages }}</div>
             </div>
+            <button
+              type="button"
+              class="ppt-audio-button"
+              :disabled="!detail.audioUrl || detail.audioStatus !== 'published'"
+              @click="toggleSectionAudio"
+            >
+              {{ isAudioPlaying ? '暂停播放' : '语音播放' }}
+            </button>
           </div>
 
           <div class="ppt-card-body">
@@ -108,14 +116,23 @@
               </div>
             </div>
           </div>
+          <audio
+            ref="sectionAudioRef"
+            class="section-audio"
+            :src="detail.audioUrl || ''"
+            preload="none"
+            @play="isAudioPlaying = true"
+            @pause="isAudioPlaying = false"
+            @ended="isAudioPlaying = false"
+          ></audio>
         </section>
 
         <section class="guide-card">
           <div class="guide-card-head">
-            <h2>AI 学习导读</h2>
+            <h2>教师讲稿</h2>
           </div>
           <div class="guide-card-body">
-            {{ detail.aiGuideContent || activePage?.parsedContent || '当前章节暂无导读内容。' }}
+            {{ detail.scriptContent || '当前章节暂无教师讲稿。' }}
           </div>
         </section>
       </section>
@@ -206,6 +223,9 @@ const detail = ref({
   progressPercent: 0,
   masteryPercent: 0,
   aiGuideContent: '',
+  scriptContent: '',
+  audioUrl: '',
+  audioStatus: '',
   knowledgePoints: [],
   pages: [],
   currentPageNo: 1
@@ -214,9 +234,11 @@ const activePageNo = ref(1)
 const questionText = ref('')
 const asking = ref(false)
 const chatList = ref([])
+const isAudioPlaying = ref(false)
 const thumbnailRailRef = ref(null)
 const viewerShellRef = ref(null)
 const chatScrollRef = ref(null)
+const sectionAudioRef = ref(null)
 const thumbnailRefs = ref({})
 
 const lessonId = computed(() => String(route.params.lessonId || ''))
@@ -269,6 +291,9 @@ function normalizeFallbackDetail() {
     progressPercent: Number(chapter?.progressPercent || 0),
     masteryPercent: Number(chapter?.masteryPercent || 0),
     aiGuideContent: chapter?.guideContent || chapter?.summary || '',
+    scriptContent: chapter?.guideContent || chapter?.summary || '',
+    audioUrl: '',
+    audioStatus: 'empty',
     knowledgePoints: chapter?.knowledgePoints || [],
     pages: fallbackPages,
     currentPageNo: fallbackPages[0]?.pageNo || 1
@@ -303,6 +328,11 @@ function keepThumbnailVisible() {
 }
 
 async function loadSectionDetail() {
+  sectionAudioRef.value?.pause()
+  if (sectionAudioRef.value) {
+    sectionAudioRef.value.currentTime = 0
+  }
+  isAudioPlaying.value = false
   const fallback = normalizeFallbackDetail()
   detail.value = fallback
   activePageNo.value = restorePageNo.value || fallback.currentPageNo || 1
@@ -380,6 +410,26 @@ function fillQuestion(question) {
   questionText.value = question
 }
 
+async function toggleSectionAudio() {
+  if (!detail.value.audioUrl || detail.value.audioStatus !== 'published') {
+    ElMessage.info('当前章节暂无语音。')
+    return
+  }
+
+  const audio = sectionAudioRef.value
+  if (!audio) return
+
+  try {
+    if (audio.paused) {
+      await audio.play()
+    } else {
+      audio.pause()
+    }
+  } catch (_error) {
+    ElMessage.warning('语音播放失败，请稍后重试。')
+  }
+}
+
 
 function persistRecentVisit() {
   if (!lessonId.value || !chapterId.value || !sectionId.value) return
@@ -429,6 +479,7 @@ async function submitQuestion() {
 }
 
 function goBack() {
+  sectionAudioRef.value?.pause()
   persistRecentVisit()
   router.push({
     name: 'StudentPlayer',
@@ -438,6 +489,7 @@ function goBack() {
 }
 
 function goStudentHome() {
+  sectionAudioRef.value?.pause()
   persistRecentVisit()
   router.push({
     name: 'StudentHome',
@@ -462,11 +514,13 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  sectionAudioRef.value?.pause()
   window.removeEventListener('pagehide', persistRecentVisit)
   persistRecentVisit()
 })
 
 onBeforeRouteLeave(() => {
+  sectionAudioRef.value?.pause()
   persistRecentVisit()
 })
 </script>
@@ -640,6 +694,7 @@ onBeforeRouteLeave(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+  gap: 12px;
 }
 
 .ppt-card-title {
@@ -651,6 +706,30 @@ onBeforeRouteLeave(() => {
   margin-top: 2px;
   color: #6f86b1;
   font-size: 14px;
+}
+
+.ppt-audio-button {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid #cad8f4;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f7fbff 0%, #edf4ff 100%);
+  color: #33548f;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.ppt-audio-button:hover:not(:disabled) {
+  border-color: #7e9de0;
+  background: linear-gradient(135deg, #edf4ff 0%, #e5efff 100%);
+}
+
+.ppt-audio-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
 }
 
 .ppt-card-body {
@@ -823,6 +902,10 @@ onBeforeRouteLeave(() => {
   place-items: center;
   font-size: 13px;
   font-weight: 700;
+}
+
+.section-audio {
+  display: none;
 }
 
 .guide-card {

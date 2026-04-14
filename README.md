@@ -1,6 +1,10 @@
 # fuck_learning
 
+<<<<<<< Updated upstream
 当前仓库采用统一前端 + 单 FastAPI 后端 + 一套 MySQL 主库：
+=======
+当前仓库采用一套前端、双 FastAPI 后端、单 MySQL 主库的结构：
+>>>>>>> Stashed changes
 
 - 前端：仓库根目录下的 Vite 项目
 - 统一后端入口：`backend.app.main`
@@ -15,15 +19,34 @@
 - `docs/mysql建表.sql`：MySQL 建表脚本
 - `docs/init_test_data.sql`：初始化测试数据脚本
 
+## 教师端当前已打通的主流程
+
+1. 平台用户同步
+2. 课程同步
+3. 课件解析
+4. 讲稿生成
+5. 讲稿编辑保存
+6. 音频生成
+7. 智课发布到学生端
+8. 教师端管理页查看真实状态
+
+当前教师端新增后端接口：
+
+- `POST /api/v1/lesson/saveScript`
+- `POST /api/v1/lesson/publish`
+- `POST /api/v1/lesson/status`
+
+发布后，教师端产物会写入学生端可读取的 `lessons / lesson_units / lesson_sections / lesson_section_pages / lesson_section_anchors`。
+
 ## 压杆稳定 PPT 预览说明
 
-- 学生端“压杆稳定”知识学习页现在使用真实 PPT 导出的页图，不再使用示意 SVG 作为正式展示。
-- 页图资源默认放在 `public/lesson-previews/pressure-stability/`，文件名格式为 `page-1.png`、`page-2.png`。
-- 教师端执行 `POST /api/v1/lesson/parse` 的 `upload/status` 链路时，会尝试把上传的 PPT 导出为 PNG 页图，并同步补齐章节分页数据。
-- 当前这条导出链路依赖本机已安装桌面版 Microsoft PowerPoint，因为服务端通过 Windows COM 调用 PowerPoint 执行 `SaveAs(..., 18)` 导出图片。
-- 如果机器上没有安装 PowerPoint，教师端解析状态会失败，学生端仍只能看到已有的本地测试页图，不能自动生成新的课件页图。
+- 学生端“压杆稳定”知识学习页使用真实 PPT 导出的页图，不再使用示意 SVG。
+- 页图默认放在 `public/lesson-previews/pressure-stability/`，命名格式为 `page-1.png`、`page-2.png`。
+- 教师端执行 `POST /api/v1/lesson/parse` 的 `upload/status` 链路时，会尝试把上传的 PPT 导出为 PNG 页图，并同步写入章节页数据。
+- 当前页图导出依赖本机已安装桌面版 Microsoft PowerPoint，因为后端通过 Windows COM 调用 PowerPoint 执行图片导出。
+- 如果机器上没有安装 PowerPoint，教师端解析会失败，学生端只能读取已有的本地测试页图资源。
 
-## 当前默认端口
+## 默认端口
 
 - 前端：`5173`
 - 统一后端：`3001`
@@ -33,23 +56,31 @@ Vite 代理：
 - `/student-api -> http://127.0.0.1:3001`
 - `/api -> http://127.0.0.1:3001`
 
-## 当前默认数据库连接
+## 默认数据库连接
 
-当前代码默认使用下面这条连接串：
+当前代码默认使用下面这条连接：
 
 ```powershell
 mysql+pymysql://root:123456@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4
 ```
 
+<<<<<<< Updated upstream
 如果你本机 MySQL 不是这个账号密码，需要在启动前先设置 `DATABASE_URL`，否则统一后端在访问数据库时会返回 500。
 
 PowerShell 设置方式：
+=======
+如果你本机 MySQL 不是这个账号密码，需要先设置 `DATABASE_URL`：
+>>>>>>> Stashed changes
 
 ```powershell
 $env:DATABASE_URL="mysql+pymysql://root:你的密码@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4"
 ```
 
+<<<<<<< Updated upstream
 建议在启动统一后端前先设置一次。
+=======
+建议在学生端后端终端和教师端后端终端里都设置一次。
+>>>>>>> Stashed changes
 
 ## 初始化数据库
 
@@ -66,7 +97,7 @@ SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/mysql建表.s
 SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/init_test_data.sql;
 ```
 
-如果你一定要在 PowerShell 里直接执行重定向，需走 `cmd /c`：
+如果需要直接在 PowerShell 中执行重定向，必须走 `cmd /c`：
 
 ```powershell
 cmd /c "mysql -u root -p < docs\mysql建表.sql"
@@ -104,6 +135,7 @@ npm run dev:web
 
 ## 后续再次启动
 
+<<<<<<< Updated upstream
 如果依赖已经装好，只需要重新启动统一后端与前端。
 
 ### 统一后端再次启动
@@ -111,40 +143,80 @@ npm run dev:web
 ```powershell
 cd D:\服务外包（学习通）\xuexitong\fuck_learning
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload
+=======
+如果两个后端的 `.venv` 已经创建过，而且依赖没有变化，只需要重新激活并启动：
+
+### 学生端后端
+
+```powershell
+cd D:\服务外包（学习通）\xuexitong\fuck_learning\student-ai-course\backend\student_plugin
+.venv\Scripts\activate
+uvicorn app:app --host 0.0.0.0 --port 5000 --reload
 ```
 
-### 前端再次启动
+### 教师端后端
+
+```powershell
+cd D:\服务外包（学习通）\xuexitong\fuck_learning\teacher-ai-course\backend\teacher_plugin
+.venv\Scripts\activate
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
+>>>>>>> Stashed changes
+```
+
+### 前端
 
 ```powershell
 cd D:\服务外包（学习通）\xuexitong\fuck_learning
 npm run dev:web
 ```
 
-## 依赖更新后怎么启动
+## 依赖更新后的启动方式
 
+<<<<<<< Updated upstream
 如果后端依赖有变更，请在仓库根目录对应的 Python 环境里重新执行 `pip install -r requirements.txt` 后，再启动统一后端。
+=======
+如果任何一个后端的 `requirements.txt` 变了，先重新安装依赖：
 
-## 最新访问方式
+### 学生端
+
+```powershell
+cd D:\服务外包（学习通）\xuexitong\fuck_learning\student-ai-course\backend\student_plugin
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 5000 --reload
+```
+
+### 教师端
+
+```powershell
+cd D:\服务外包（学习通）\xuexitong\fuck_learning\teacher-ai-course\backend\teacher_plugin
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 3001 --reload
+```
+>>>>>>> Stashed changes
+
+## 访问方式
 
 ### 前端入口
 
-- 首页：`http://localhost:5173/`
+- 门户页：`http://localhost:5173/`
 - 学生端首页：`http://localhost:5173/student/home?token=student_demo_token_001`
 - 教师端登录页：`http://localhost:5173/teacher/login`
 
 ### 教师端登录方式
 
-教师端当前测试 token 仍然是：
+当前教师端测试 token：
 
 ```text
 test_token_001
 ```
 
-访问 `http://localhost:5173/teacher/login` 后，在输入框中填入 `test_token_001`，点击“同步用户与课程”即可。
+打开 `http://localhost:5173/teacher/login` 后，在输入框中填入 `test_token_001`，点击“同步用户与课程”即可。
 
 ### 学生端访问方式
 
-学生端测试 token：
+当前学生端测试 token：
 
 ```text
 student_demo_token_001
@@ -158,19 +230,22 @@ http://localhost:5173/student/home?token=student_demo_token_001
 
 即可进入学生首页。
 
-## 当前已验证可用的后端链路
-
-我已按本地真实启动方式验证通过以下接口：
+## 当前已验证通过的链路
 
 ### 教师端
 
-- `POST http://127.0.0.1:3001/api/v1/platform/syncUser`
-- `POST http://127.0.0.1:3001/api/v1/platform/syncCourse`
-
-其中 `test_token_001` 当前可正常返回教师信息和课程列表。
+- `POST /api/v1/platform/syncUser`
+- `POST /api/v1/platform/syncCourse`
+- `POST /api/v1/lesson/parse`
+- `POST /api/v1/lesson/generateScript`
+- `POST /api/v1/lesson/saveScript`
+- `POST /api/v1/lesson/generateAudio`
+- `POST /api/v1/lesson/publish`
+- `POST /api/v1/lesson/status`
 
 ### 学生端
 
+<<<<<<< Updated upstream
 - `POST http://127.0.0.1:3001/student-api/auth/verify`
 - `POST http://127.0.0.1:3001/student-api/api/v1/getStudentLessonList`
 - `POST http://127.0.0.1:3001/student-api/api/v1/lesson/play`
@@ -203,6 +278,13 @@ http://localhost:5173/student/home?token=student_demo_token_001
 - 默认 `DATABASE_URL` 已改成 `root:123456`
 
 如果你本机后续改了 MySQL 密码，请记得同步设置 `DATABASE_URL`。
+=======
+- `POST /auth/verify`
+- `POST /api/v1/getStudentLessonList`
+- `POST /api/v1/lesson/play`
+- `POST /api/v1/lesson/section/detail`
+- `POST /api/v1/progress/page/read`
+>>>>>>> Stashed changes
 
 ## 构建
 
@@ -215,4 +297,9 @@ npm run build
 ## 相关文件
 
 - [根 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/README.md)
+<<<<<<< Updated upstream
 - [MySQL 建表说明](/D:/服务外包（学习通）/xuexitong/fuck_learning/docs/MySQL建表执行说明.md)
+=======
+- [学生端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/student-ai-course/backend/student_plugin/README.md)
+- [教师端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/teacher-ai-course/backend/teacher_plugin/README.md)
+>>>>>>> Stashed changes

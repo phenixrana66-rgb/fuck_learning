@@ -1,7 +1,7 @@
 <template>
-  <div class="loading-box" v-if="visible">
+  <div v-if="visible" class="loading-box">
     <el-icon class="is-loading" :size="24"><Loading /></el-icon>
-    <div class="loading-text">{{ text || '处理中，请稍候...' }}</div>
+    <div class="loading-text">{{ text || '正在处理，请稍候…' }}</div>
     <el-progress
       v-if="showProgress"
       :percentage="percentage"
@@ -45,8 +45,10 @@ defineProps({
   justify-content: center;
   flex-direction: column;
 }
+
 .loading-text {
   margin-top: 10px;
-  color: #606266;
+  color: #617392;
+  font-size: 14px;
 }
 </style>

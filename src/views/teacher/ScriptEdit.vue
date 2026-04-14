@@ -1,116 +1,155 @@
 <template>
   <TeacherLayout>
-    <div class="page-card">
-      <div class="page-title">脚本生成</div>
+    <div class="page-card teacher-card">
+      <div class="page-title">讲稿编辑</div>
 
-      <el-form :model="form" label-width="110px">
-        <el-form-item label="parseId">
-          <el-input v-model="form.parseId" readonly />
+      <el-form label-width="110px" class="teacher-form">
+        <el-form-item label="当前课程">
+          <el-input :model-value="currentCourse.courseName || '-'" readonly />
         </el-form-item>
-
-        <el-form-item label="脚本类型">
-          <el-radio-group v-model="form.scriptType">
-            <el-radio label="standard">标准</el-radio>
-            <el-radio label="detail">详细</el-radio>
-            <el-radio label="simple">简洁</el-radio>
-          </el-radio-group>
-          <div class="light-tip" style="margin-top: 8px;">
-            标准适合常规授课，详细适合精讲，简洁适合短课或导学。
-          </div>
+        <el-form-item label="讲稿 ID">
+          <el-input v-model="form.scriptId" readonly />
         </el-form-item>
-
+        <el-form-item label="讲稿状态">
+          <el-tag :type="statusTagType(form.status)">{{ form.status || '未生成' }}</el-tag>
+        </el-form-item>
+        <el-form-item label="讲稿内容">
+          <el-input
+            v-model="form.scriptContent"
+            type="textarea"
+            :rows="18"
+            resize="vertical"
+            placeholder="请先生成讲稿，再在这里做人工修订。"
+          />
+        </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="loading" @click="handleGenerate">
-            生成脚本
-          </el-button>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存讲稿</el-button>
+          <el-button @click="refreshStatus">重新加载</el-button>
+          <el-button type="success" :disabled="!form.scriptId" @click="goAudioPage">进入音频生成</el-button>
         </el-form-item>
       </el-form>
 
-      <Loading :visible="loading" text="脚本生成中，请稍候..." />
-
-      <ErrorTip
-        v-if="errorCode"
-        :code="errorCode"
-        :message="errorMsg"
-        @retry="handleGenerate"
-      />
-    </div>
-
-    <div class="page-card" v-if="generateSuccess">
-      <el-result
-        icon="success"
-        title="脚本生成成功"
-        sub-title="已生成脚本内容，点击下方按钮进入脚本编辑页"
-      >
-        <template #extra>
-          <el-button type="success" @click="goEditPage">进入脚本编辑</el-button>
-        </template>
-      </el-result>
+      <Loading :visible="saving || loading" :text="saving ? '正在保存讲稿…' : '正在加载讲稿…'" />
+      <ErrorTip v-if="errorCode" :code="errorCode" :message="errorMsg" @retry="refreshStatus" />
     </div>
   </TeacherLayout>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
-import { generateScript } from '@/api/teacher'
-import { getCurrentCourse, getParseResult, saveScriptResult } from '@/utils/platform'
+import { getLessonStatus, saveScript } from '@/api/teacher'
+import { getCurrentCourse, getScriptResult, saveScriptResult } from '@/utils/platform'
 
 const router = useRouter()
 const currentCourse = getCurrentCourse()
-const parseResult = getParseResult()
-
-const form = ref({
-  parseId: parseResult.parseId || '',
-  scriptType: 'standard'
-})
+const localScript = getScriptResult()
 
 const loading = ref(false)
+const saving = ref(false)
 const errorCode = ref('')
 const errorMsg = ref('')
-const generateSuccess = ref(false)
+const form = ref({
+  scriptId: localScript.scriptId || '',
+  status: localScript.status || '',
+  scriptType: localScript.scriptType || '',
+  scriptContent: localScript.scriptContent || ''
+})
 
-async function handleGenerate() {
-  if (!form.value.parseId) {
-    ElMessage.warning('请先完成课件解析')
-    return
-  }
+onMounted(() => {
+  refreshStatus()
+})
 
+async function refreshStatus() {
+  if (!currentCourse.courseId) return
   loading.value = true
   errorCode.value = ''
   errorMsg.value = ''
-  generateSuccess.value = false
-
   try {
-    const res = await generateScript({
-      parseId: form.value.parseId,
-      courseId: currentCourse.courseId,
-      scriptType: form.value.scriptType
-    })
-
-    const data = res.data || {}
-
-    saveScriptResult({
-      ...data,
-      parseId: form.value.parseId,
-      scriptType: form.value.scriptType,
-      status: data.status || 'success'
-    })
-
-    generateSuccess.value = true
+    const res = await getLessonStatus({ courseId: currentCourse.courseId })
+    const data = res.data?.script || {}
+    if (data.scriptId) {
+      form.value.scriptId = data.scriptId
+      form.value.status = data.status || ''
+      form.value.scriptType = data.scriptType || ''
+      form.value.scriptContent = data.scriptContent || ''
+      saveScriptResult({
+        scriptId: data.scriptId,
+        status: data.status,
+        scriptType: data.scriptType,
+        scriptContent: data.scriptContent,
+        updatedAt: data.updatedAt
+      })
+    }
   } catch (error) {
     errorCode.value = error.code || 500
-    errorMsg.value = error.msg || '脚本生成失败'
+    errorMsg.value = error.msg || '加载讲稿失败。'
   } finally {
     loading.value = false
   }
 }
 
-function goEditPage() {
-  router.push('/teacher/script-edit')
+async function handleSave() {
+  if (!form.value.scriptId) {
+    ElMessage.warning('请先生成讲稿。')
+    return
+  }
+  if (!form.value.scriptContent.trim()) {
+    ElMessage.warning('讲稿内容不能为空。')
+    return
+  }
+
+  saving.value = true
+  errorCode.value = ''
+  errorMsg.value = ''
+  try {
+    const res = await saveScript({
+      scriptId: form.value.scriptId,
+      scriptContent: form.value.scriptContent
+    })
+    const data = res.data || {}
+    form.value.status = data.status || 'edited'
+    form.value.scriptContent = data.scriptContent || form.value.scriptContent
+    saveScriptResult({
+      scriptId: form.value.scriptId,
+      status: form.value.status,
+      scriptType: form.value.scriptType,
+      scriptContent: form.value.scriptContent,
+      updatedAt: data.updatedAt
+    })
+    ElMessage.success('讲稿已保存。')
+  } catch (error) {
+    errorCode.value = error.code || 500
+    errorMsg.value = error.msg || '保存讲稿失败。'
+  } finally {
+    saving.value = false
+  }
+}
+
+function goAudioPage() {
+  router.push('/teacher/audio-generate')
+}
+
+function statusTagType(status) {
+  if (status === 'published') return 'success'
+  if (status === 'edited') return 'warning'
+  if (status === 'generated') return 'info'
+  return 'info'
 }
 </script>
+
+<style scoped>
+.teacher-card {
+  border-radius: 22px;
+  border: 1px solid #e7eef9;
+  box-shadow: 0 16px 36px rgba(53, 82, 136, 0.08);
+}
+
+.teacher-form {
+  max-width: 980px;
+}
+</style>

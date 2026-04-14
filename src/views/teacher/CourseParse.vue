@@ -1,14 +1,19 @@
 <template>
   <TeacherLayout>
-    <div class="page-card">
+    <div class="page-card teacher-card">
       <div class="page-title">课件解析</div>
 
       <el-alert
         type="info"
         :closable="false"
         show-icon
+<<<<<<< Updated upstream
         style="margin-bottom: 16px"
         title="当前仅支持 PPTX 文件，选择后系统将自动上传并解析知识点结构"
+=======
+        class="teacher-alert"
+        title="支持 PPT、PPTX、PDF。上传后系统会解析章节结构、页图与知识点。"
+>>>>>>> Stashed changes
       />
 
       <div class="toolbar">
@@ -26,16 +31,24 @@
           <el-button :loading="submitting">选择文件并解析</el-button>
         </el-upload>
 
+<<<<<<< Updated upstream
         <el-button :disabled="!parseForm.parseId" @click="pollStatus">
           查询状态
         </el-button>
+=======
+        <el-button type="primary" :loading="submitting" @click="submitParse">上传并解析</el-button>
+        <el-button :disabled="!parseForm.parseId" @click="pollStatus">查询状态</el-button>
+>>>>>>> Stashed changes
       </div>
 
-      <el-form :model="parseForm" label-width="100px">
+      <el-form :model="parseForm" label-width="96px" class="teacher-form">
+        <el-form-item label="当前课程">
+          <el-input :model-value="currentCourse.courseName || '-'" readonly />
+        </el-form-item>
         <el-form-item label="文件名称">
           <el-input v-model="parseForm.fileName" readonly />
         </el-form-item>
-        <el-form-item label="parseId">
+        <el-form-item label="解析任务">
           <el-input v-model="parseForm.parseId" readonly />
         </el-form-item>
         <el-form-item label="解析状态">
@@ -43,36 +56,31 @@
             {{ parseForm.status || '未开始' }}
           </el-tag>
         </el-form-item>
+        <el-form-item label="目标章节">
+          <el-input :model-value="parseForm.chapterName || '-'" readonly />
+        </el-form-item>
       </el-form>
 
       <Loading
         :visible="submitting || polling"
-        :text="polling ? '课件解析中，正在轮询状态...' : '课件上传中...'"
+        :text="polling ? '课件解析中，正在轮询状态…' : '课件上传中…'"
         :showProgress="polling"
         :percentage="progress"
       />
 
-      <ErrorTip
-        v-if="errorCode"
-        :code="errorCode"
-        :message="errorMsg"
-        @retry="pollStatus"
-      />
+      <ErrorTip v-if="errorCode" :code="errorCode" :message="errorMsg" @retry="pollStatus" />
     </div>
 
-    <div class="page-card" v-if="knowledgeTree.length">
-      <div class="sub-title">知识点层级预览</div>
+    <div v-if="knowledgeTree.length" class="page-card teacher-card">
+      <div class="sub-title">知识点结构预览</div>
+      <div v-if="chapterSummary" class="teacher-summary">{{ chapterSummary }}</div>
+
       <div class="tree-box">
-        <el-tree
-          :data="knowledgeTree"
-          node-key="id"
-          default-expand-all
-          :props="treeProps"
-        />
+        <el-tree :data="knowledgeTree" node-key="id" default-expand-all :props="treeProps" />
       </div>
 
-      <div class="toolbar" style="margin-top: 16px">
-        <el-button type="success" @click="goScriptPage">进入脚本生成</el-button>
+      <div class="toolbar" style="margin-top: 18px;">
+        <el-button type="primary" @click="goScriptPage">进入讲稿生成</el-button>
       </div>
     </div>
   </TeacherLayout>
@@ -96,12 +104,15 @@ const parseForm = ref({
   fileName: '',
   fileBase64: '',
   parseId: '',
-  status: ''
+  status: '',
+  chapterId: '',
+  chapterName: ''
 })
 
 const submitting = ref(false)
 const polling = ref(false)
 const progress = ref(0)
+const chapterSummary = ref('')
 const knowledgeTree = ref([])
 const errorCode = ref('')
 const errorMsg = ref('')
@@ -148,9 +159,14 @@ function handleFileChange(file) {
 function handleSelectedFile(file) {
   const isValid = /\.pptx$/i.test(file.name)
   if (!isValid) {
+<<<<<<< Updated upstream
     ElMessage.warning('当前仅支持 PPTX 文件')
     uploadRef.value?.clearFiles()
     return
+=======
+    ElMessage.warning('仅支持 PPT、PPTX、PDF 文件。')
+    return false
+>>>>>>> Stashed changes
   }
 
   resetParseState()
@@ -170,12 +186,12 @@ function handleSelectedFile(file) {
 
 async function submitParse() {
   if (!currentCourse.courseId) {
-    ElMessage.warning('请先选择课程')
+    ElMessage.warning('请先选择课程。')
     return
   }
 
   if (!parseForm.value.fileBase64) {
-    ElMessage.warning('请先选择课件文件')
+    ElMessage.warning('请先选择课件文件。')
     return
   }
 
@@ -196,6 +212,9 @@ async function submitParse() {
     const data = res.data || {}
     parseForm.value.parseId = data.parseId || ''
     parseForm.value.status = data.status || 'processing'
+    parseForm.value.chapterId = data.chapterId || ''
+    parseForm.value.chapterName = data.chapterName || ''
+    chapterSummary.value = data.chapterSummary || ''
     knowledgeTree.value = data.knowledgeTree || []
 
     saveParseResult({
@@ -208,7 +227,7 @@ async function submitParse() {
     }
   } catch (error) {
     errorCode.value = error.code || 500
-    errorMsg.value = error.msg || '解析提交失败'
+    errorMsg.value = error.msg || '解析提交失败。'
   } finally {
     submitting.value = false
   }
@@ -216,13 +235,13 @@ async function submitParse() {
 
 async function pollStatus() {
   if (!parseForm.value.parseId) {
-    ElMessage.warning('暂无 parseId')
+    ElMessage.warning('当前没有可查询的解析任务。')
     return
   }
 
   clearTimeout(pollTimer)
   polling.value = true
-  progress.value = 10
+  progress.value = 15
 
   const doPoll = async () => {
     try {
@@ -234,8 +253,11 @@ async function pollStatus() {
 
       const data = res.data || {}
       parseForm.value.status = data.status || parseForm.value.status
+      parseForm.value.chapterId = data.chapterId || parseForm.value.chapterId
+      parseForm.value.chapterName = data.chapterName || parseForm.value.chapterName
+      chapterSummary.value = data.chapterSummary || chapterSummary.value
       knowledgeTree.value = data.knowledgeTree || knowledgeTree.value
-      progress.value = Math.min(progress.value + 15, 95)
+      progress.value = Math.min(progress.value + 18, 95)
 
       saveParseResult({
         ...data,
@@ -252,7 +274,7 @@ async function pollStatus() {
       if (data.status === 'failed') {
         polling.value = false
         errorCode.value = 500
-        errorMsg.value = data.msg || '解析失败'
+        errorMsg.value = data.msg || '解析失败。'
         return
       }
 
@@ -260,7 +282,7 @@ async function pollStatus() {
     } catch (error) {
       polling.value = false
       errorCode.value = error.code || 500
-      errorMsg.value = error.msg || '轮询解析状态失败'
+      errorMsg.value = error.msg || '轮询解析状态失败。'
     }
   }
 
@@ -268,7 +290,7 @@ async function pollStatus() {
 }
 
 function statusTagType(status) {
-  if (status === 'success') return 'success'
+  if (status === 'success' || status === 'completed') return 'success'
   if (status === 'failed') return 'danger'
   if (status === 'processing') return 'warning'
   return 'info'
@@ -278,3 +300,29 @@ function goScriptPage() {
   router.push('/teacher/script-generate')
 }
 </script>
+<<<<<<< Updated upstream
+=======
+
+<style scoped>
+.teacher-card {
+  border-radius: 22px;
+  border: 1px solid #e7eef9;
+  box-shadow: 0 16px 36px rgba(53, 82, 136, 0.08);
+}
+
+.teacher-alert {
+  margin-bottom: 18px;
+}
+
+.teacher-form {
+  max-width: 760px;
+}
+
+.teacher-summary {
+  margin-bottom: 14px;
+  color: #5f7395;
+  font-size: 14px;
+  line-height: 1.8;
+}
+</style>
+>>>>>>> Stashed changes
