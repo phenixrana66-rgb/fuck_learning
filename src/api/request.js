@@ -17,7 +17,7 @@ service.interceptors.request.use(
     const data = config.data || {}
     const signedData = buildSignedPayload(data)
 
-    config.method = 'post'
+    // config.method = 'post'
     config.data = signedData
 
     if (token) {

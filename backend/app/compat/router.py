@@ -106,33 +106,32 @@ async def sync_course_endpoint(request: Request, db: Session = Depends(get_db)) 
 @router.post("/api/v1/lesson/parse")
 async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
-    if _is_teacher_parse_payload(payload):
-        try:
-            teacher = require_teacher(db, _extract_token(request, payload))
-        except PermissionError:
-            raise ApiError(401, "token 无效", status_code=401)
+    try:
+        teacher = require_teacher(db, _extract_token(request, payload))
+    except PermissionError:
+        raise ApiError(401, "token 无效", status_code=401)
 
-        try:
-            data = upload_parse(
-                db,
-                teacher,
-                payload.get("courseId"),
-                payload.get("fileName"),
-                payload.get("fileContent"),
-                str(request.base_url),
-            )
-            Thread(target=run_teacher_parse_task, args=(data["parseId"],), daemon=True).start()
-            return teacher_response(request, data)
-        except ValueError as exc:
-            raise ApiError(400, str(exc), status_code=400)
-        except LookupError as exc:
-            raise ApiError(404, str(exc), status_code=404)
+    try:
+        data = upload_parse(
+            db,
+            teacher,
+            payload.get("courseId"),
+            payload.get("fileName"),
+            payload.get("fileContent"),
+            str(request.base_url),
+        )
+        Thread(target=run_teacher_parse_task, args=(data["parseId"],), daemon=True).start()
+        return teacher_response(request, data)
+    except ValueError as exc:
+        raise ApiError(400, str(exc), status_code=400)
+    except LookupError as exc:
+        raise ApiError(404, str(exc), status_code=404)
 
-    typed_payload = ParseRequest.model_validate(payload)
-    verify_signature_placeholder(typed_payload.enc, typed_payload.time)
-    data = create_parse_task(typed_payload, request_id=getattr(request.state, "request_id", None))
-    Thread(target=run_parse_task, args=(data.parseId, typed_payload.model_copy(deep=True)), daemon=True).start()
-    return success_response(request, data.model_dump(), msg="课件解析任务已创建")
+    # typed_payload = ParseRequest.model_validate(payload)
+    # verify_signature_placeholder(typed_payload.enc, typed_payload.time)
+    # data = create_parse_task(typed_payload, request_id=getattr(request.state, "request_id", None))
+    # Thread(target=run_parse_task, args=(data.parseId, typed_payload.model_copy(deep=True)), daemon=True).start()
+    # return success_response(request, data.model_dump(), msg="课件解析任务已创建")
 
 
 @router.get("/api/v1/lesson/parse/{parseId}")
