@@ -1,4 +1,4 @@
-import tempfile
+﻿import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,13 +23,13 @@ class ScriptServiceTestCase(unittest.TestCase):
         clear_scripts()
         clear_parse_tasks()
         self.parse_payload = ParseRequest(
-            schoolId="school-001",
-            userId="teacher-001",
-            courseId="course-001",
-            fileType="ppt",
-            fileUrl="file:///tmp/demo.pptx",
+            schoolId='school-001',
+            userId='teacher-001',
+            courseId='course-001',
+            fileType='ppt',
+            fileUrl='file:///tmp/demo.pptx',
             isExtractKeyPoint=True,
-            enc="demo-signature",
+            enc='demo-signature',
         )
 
     def tearDown(self) -> None:
@@ -39,9 +39,9 @@ class ScriptServiceTestCase(unittest.TestCase):
         assert self.temp_dir is not None
         self.temp_dir.cleanup()
 
-    @patch("backend.app.courseware.service.build_cir")
-    @patch("backend.app.courseware.service.parse_courseware")
-    @patch("backend.app.script.service.generate_script_sections_with_llm")
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
+    @patch('backend.app.script.service.generate_script_sections_with_llm')
     def test_generate_script_prefers_llm_generated_content(
         self,
         mock_generate_script_sections_with_llm,
@@ -51,30 +51,12 @@ class ScriptServiceTestCase(unittest.TestCase):
         parse_payload = self.parse_payload
         assert parse_payload is not None
         mock_parse_courseware.return_value = (
-            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
         )
-        mock_build_cir.return_value = CIR(
-            coursewareId="cw-course-001",
-            title="人工智能导论",
-            chapters=[
-                CirChapter(
-                    chapterId="course-001-chap-001",
-                    chapterName="第一章",
-                    nodes=[
-                        LessonNode(
-                            nodeId="node-01-01",
-                            nodeName="什么是人工智能",
-                            pageRefs=[1],
-                            keyPoints=["定义"],
-                            summary="介绍人工智能。",
-                        )
-                    ],
-                )
-            ],
-        )
+        mock_build_cir.return_value = _build_single_node_cir()
         mock_generate_script_sections_with_llm.return_value = {
-            "sec001": "同学们好，这一节我们先理解人工智能的定义，再建立整体认识。"
+            'sec001': '同学们好，这一节我们先理解人工智能的定义，再建立整体认识。'
         }
         accepted = create_parse_task(parse_payload)
         run_parse_task(accepted.parseId, parse_payload)
@@ -82,21 +64,21 @@ class ScriptServiceTestCase(unittest.TestCase):
         summary = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
-                teachingStyle="standard",
-                speechSpeed="normal",
-                customOpening="同学们好",
-                enc="demo-signature",
+                teachingStyle='standard',
+                speechSpeed='normal',
+                customOpening='同学们好',
+                enc='demo-signature',
             )
         )
 
         self.assertEqual(
             summary.scriptStructure[0].content,
-            "同学们好，这一节我们先理解人工智能的定义，再建立整体认识。",
+            '同学们好，这一节我们先理解人工智能的定义，再建立整体认识。',
         )
 
-    @patch("backend.app.courseware.service.build_cir")
-    @patch("backend.app.courseware.service.parse_courseware")
-    @patch("backend.app.script.service.generate_script_sections_with_llm")
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
+    @patch('backend.app.script.service.generate_script_sections_with_llm')
     def test_generate_script_falls_back_when_llm_generation_fails(
         self,
         mock_generate_script_sections_with_llm,
@@ -106,31 +88,13 @@ class ScriptServiceTestCase(unittest.TestCase):
         parse_payload = self.parse_payload
         assert parse_payload is not None
         mock_parse_courseware.return_value = (
-            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
         )
-        mock_build_cir.return_value = CIR(
-            coursewareId="cw-course-001",
-            title="人工智能导论",
-            chapters=[
-                CirChapter(
-                    chapterId="course-001-chap-001",
-                    chapterName="第一章",
-                    nodes=[
-                        LessonNode(
-                            nodeId="node-01-01",
-                            nodeName="什么是人工智能",
-                            pageRefs=[1],
-                            keyPoints=["定义"],
-                            summary="介绍人工智能。",
-                        )
-                    ],
-                )
-            ],
-        )
+        mock_build_cir.return_value = _build_single_node_cir()
         mock_generate_script_sections_with_llm.side_effect = ApiError(
             code=502,
-            msg="脚本生成 LLM 接口返回异常",
+            msg='脚本生成 LLM 接口返回异常',
             status_code=502,
         )
         accepted = create_parse_task(parse_payload)
@@ -139,19 +103,20 @@ class ScriptServiceTestCase(unittest.TestCase):
         summary = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
-                teachingStyle="standard",
-                speechSpeed="normal",
+                teachingStyle='standard',
+                speechSpeed='normal',
                 customOpening=None,
-                enc="demo-signature",
+                enc='demo-signature',
             )
         )
 
-        self.assertIn("什么是人工智能", summary.scriptStructure[0].content)
-        self.assertIn("重点包括：定义", summary.scriptStructure[0].content)
+        self.assertIn('什么是人工智能', summary.scriptStructure[0].content)
+        self.assertIn('课堂上可以把重点收束为：定义。', summary.scriptStructure[0].content)
+        self.assertNotIn('Page ', summary.scriptStructure[0].content)
 
-    @patch("backend.app.courseware.service.build_cir")
-    @patch("backend.app.courseware.service.parse_courseware")
-    @patch("backend.app.script.service.generate_script_sections_with_llm")
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
+    @patch('backend.app.script.service.generate_script_sections_with_llm')
     def test_generate_script_uses_fallback_when_parse_has_no_nodes(
         self,
         mock_generate_script_sections_with_llm,
@@ -161,10 +126,10 @@ class ScriptServiceTestCase(unittest.TestCase):
         parse_payload = self.parse_payload
         assert parse_payload is not None
         mock_parse_courseware.return_value = (
-            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
         )
-        mock_build_cir.return_value = CIR(coursewareId="cw-course-001", title="人工智能导论", chapters=[])
+        mock_build_cir.return_value = CIR(coursewareId='cw-course-001', title='人工智能导论', chapters=[])
         mock_generate_script_sections_with_llm.return_value = {}
         accepted = create_parse_task(parse_payload)
         run_parse_task(accepted.parseId, parse_payload)
@@ -172,66 +137,75 @@ class ScriptServiceTestCase(unittest.TestCase):
         summary = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
-                teachingStyle="standard",
-                speechSpeed="normal",
-                customOpening="同学们好，下面我们开始。",
-                enc="demo-signature",
+                teachingStyle='standard',
+                speechSpeed='normal',
+                customOpening='同学们好，下面我们开始。',
+                enc='demo-signature',
             )
         )
 
         self.assertEqual(len(summary.scriptStructure), 1)
-        self.assertIn("当前课件未抽取到可用节点", summary.scriptStructure[0].content)
+        self.assertIn('当前还没有抽取出可直接生成脚本的章节节点', summary.scriptStructure[0].content)
 
-    @patch("backend.app.courseware.service.build_cir")
-    @patch("backend.app.courseware.service.parse_courseware")
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
     def test_generated_script_survives_service_reload(self, mock_parse_courseware, mock_build_cir) -> None:
         parse_payload = self.parse_payload
         assert parse_payload is not None
         mock_parse_courseware.return_value = (
-            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
         )
-        mock_build_cir.return_value = CIR(
-            coursewareId="cw-course-001",
-            title="人工智能导论",
-            chapters=[CirChapter(chapterId="course-001-chap-001", chapterName="第一章", nodes=[LessonNode(nodeId="node-01-01", nodeName="什么是人工智能", pageRefs=[1], keyPoints=["定义"], summary="介绍人工智能。")])],
-        )
+        mock_build_cir.return_value = _build_single_node_cir()
         accepted = create_parse_task(parse_payload)
         run_parse_task(accepted.parseId, parse_payload)
+
         summary = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
-                teachingStyle="standard",
-                speechSpeed="normal",
+                teachingStyle='standard',
+                speechSpeed='normal',
                 customOpening=None,
-                enc="demo-signature",
+                enc='demo-signature',
             )
         )
 
         reloaded = get_script(summary.scriptId)
 
         self.assertEqual(reloaded.scriptId, summary.scriptId)
-        self.assertEqual(reloaded.scriptStructure[0].sectionName, "什么是人工智能")
+        self.assertEqual(reloaded.scriptStructure[0].sectionName, '什么是人工智能')
 
-    @patch("backend.app.courseware.service.build_cir")
-    @patch("backend.app.courseware.service.parse_courseware")
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
     def test_generate_script_uses_completed_parse_result(self, mock_parse_courseware, mock_build_cir) -> None:
         parse_payload = self.parse_payload
         assert parse_payload is not None
         mock_parse_courseware.return_value = (
-            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
         )
         mock_build_cir.return_value = CIR(
-            coursewareId="cw-course-001",
-            title="人工智能导论",
+            coursewareId='cw-course-001',
+            title='人工智能导论',
             chapters=[
                 CirChapter(
-                    chapterId="course-001-chap-001",
-                    chapterName="第一章",
+                    chapterId='course-001-chap-001',
+                    chapterName='第一章',
                     nodes=[
-                        LessonNode(nodeId="node-01-01", nodeName="什么是人工智能", pageRefs=[1, 2], keyPoints=["定义", "目标"], summary="介绍人工智能的基础定义。"),
-                        LessonNode(nodeId="node-01-02", nodeName="人工智能的应用", pageRefs=[3], keyPoints=["案例"], summary="说明人工智能在课堂中的使用场景。"),
+                        LessonNode(
+                            nodeId='node-01-01',
+                            nodeName='什么是人工智能',
+                            pageRefs=[1, 2],
+                            keyPoints=['定义', '目标'],
+                            summary='介绍人工智能的基础定义。',
+                        ),
+                        LessonNode(
+                            nodeId='node-01-02',
+                            nodeName='人工智能的应用',
+                            pageRefs=[3],
+                            keyPoints=['案例'],
+                            summary='说明人工智能在课堂中的使用场景。',
+                        ),
                     ],
                 )
             ],
@@ -242,75 +216,115 @@ class ScriptServiceTestCase(unittest.TestCase):
         summary = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
-                teachingStyle="standard",
-                speechSpeed="normal",
-                customOpening="同学们好，今天我们先看人工智能的核心概念。",
-                enc="demo-signature",
+                teachingStyle='standard',
+                speechSpeed='normal',
+                customOpening='同学们好，今天我们先看人工智能的核心概念。',
+                enc='demo-signature',
             )
         )
 
         self.assertEqual(len(summary.scriptStructure), 2)
-        self.assertEqual(summary.scriptStructure[0].sectionName, "什么是人工智能")
-        self.assertEqual(summary.scriptStructure[0].relatedChapterId, "course-001-chap-001")
-        self.assertEqual(summary.scriptStructure[0].relatedPage, "1-2")
-        self.assertIn("人工智能", summary.scriptStructure[0].content)
-        self.assertEqual(summary.scriptStructure[1].keyPoints, ["案例"])
+        self.assertEqual(summary.scriptStructure[0].sectionName, '什么是人工智能')
+        self.assertEqual(summary.scriptStructure[0].relatedChapterId, 'course-001-chap-001')
+        self.assertEqual(summary.scriptStructure[0].relatedPage, '1-2')
+        self.assertIn('人工智能', summary.scriptStructure[0].content)
+        self.assertEqual(summary.scriptStructure[1].keyPoints, ['案例'])
 
-    @patch("backend.app.courseware.service.build_cir")
-    @patch("backend.app.courseware.service.parse_courseware")
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
     def test_generate_script_rejects_non_completed_parse(self, mock_parse_courseware, mock_build_cir) -> None:
         parse_payload = self.parse_payload
         assert parse_payload is not None
         mock_parse_courseware.return_value = (
-            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
         )
-        mock_build_cir.return_value = CIR(coursewareId="cw-course-001", title="demo", chapters=[])
+        mock_build_cir.return_value = CIR(coursewareId='cw-course-001', title='demo', chapters=[])
         accepted = create_parse_task(parse_payload)
 
         with self.assertRaises(ApiError) as context:
             generate_script(
                 GenerateScriptRequest(
                     parseId=accepted.parseId,
-                    teachingStyle="standard",
-                    speechSpeed="normal",
+                    teachingStyle='standard',
+                    speechSpeed='normal',
                     customOpening=None,
-                    enc="demo-signature",
+                    enc='demo-signature',
                 )
             )
 
         self.assertEqual(context.exception.status_code, 409)
 
-    @patch("backend.app.courseware.service.build_cir")
-    @patch("backend.app.courseware.service.parse_courseware")
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
     def test_update_script_increments_version(self, mock_parse_courseware, mock_build_cir) -> None:
         parse_payload = self.parse_payload
         assert parse_payload is not None
         mock_parse_courseware.return_value = (
-            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
             StructurePreview(chapters=[]),
         )
         mock_build_cir.return_value = CIR(
-            coursewareId="cw-course-001",
-            title="人工智能导论",
-            chapters=[CirChapter(chapterId="course-001-chap-001", chapterName="第一章", nodes=[LessonNode(nodeId="node-01-01", nodeName="什么是人工智能", pageRefs=[1], keyPoints=[], summary="介绍人工智能。")])],
+            coursewareId='cw-course-001',
+            title='人工智能导论',
+            chapters=[
+                CirChapter(
+                    chapterId='course-001-chap-001',
+                    chapterName='第一章',
+                    nodes=[
+                        LessonNode(
+                            nodeId='node-01-01',
+                            nodeName='什么是人工智能',
+                            pageRefs=[1],
+                            keyPoints=[],
+                            summary='介绍人工智能。',
+                        )
+                    ],
+                )
+            ],
         )
         accepted = create_parse_task(parse_payload)
         run_parse_task(accepted.parseId, parse_payload)
         summary = generate_script(
             GenerateScriptRequest(
                 parseId=accepted.parseId,
-                teachingStyle="standard",
-                speechSpeed="normal",
+                teachingStyle='standard',
+                speechSpeed='normal',
                 customOpening=None,
-                enc="demo-signature",
+                enc='demo-signature',
             )
         )
 
         updated = update_script(
             summary.scriptId,
-            UpdateScriptRequest(scriptStructure=summary.scriptStructure, versionRemark="demo", enc="demo-signature"),
+            UpdateScriptRequest(scriptStructure=summary.scriptStructure, versionRemark='demo', enc='demo-signature'),
         )
 
         self.assertEqual(updated.version, 2)
         self.assertEqual(get_script(summary.scriptId).version, 2)
+
+
+def _build_single_node_cir() -> CIR:
+    return CIR(
+        coursewareId='cw-course-001',
+        title='人工智能导论',
+        chapters=[
+            CirChapter(
+                chapterId='course-001-chap-001',
+                chapterName='第一章',
+                nodes=[
+                    LessonNode(
+                        nodeId='node-01-01',
+                        nodeName='什么是人工智能',
+                        pageRefs=[1],
+                        keyPoints=['定义'],
+                        summary='介绍人工智能。',
+                    )
+                ],
+            )
+        ],
+    )
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,5 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import logging
+import math
+import re
 from uuid import uuid4
 
 from sqlalchemy import delete
@@ -13,6 +16,8 @@ from backend.app.parser.schemas import ParseTaskStatus
 from backend.app.script.llm_client import generate_script_sections_with_llm
 from backend.app.script.schemas import GenerateScriptRequest, ScriptDetail, ScriptSection, ScriptSummary, UpdateScriptRequest
 from backend.chaoxing_db.models import ChapterAudioAsset, ChapterParseTask, ChapterScript, ChapterScriptSection
+
+logger = logging.getLogger(__name__)
 
 
 def generate_script(payload: GenerateScriptRequest) -> ScriptSummary:
@@ -120,54 +125,54 @@ def _build_script_sections_with_nodes(
     sections: list[ScriptSection] = []
     section_nodes: dict[str, LessonNode] = {}
     opening = _normalize_opening(payload.customOpening)
-    section_index = 1
+    flattened_nodes = [
+        (chapter.chapterId, node)
+        for chapter in parse_result.cir.chapters
+        for node in chapter.nodes
+    ]
 
-    for chapter in parse_result.cir.chapters:
-        for node in chapter.nodes:
-            section_id = f'sec{section_index:03d}'
-            key_points = node.keyPoints[:3]
-            section_content = _build_section_content(
-                node_name=node.nodeName,
-                summary=node.summary.strip(),
-                key_points=key_points,
-                page_contents=node.pageContents,
-                teaching_style=payload.teachingStyle,
-                opening=_opening_prefix(opening, section_index),
+    for section_index, (chapter_id, node) in enumerate(flattened_nodes, start=1):
+        section_id = f'sec{section_index:03d}'
+        key_points = node.keyPoints[:4]
+        next_node_name = flattened_nodes[section_index][1].nodeName if section_index < len(flattened_nodes) else None
+        section_content = _build_section_content(
+            node_name=node.nodeName,
+            summary=node.summary.strip(),
+            key_points=key_points,
+            page_contents=node.pageContents,
+            teaching_style=payload.teachingStyle,
+            opening=_opening_prefix(opening, section_index),
+            section_index=section_index,
+            total_sections=len(flattened_nodes),
+            next_node_name=next_node_name,
+        )
+        sections.append(
+            ScriptSection(
+                sectionId=section_id,
+                sectionName=node.nodeName,
+                content=section_content,
+                duration=_estimate_duration(payload.speechSpeed, section_content),
+                relatedChapterId=chapter_id,
+                relatedPage=_format_page_refs(node.pageRefs),
+                keyPoints=key_points,
             )
-            sections.append(
-                ScriptSection(
-                    sectionId=section_id,
-                    sectionName=node.nodeName,
-                    content=section_content,
-                    duration=_estimate_duration(payload.speechSpeed, key_points),
-                    relatedChapterId=chapter.chapterId,
-                    relatedPage=_format_page_refs(node.pageRefs),
-                    keyPoints=key_points,
-                )
-            )
-            section_nodes[section_id] = node
-            section_index += 1
+        )
+        section_nodes[section_id] = node
 
     if not sections:
+        empty_content = _build_empty_script_content(parse_result.cir.title or '课件讲解', opening)
         sections.append(
             ScriptSection(
                 sectionId='sec001',
-                sectionName=parse_result.cir.title or 'Courseware Introduction',
-                content=' '.join(
-                    part
-                    for part in [
-                        opening,
-                        '\u5f53\u524d\u8bfe\u4ef6\u672a\u62bd\u53d6\u5230\u53ef\u7528\u8282\u70b9\u3002',
-                        '\u8bf7\u5148\u56f4\u7ed5\u7ae0\u8282\u4e3b\u9898\u5b8c\u6210\u5bfc\u5165\uff0c\u518d\u9010\u6b65\u5c55\u5f00\u5b8c\u6574\u8bb2\u89e3\u3002',
-                    ]
-                    if part
-                ),
-                duration=_estimate_duration(payload.speechSpeed, []),
+                sectionName=parse_result.cir.title or '课件导入',
+                content=empty_content,
+                duration=_estimate_duration(payload.speechSpeed, empty_content),
                 keyPoints=[],
             )
         )
 
     _try_fill_sections_with_llm(parse_result, payload, sections, section_nodes)
+    _refresh_section_durations(sections, payload.speechSpeed)
     return sections, section_nodes
 
 
@@ -267,7 +272,7 @@ def _build_script_section(
         duration=section.duration_sec or 0,
         relatedChapterId=chapter_lookup.get(node_code) if node_code else None,
         relatedPage=section.related_page_range,
-        keyPoints=node.keyPoints[:3] if node else [],
+        keyPoints=node.keyPoints[:4] if node else [],
     )
 
 
@@ -283,13 +288,19 @@ def _try_fill_sections_with_llm(
 
     try:
         generated_contents = generate_script_sections_with_llm(cir, payload, sections, section_nodes)
-    except ApiError:
+    except ApiError as exc:
+        logger.warning('script generation LLM failed for parse_id=%s: %s', payload.parseId, exc.msg)
         return
 
     for section in sections:
         generated_content = generated_contents.get(section.sectionId)
         if isinstance(generated_content, str) and generated_content.strip():
             section.content = generated_content.strip()
+
+
+def _refresh_section_durations(sections: list[ScriptSection], speech_speed: str) -> None:
+    for section in sections:
+        section.duration = _estimate_duration(speech_speed, section.content)
 
 
 def _normalize_opening(opening: str | None) -> str | None:
@@ -316,48 +327,124 @@ def _build_section_content(
     page_contents: list[CirSlideContent],
     teaching_style: str,
     opening: str,
+    section_index: int,
+    total_sections: int,
+    next_node_name: str | None,
 ) -> str:
-    style_prefix = {
-        'standard': '\u5148\u6293\u4f4f\u6838\u5fc3\u6982\u5ff5\uff0c\u518d\u6309\u8bfe\u5802\u8bb2\u89e3\u987a\u5e8f\u5c55\u5f00\u3002',
-        'detailed': '\u8fd9\u4e00\u6bb5\u4f1a\u6309\u80cc\u666f\u3001\u6982\u5ff5\u548c\u5e94\u7528\u4e09\u4e2a\u5c42\u6b21\u5b8c\u6574\u5c55\u5f00\u3002',
-        'concise': '\u8fd9\u4e00\u6bb5\u53ea\u4fdd\u7559\u6700\u5173\u952e\u7684\u7ed3\u8bba\u548c\u8bb0\u5fc6\u6293\u624b\u3002',
-    }.get(teaching_style, '\u5148\u6293\u4f4f\u6838\u5fc3\u6982\u5ff5\uff0c\u518d\u6309\u8bfe\u5802\u8bb2\u89e3\u987a\u5e8f\u5c55\u5f00\u3002')
-    key_points_text = '\uff1b'.join(key_points) if key_points else '\u4ee5\u8282\u70b9\u6458\u8981\u4f5c\u4e3a\u672c\u6bb5\u4e3b\u7ebf\u3002'
-    source_explanation = _build_page_grounded_explanation(page_contents)
     parts = [
-        part
-        for part in [
-            opening,
-            f'\u672c\u8282\u8bb2\u89e3\u300a{node_name}\u300b\u3002',
-            style_prefix,
-            source_explanation or summary or '\u56f4\u7ed5\u5f53\u524d\u8282\u70b9\u505a\u91cd\u70b9\u8bb2\u89e3\u3002',
-            f'\u91cd\u70b9\u5305\u62ec\uff1a{key_points_text}',
-        ]
-        if part
+        opening,
+        f'这一部分我们重点讲“{node_name}”。',
+        _style_guidance(teaching_style),
+        _build_page_grounded_explanation(page_contents, summary),
+        _build_key_points_sentence(key_points),
+        _build_transition_sentence(node_name, section_index, total_sections, next_node_name),
     ]
-    return ' '.join(parts)
+    return ' '.join(part for part in parts if part)
 
 
-def _build_page_grounded_explanation(page_contents: list[CirSlideContent]) -> str:
-    explanations: list[str] = []
+def _build_empty_script_content(courseware_title: str, opening: str | None) -> str:
+    parts = [
+        opening,
+        f'这份课件当前还没有抽取出可直接生成脚本的章节节点，我们先围绕“{courseware_title}”做一个简短导入。',
+        '建议老师先补充章节划分，明确每一部分要讲的概念、案例或步骤，再生成完整讲稿。',
+        '如果需要先行授课，可以从课程目标、核心概念和应用场景三个层次展开，最后做一个简短总结。',
+    ]
+    return ' '.join(part for part in parts if part)
+
+
+def _style_guidance(teaching_style: str) -> str:
+    return {
+        'standard': '讲解时先把概念说清，再把重点事实串起来。',
+        'detailed': '这一段可以按背景、概念、细节和应用的顺序展开，适当多解释一步。',
+        'concise': '这一段尽量短句表达，只保留最关键的概念、结论和记忆抓手。',
+    }.get(teaching_style, '讲解时先把概念说清，再把重点事实串起来。')
+
+
+def _build_page_grounded_explanation(page_contents: list[CirSlideContent], summary: str) -> str:
+    facts = _collect_grounded_facts(page_contents)
+    if facts:
+        if len(facts) == 1:
+            return f'结合课件内容，需要重点讲清：{facts[0]}。'
+        return f'结合课件内容，这里至少要讲清以下事实：{'；'.join(facts)}。'
+    return summary or '这一部分需要围绕课件中的核心事实做具体讲解。'
+
+
+def _collect_grounded_facts(page_contents: list[CirSlideContent]) -> list[str]:
+    facts: list[str] = []
+    seen: set[str] = set()
+
     for page_content in page_contents[:3]:
-        fragments: list[str] = []
-        if page_content.title:
-            fragments.append(f"Page {page_content.slideNumber} is titled '{_shorten_text(page_content.title, 40)}'.")
+        title = _clean_fact_text(page_content.title)
+        if title:
+            _push_fact(facts, seen, f'课件标题聚焦“{title}”')
 
-        for body_text in page_content.bodyTexts[:2]:
-            fragments.append(f"The slide highlights: {_shorten_text(body_text, 90)}")
+        for body_text in page_content.bodyTexts[:3]:
+            for segment in _split_fact_segments(body_text):
+                candidate = _clean_fact_text(segment)
+                if candidate:
+                    _push_fact(facts, seen, candidate)
 
         for table_text in page_content.tableTexts[:1]:
-            fragments.append(f"The table content shows: {_shorten_text(table_text.replace(chr(10), '; '), 120)}")
+            cleaned_table = _clean_fact_text(table_text.replace(chr(10), '； '))
+            if cleaned_table:
+                _push_fact(facts, seen, cleaned_table)
 
-        if page_content.notes:
-            fragments.append(f"The speaker notes add: {_shorten_text(page_content.notes, 80)}")
+        notes = _clean_fact_text(page_content.notes)
+        if notes:
+            _push_fact(facts, seen, notes)
 
-        if fragments:
-            explanations.append(' '.join(fragments))
+    return facts[:4]
 
-    return ' '.join(explanations)
+
+def _push_fact(facts: list[str], seen: set[str], candidate: str) -> None:
+    normalized = candidate.strip()
+    if not normalized or normalized in seen:
+        return
+    seen.add(normalized)
+    facts.append(normalized)
+
+
+def _split_fact_segments(text: str | None) -> list[str]:
+    if not text:
+        return []
+    normalized = text.replace('\r', '\n')
+    parts = re.split(r'[\n；;。！？]', normalized)
+    return [part.strip() for part in parts if part and part.strip()]
+
+
+def _clean_fact_text(text: str | None) -> str | None:
+    if not text:
+        return None
+    normalized = ' '.join(part.strip() for part in text.splitlines() if part.strip())
+    normalized = re.sub(r'^[◇•·●]+', '', normalized).strip()
+    normalized = re.sub(r'\s+', ' ', normalized)
+    normalized = normalized.strip('，。；;：:、 ')
+    if not normalized:
+        return None
+    if re.fullmatch(r'第?\d+页', normalized):
+        return None
+    if normalized.upper() == 'END':
+        return None
+    return _shorten_text(normalized, 120)
+
+
+def _build_key_points_sentence(key_points: list[str]) -> str:
+    if not key_points:
+        return '讲解时要把课件中最关键的概念和事实讲透。'
+    return f'课堂上可以把重点收束为：{'；'.join(key_points[:4])}。'
+
+
+def _build_transition_sentence(
+    node_name: str,
+    section_index: int,
+    total_sections: int,
+    next_node_name: str | None,
+) -> str:
+    if total_sections <= 1:
+        return f'把“{node_name}”讲清之后，可以顺势带学生回顾整节课的主线。'
+    if section_index < total_sections and next_node_name:
+        return f'把这一部分理解清楚后，我们就可以自然过渡到“{next_node_name}”。'
+    return '到这里，本节的关键内容就串起来了，最后可以带学生做一个简短回顾。'
 
 
 def _shorten_text(text: str, limit: int) -> str:
@@ -367,13 +454,15 @@ def _shorten_text(text: str, limit: int) -> str:
     return normalized[: limit - 3].rstrip() + '...'
 
 
-def _estimate_duration(speech_speed: str, key_points: list[str]) -> int:
-    base_duration = 35 + len(key_points) * 8
-    if speech_speed == 'slow':
-        return base_duration + 10
-    if speech_speed == 'fast':
-        return max(20, base_duration - 8)
-    return base_duration
+def _estimate_duration(speech_speed: str, content: str) -> int:
+    char_count = max(1, len(re.sub(r'\s+', '', content)))
+    chars_per_second = {
+        'slow': 3.8,
+        'normal': 4.6,
+        'fast': 5.3,
+    }.get(speech_speed, 4.6)
+    seconds = math.ceil(char_count / chars_per_second)
+    return max(20, min(240, seconds))
 
 
 def _format_page_refs(page_refs: list[int]) -> str | None:
