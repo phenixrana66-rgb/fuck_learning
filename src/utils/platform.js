@@ -1,3 +1,43 @@
+const SCRIPT_TASK_KEY = 'scriptTask'
+const SCRIPT_RESULT_KEY = 'scriptResult'
+
+function readJsonStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : fallback
+  } catch (error) {
+    return fallback
+  }
+}
+
+function writeJsonStorage(key, value) {
+  localStorage.setItem(key, JSON.stringify(value ?? {}))
+}
+
+function hasScriptStructure(value) {
+  return Array.isArray(value?.scriptStructure) && value.scriptStructure.length > 0
+}
+
+function extractScriptResult(task) {
+  if (!task || (!task.scriptId && !hasScriptStructure(task))) {
+    return {}
+  }
+
+  return {
+    scriptId: task.scriptId || '',
+    parseId: task.parseId || '',
+    teachingStyle: task.teachingStyle || 'standard',
+    speechSpeed: task.speechSpeed || 'normal',
+    customOpening: task.customOpening || '',
+    scriptStructure: hasScriptStructure(task) ? task.scriptStructure : [],
+    version: task.version || 1,
+    status: task.status || '',
+    savedAt: task.savedAt || '',
+    editUrl: task.editUrl || '',
+    audioGenerateUrl: task.audioGenerateUrl || ''
+  }
+}
+
 export function getQueryParams() {
   const url = new URL(window.location.href)
   const params = {}
@@ -64,12 +104,57 @@ export function getParseResult() {
   return JSON.parse(localStorage.getItem('parseResult') || '{}')
 }
 
+export function saveScriptTask(data) {
+  writeJsonStorage(SCRIPT_TASK_KEY, data || {})
+}
+
+export function getScriptTask() {
+  return readJsonStorage(SCRIPT_TASK_KEY, {})
+}
+
+export function patchScriptTask(patch) {
+  const next = {
+    ...getScriptTask(),
+    ...(patch || {}),
+    updatedAt: new Date().toISOString()
+  }
+  saveScriptTask(next)
+  return next
+}
+
+export function clearScriptTask() {
+  localStorage.removeItem(SCRIPT_TASK_KEY)
+}
+
 export function saveScriptResult(data) {
-  localStorage.setItem('scriptResult', JSON.stringify(data || {}))
+  const next = data || {}
+  writeJsonStorage(SCRIPT_RESULT_KEY, next)
+
+  if (Object.keys(next).length) {
+    patchScriptTask({
+      parseId: next.parseId || '',
+      teachingStyle: next.teachingStyle || 'standard',
+      speechSpeed: next.speechSpeed || 'normal',
+      customOpening: next.customOpening || '',
+      scriptId: next.scriptId || '',
+      scriptStructure: hasScriptStructure(next) ? next.scriptStructure : [],
+      version: next.version || 1,
+      status: next.status || 'success',
+      savedAt: next.savedAt || '',
+      editUrl: next.editUrl || '',
+      audioGenerateUrl: next.audioGenerateUrl || ''
+    })
+  }
 }
 
 export function getScriptResult() {
-  return JSON.parse(localStorage.getItem('scriptResult') || '{}')
+  const cached = readJsonStorage(SCRIPT_RESULT_KEY, {})
+  if (Object.keys(cached).length) {
+    return cached
+  }
+
+  const restored = extractScriptResult(getScriptTask())
+  return Object.keys(restored).length ? restored : {}
 }
 
 export function saveAudioResult(data) {

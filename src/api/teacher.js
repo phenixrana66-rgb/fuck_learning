@@ -35,6 +35,22 @@ export function generateScript(data) {
   return request({
     url: '/api/v1/lesson/generateScript',
     method: 'post',
+    data,
+    timeout: 0
+  })
+}
+
+export function getScript(scriptId) {
+  return request({
+    url: `/api/v1/scripts/${scriptId}`,
+    method: 'get'
+  })
+}
+
+export function updateScript(scriptId, data) {
+  return request({
+    url: `/api/v1/scripts/${scriptId}`,
+    method: 'put',
     data
   })
 }
@@ -43,13 +59,6 @@ export function generateAudio(data) {
   return request({
     url: '/api/v1/lesson/generateAudio',
     method: 'post',
-    data
-  })
-}
-export function updateScript(scriptId, data) {
-  return request({
-    url: `/api/v1/scripts/${scriptId}`,
-    method: 'put',
     data
   })
 }
