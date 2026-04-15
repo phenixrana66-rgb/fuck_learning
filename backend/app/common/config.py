@@ -23,6 +23,9 @@ class Settings(BaseModel):
     mock_mode: bool = True
     teacher_test_platform_token: str = "test_token_001"
     default_audio_url: str = "https://www.w3schools.com/html/horse.mp3"
+    tts_api_url: str | None = None
+    tts_api_key: str | None = None
+    tts_timeout_seconds: float = 60.0
     llm_api_base_url: str = "http://10.195.20.215:13010/v1"
     llm_api_key: str | None = None
     llm_model: str = "gpt-5.1-codex-mini"
@@ -59,6 +62,9 @@ def get_settings() -> Settings:
             "A12_TEACHER_TEST_PLATFORM_TOKEN", str(merged_defaults["teacher_test_platform_token"])
         ),
         default_audio_url=getenv("A12_DEFAULT_AUDIO_URL", str(merged_defaults["default_audio_url"])),
+        tts_api_url=getenv("A12_TTS_API_URL", _get_optional_str(merged_defaults["tts_api_url"])),
+        tts_api_key=getenv("A12_TTS_API_KEY", _get_optional_str(merged_defaults["tts_api_key"])),
+        tts_timeout_seconds=float(getenv("A12_TTS_TIMEOUT_SECONDS", str(merged_defaults["tts_timeout_seconds"]))),
         llm_api_base_url=getenv("A12_LLM_API_BASE_URL", str(merged_defaults["llm_api_base_url"])),
         llm_api_key=getenv("A12_LLM_API_KEY", _get_optional_str(merged_defaults["llm_api_key"])),
         llm_model=getenv("A12_LLM_MODEL", str(merged_defaults["llm_model"])),

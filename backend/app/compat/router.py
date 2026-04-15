@@ -19,7 +19,6 @@ from backend.app.platform.service import sync_user as sync_main_user
 from backend.app.script.schemas import GenerateScriptRequest, UpdateScriptRequest
 from backend.app.script.service import generate_script as generate_main_script
 from backend.app.script.service import get_script, update_script
-from backend.app.teacher_runtime.services import generate_audio as generate_teacher_audio
 from backend.app.teacher_runtime.services import (
     get_parse_status,
     require_teacher,
@@ -60,10 +59,6 @@ def _is_teacher_compat_platform_payload(payload: dict) -> bool:
 
 def _is_teacher_parse_payload(payload: dict) -> bool:
     return "action" in payload
-
-
-def _is_teacher_audio_payload(payload: dict) -> bool:
-    return "enc" not in payload and "audioFormat" not in payload and "sectionIds" not in payload
 
 
 @router.post("/platform/syncUser")
@@ -176,18 +171,16 @@ async def update_script_endpoint(scriptId: str, request: Request) -> dict:
 
 @router.post("/lesson/generateAudio")
 async def generate_audio_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
+    _ = db
     payload = await request_payload(request)
-    if _is_teacher_audio_payload(payload):
-        try:
-            data = generate_teacher_audio(db, payload.get("scriptId"), payload.get("voiceType", "female_standard"))
-            return teacher_response(request, data)
-        except LookupError as exc:
-            raise ApiError(404, str(exc), status_code=404)
+    try:
+        typed_payload = GenerateAudioRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise ApiError(400, "generateAudio payload is invalid", status_code=400, data={"errors": exc.errors()})
 
-    typed_payload = GenerateAudioRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = generate_main_audio(typed_payload)
-    return success_response(request, data, msg="语音合成任务已创建")
+    return success_response(request, data, msg="audio generated successfully")
 
 
 @router.post("/lesson/publish")

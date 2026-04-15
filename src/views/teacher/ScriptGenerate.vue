@@ -1,7 +1,7 @@
 <template>
   <TeacherLayout>
     <div class="page-card">
-      <div class="page-title">Script Generate</div>
+      <div class="page-title">脚本生成</div>
 
       <el-form :model="form" label-width="110px">
         <el-form-item label="parseId">
@@ -10,21 +10,21 @@
 
         <el-form-item label="Style">
           <el-radio-group v-model="form.teachingStyle">
-            <el-radio label="standard">Standard</el-radio>
-            <el-radio label="detailed">Detailed</el-radio>
-            <el-radio label="concise">Concise</el-radio>
+            <el-radio label="standard">标准</el-radio>
+            <el-radio label="detailed">详细</el-radio>
+            <el-radio label="concise">简洁</el-radio>
           </el-radio-group>
           <div class="light-tip" style="margin-top: 8px;">
-            Standard fits normal teaching, Detailed fits deeper explanation, Concise fits short guided lessons.
+            标准版适合常规教学，详细版适合深入讲解，简洁版适合短时课程指导.
           </div>
         </el-form-item>
 
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="handleGenerate">
-            Generate Script
+            开始生成脚本
           </el-button>
           <el-button v-if="canOpenLastResult" @click="openLastResult">
-            Open Last Result
+            打开上次结果
           </el-button>
         </el-form-item>
       </el-form>
@@ -32,21 +32,21 @@
       <div v-if="isRunning" class="status-panel">
         <el-alert type="info" :closable="false" show-icon>
           <template #title>
-            Script generation is running. Elapsed time: {{ elapsedLabel }}.
+            脚本生成中，已用时间： {{ elapsedLabel }}.
           </template>
         </el-alert>
       </div>
 
       <div v-else-if="hasLastTask" class="status-panel">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="Last Status">{{ taskStatusLabel }}</el-descriptions-item>
-          <el-descriptions-item label="Elapsed">{{ elapsedLabel }}</el-descriptions-item>
-          <el-descriptions-item label="Last parseId">{{ taskSnapshot.parseId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="Last scriptId">{{ taskSnapshot.scriptId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="结果">{{ taskStatusLabel }}</el-descriptions-item>
+          <el-descriptions-item label="处理用时">{{ elapsedLabel }}</el-descriptions-item>
+          <el-descriptions-item label="解析任务编号">{{ taskSnapshot.parseId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="脚本编号">{{ taskSnapshot.scriptId || '-' }}</el-descriptions-item>
         </el-descriptions>
         <div class="toolbar compact">
-          <el-button v-if="canOpenLastResult" type="success" @click="openLastResult">Open Last Result</el-button>
-          <el-button @click="useLastTask">Use Last Task Parameters</el-button>
+          <el-button v-if="canOpenLastResult" type="success" @click="openLastResult">加载上次结果</el-button>
+          <el-button @click="useLastTask">使用上次的参数</el-button>
         </div>
       </div>
 

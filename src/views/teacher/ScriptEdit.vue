@@ -1,24 +1,24 @@
 <template>
   <TeacherLayout>
     <div class="page-card">
-      <div class="page-title">Script Edit</div>
+      <div class="page-title">脚本编辑</div>
 
       <div class="toolbar top-actions">
-        <el-button :loading="restoring" @click="loadLastResult">Load Last Result</el-button>
-        <el-button v-if="form.scriptId" @click="refreshFromServer">Refresh Server Copy</el-button>
+        <el-button :loading="restoring" @click="loadLastResult">加载上次结果</el-button>
+        <el-button v-if="form.scriptId" @click="refreshFromServer">保存脚本</el-button>
       </div>
 
       <template v-if="hasScript">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="scriptId">{{ form.scriptId }}</el-descriptions-item>
-          <el-descriptions-item label="parseId">{{ form.parseId }}</el-descriptions-item>
-          <el-descriptions-item label="Style">{{ styleLabel }}</el-descriptions-item>
-          <el-descriptions-item label="Sections">{{ form.scriptStructure.length }}</el-descriptions-item>
+          <el-descriptions-item label="脚本编号">{{ form.scriptId }}</el-descriptions-item>
+          <el-descriptions-item label="解析任务编号">{{ form.parseId }}</el-descriptions-item>
+          <el-descriptions-item label="风格">{{ styleLabel }}</el-descriptions-item>
+          <el-descriptions-item label="章节数">{{ form.scriptStructure.length }}</el-descriptions-item>
         </el-descriptions>
 
         <div class="toolbar">
-          <el-button type="primary" :loading="saving" @click="handleSave">Save Script</el-button>
-          <el-button type="success" @click="goAudioPage">Go To Audio</el-button>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存脚本</el-button>
+          <el-button type="success" @click="goAudioPage">进入语音合成</el-button>
         </div>
       </template>
 
@@ -26,13 +26,13 @@
         v-else
         description="No editable script is available yet. Load the last result or generate a new one."
       >
-        <el-button type="primary" :loading="restoring" @click="loadLastResult">Load Last Result</el-button>
-        <el-button @click="goGeneratePage">Go To Generate</el-button>
+        <el-button type="primary" :loading="restoring" @click="loadLastResult">加载上次的结果</el-button>
+        <el-button @click="goGeneratePage">开始生成</el-button>
       </el-empty>
     </div>
 
     <div v-if="hasScript" class="page-card">
-      <div class="sub-title">Script Content</div>
+      <div class="sub-title">脚本内容</div>
 
       <div
         v-for="(section, index) in form.scriptStructure"
@@ -41,13 +41,13 @@
       >
         <div class="section-meta">
           <div>
-            <div class="section-index">Section {{ index + 1 }}</div>
+            <div class="section-index">章节 {{ index + 1 }}</div>
             <div class="section-name">{{ section.sectionName }}</div>
           </div>
           <div class="section-tags">
             <el-tag size="small">{{ section.sectionId }}</el-tag>
             <el-tag v-if="section.relatedPage" size="small" type="success">Page {{ section.relatedPage }}</el-tag>
-            <el-tag size="small" type="warning">{{ section.duration || 0 }} sec</el-tag>
+            <el-tag size="small" type="warning">{{ section.duration || 0 }} 秒</el-tag>
           </div>
         </div>
 

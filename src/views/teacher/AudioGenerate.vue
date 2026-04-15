@@ -1,15 +1,15 @@
 <template>
   <TeacherLayout>
     <div class="page-card">
-      <div class="page-title">语音合成</div>
+      <div class="page-title">Audio Generate</div>
 
       <el-form :model="form" label-width="110px">
         <el-form-item label="scriptId">
           <el-input v-model="form.scriptId" readonly />
         </el-form-item>
 
-        <el-form-item label="音色选择">
-          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; width: 100%;">
+        <el-form-item label="Voice">
+          <div class="voice-grid">
             <div
               v-for="voice in voiceList"
               :key="voice.value"
@@ -17,20 +17,20 @@
               :class="{ active: form.voiceType === voice.value }"
               @click="form.voiceType = voice.value"
             >
-              <div style="font-weight: 600;">{{ voice.label }}</div>
-              <div style="font-size: 12px; color: #909399; margin-top: 6px;">{{ voice.desc }}</div>
+              <div class="voice-title">{{ voice.label }}</div>
+              <div class="voice-desc">{{ voice.desc }}</div>
             </div>
           </div>
         </el-form-item>
 
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="handleGenerateAudio">
-            生成音频
+            Generate Audio
           </el-button>
         </el-form-item>
       </el-form>
 
-      <Loading :visible="loading" text="语音合成中，请稍候..." />
+      <Loading :visible="loading" text="Generating audio, please wait..." />
 
       <ErrorTip
         v-if="errorCode"
@@ -41,12 +41,12 @@
     </div>
 
     <div class="page-card" v-if="form.audioUrl">
-      <div class="sub-title">音频预览</div>
+      <div class="sub-title">Audio Preview</div>
 
       <el-descriptions :column="1" border>
         <el-descriptions-item label="audioId">{{ form.audioId || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="音色">{{ selectedVoiceLabel }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
+        <el-descriptions-item label="Voice">{{ selectedVoiceLabel }}</el-descriptions-item>
+        <el-descriptions-item label="Status">
           <el-tag type="success">{{ form.status || 'success' }}</el-tag>
         </el-descriptions-item>
       </el-descriptions>
@@ -54,41 +54,37 @@
       <audio class="audio-preview" :src="form.audioUrl" controls />
 
       <div class="toolbar" style="margin-top: 16px;">
-        <el-button type="success" @click="publishLesson">智课发布</el-button>
+        <el-button type="success" @click="publishLesson">Publish Lesson</el-button>
       </div>
     </div>
 
     <div class="page-card" v-if="publishInfo.published">
       <el-result
         icon="success"
-        title="智课发布完成"
-        :sub-title="`课程：${currentCourse.courseName || '-'}，音频：${form.audioId || '-'}`"
+        title="Lesson Published"
+        :sub-title="`Course: ${currentCourse.courseName || '-'}, audio: ${form.audioId || '-'}`"
       />
     </div>
   </TeacherLayout>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
 import { generateAudio } from '@/api/teacher'
-import {
-  getCurrentCourse,
-  getScriptResult,
-  saveAudioResult
-} from '@/utils/platform'
+import { getCurrentCourse, getScriptResult, saveAudioResult } from '@/utils/platform'
 
 const currentCourse = getCurrentCourse()
 const scriptResult = getScriptResult()
 
 const voiceList = [
-  { label: '女声-标准', value: 'female_standard', desc: '清晰自然，适合常规讲解' },
-  { label: '男声-标准', value: 'male_standard', desc: '沉稳清晰，适合理工课程' },
-  { label: '女声-亲和', value: 'female_warm', desc: '亲和柔和，适合文科课程' },
-  { label: '男声-磁性', value: 'male_deep', desc: '磁性稳重，适合公开课' }
+  { label: 'Female Standard', value: 'female_standard', desc: 'Clear and neutral for everyday teaching.' },
+  { label: 'Male Standard', value: 'male_standard', desc: 'Stable voice for technical topics.' },
+  { label: 'Female Warm', value: 'female_warm', desc: 'Softer voice for guided lessons.' },
+  { label: 'Male Deep', value: 'male_deep', desc: 'Lower tone for presentation style delivery.' }
 ]
 
 const form = ref({
@@ -113,7 +109,7 @@ const selectedVoiceLabel = computed(() => {
 
 async function handleGenerateAudio() {
   if (!form.value.scriptId) {
-    ElMessage.warning('请先完成脚本生成')
+    ElMessage.warning('Generate a script first')
     return
   }
 
@@ -124,23 +120,25 @@ async function handleGenerateAudio() {
   try {
     const res = await generateAudio({
       scriptId: form.value.scriptId,
-      courseId: currentCourse.courseId,
-      voiceType: form.value.voiceType
+      voiceType: form.value.voiceType,
+      audioFormat: 'mp3',
+      sectionIds: []
     })
 
     const data = res.data || {}
     form.value.audioId = data.audioId || ''
     form.value.audioUrl = data.audioUrl || ''
-    form.value.status = data.status || 'success'
+    form.value.status = data.taskStatus || data.status || 'success'
 
     saveAudioResult({
       ...data,
       scriptId: form.value.scriptId,
-      voiceType: form.value.voiceType
+      voiceType: form.value.voiceType,
+      status: form.value.status
     })
   } catch (error) {
     errorCode.value = error.code || 500
-    errorMsg.value = error.msg || '语音合成失败'
+    errorMsg.value = error.msg || 'Failed to generate audio'
   } finally {
     loading.value = false
   }
@@ -148,7 +146,7 @@ async function handleGenerateAudio() {
 
 function publishLesson() {
   if (!form.value.audioId) {
-    ElMessage.warning('请先生成音频')
+    ElMessage.warning('Generate audio first')
     return
   }
 
@@ -158,6 +156,38 @@ function publishLesson() {
     audioId: form.value.audioId
   }
 
-  ElMessage.success('智课已绑定课程并发布至平台')
+  ElMessage.success('Lesson has been bound to the course and published')
 }
 </script>
+
+<style scoped>
+.voice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.voice-card {
+  border: 1px solid #dcdfe6;
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-card.active {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.voice-title {
+  font-weight: 600;
+}
+
+.voice-desc {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 6px;
+}
+</style>
