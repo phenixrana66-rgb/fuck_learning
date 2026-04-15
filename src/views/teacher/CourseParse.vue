@@ -85,7 +85,7 @@ import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
-import { lessonParse } from '@/api/teacher'
+import { lessonParse, getParseStatusAPI} from '@/api/teacher'
 import { getCurrentCourse, saveParseResult } from '@/utils/platform'
 
 const router = useRouter()
@@ -190,7 +190,6 @@ async function submitParse() {
       schoolId: currentCourse.schoolId,
       fileName: parseForm.value.fileName,
       fileContent: parseForm.value.fileBase64,
-      action: 'upload'
     })
 
     const data = res.data || {}
@@ -226,11 +225,7 @@ async function pollStatus() {
 
   const doPoll = async () => {
     try {
-      const res = await lessonParse({
-        parseId: parseForm.value.parseId,
-        courseId: currentCourse.courseId,
-        action: 'status'
-      })
+      const res = await getParseStatusAPI(parseForm.value.parseId)
 
       const data = res.data || {}
       parseForm.value.status = data.status || parseForm.value.status

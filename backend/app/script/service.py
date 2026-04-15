@@ -1,14 +1,19 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from backend.app.cir.schemas import CirSlideContent, LessonNode
+from sqlalchemy import delete
+
+from backend.app.cir.schemas import CIR, CirSlideContent, LessonNode
+from backend.app.common.db import session_scope
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.schemas import ParseQueryData
 from backend.app.courseware.service import get_parse_task
 from backend.app.parser.schemas import ParseTaskStatus
 from backend.app.script.llm_client import generate_script_sections_with_llm
-from backend.app.script.repository import clear_script_records, load_script, save_script
 from backend.app.script.schemas import GenerateScriptRequest, ScriptDetail, ScriptSection, ScriptSummary, UpdateScriptRequest
+from backend.chaoxing_db.models import ChapterAudioAsset, ChapterKnowledgeNode, ChapterParseTask, ChapterScript, ChapterScriptSection
 
 
 def generate_script(payload: GenerateScriptRequest) -> ScriptSummary:
@@ -17,15 +22,29 @@ def generate_script(payload: GenerateScriptRequest) -> ScriptSummary:
         raise ApiError(code=409, msg="解析任务尚未完成", status_code=409)
 
     script_id = _build_id("script")
-    sections = _build_script_sections(parse_result, payload)
-    detail = ScriptDetail(
-        scriptId=script_id,
-        parseId=payload.parseId,
-        teachingStyle=payload.teachingStyle,
-        speechSpeed=payload.speechSpeed,
-        scriptStructure=sections,
-    )
-    save_script(detail)
+    sections, section_nodes = _build_script_sections_with_nodes(parse_result, payload)
+    with session_scope() as db:
+        parse_task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == payload.parseId).first()
+        if parse_task is None:
+            raise ApiError(code=404, msg="解析任务不存在", status_code=404)
+
+        node_id_map = {node.node_code: node.id for node in parse_task.knowledge_nodes}
+        script = ChapterScript(
+            script_no=script_id,
+            course_id=parse_task.course_id,
+            chapter_id=parse_task.chapter_id,
+            parse_task_id=parse_task.id,
+            teacher_id=parse_task.teacher_id,
+            teaching_style=payload.teachingStyle,
+            speech_speed=payload.speechSpeed,
+            custom_opening=payload.customOpening,
+            script_status="generated",
+            version_no=1,
+        )
+        db.add(script)
+        db.flush()
+        _replace_script_sections(db, script.id, sections, section_nodes, node_id_map)
+
     return ScriptSummary(
         scriptId=script_id,
         scriptStructure=sections,
@@ -35,25 +54,66 @@ def generate_script(payload: GenerateScriptRequest) -> ScriptSummary:
 
 
 def get_script(script_id: str) -> ScriptDetail:
-    script = load_script(script_id)
-    if not script:
-        raise ApiError(code=404, msg="脚本不存在", status_code=404)
-    return script
+    with session_scope() as db:
+        script = db.query(ChapterScript).filter(ChapterScript.script_no == script_id).first()
+        if script is None:
+            raise ApiError(code=404, msg="脚本不存在", status_code=404)
+        return _build_script_detail(script)
 
 
 def update_script(script_id: str, payload: UpdateScriptRequest) -> ScriptDetail:
-    script = get_script(script_id)
-    script.scriptStructure = payload.scriptStructure
-    script.version += 1
-    save_script(script)
-    return script
+    with session_scope() as db:
+        script = db.query(ChapterScript).filter(ChapterScript.script_no == script_id).first()
+        if script is None:
+            raise ApiError(code=404, msg="脚本不存在", status_code=404)
+
+        parse_task = script.parse_task
+        if parse_task is None:
+            raise ApiError(code=404, msg="解析任务不存在", status_code=404)
+
+        existing_node_map = {section.section_code: section.related_node_id for section in script.sections}
+        parse_result = get_parse_task(parse_task.parse_no)
+        section_nodes = _build_section_nodes_from_parse(parse_result)
+        node_id_map = {node.node_code: node.id for node in parse_task.knowledge_nodes}
+
+        script.teaching_style = script.teaching_style
+        script.speech_speed = script.speech_speed
+        script.script_status = "edited"
+        script.version_no += 1
+
+        for section in list(script.sections):
+            db.delete(section)
+        db.flush()
+
+        _replace_script_sections(
+            db,
+            script.id,
+            payload.scriptStructure,
+            section_nodes,
+            node_id_map,
+            existing_node_map=existing_node_map,
+        )
+        db.flush()
+        db.refresh(script)
+        return _build_script_detail(script, parse_result=parse_result)
 
 
 def clear_scripts() -> None:
-    clear_script_records()
+    with session_scope() as db:
+        db.execute(delete(ChapterAudioAsset))
+        db.execute(delete(ChapterScriptSection))
+        db.execute(delete(ChapterScript))
 
 
 def _build_script_sections(parse_result: ParseQueryData, payload: GenerateScriptRequest) -> list[ScriptSection]:
+    sections, _ = _build_script_sections_with_nodes(parse_result, payload)
+    return sections
+
+
+def _build_script_sections_with_nodes(
+    parse_result: ParseQueryData,
+    payload: GenerateScriptRequest,
+) -> tuple[list[ScriptSection], dict[str, LessonNode]]:
     if parse_result.cir is None:
         raise ApiError(code=500, msg="解析结果缺少 CIR", status_code=500)
 
@@ -101,7 +161,101 @@ def _build_script_sections(parse_result: ParseQueryData, payload: GenerateScript
         )
 
     _try_fill_sections_with_llm(parse_result, payload, sections, section_nodes)
-    return sections
+    return sections, section_nodes
+
+
+def _replace_script_sections(
+    db,
+    script_db_id: int,
+    sections: list[ScriptSection],
+    section_nodes: dict[str, LessonNode],
+    node_id_map: dict[str, int],
+    existing_node_map: dict[str, int | None] | None = None,
+) -> None:
+    existing_node_map = existing_node_map or {}
+    for sort_no, section in enumerate(sections):
+        node = section_nodes.get(section.sectionId)
+        related_node_id = existing_node_map.get(section.sectionId)
+        if related_node_id is None and node is not None:
+            related_node_id = node_id_map.get(node.nodeId)
+        db.add(
+            ChapterScriptSection(
+                script_id=script_db_id,
+                section_code=section.sectionId,
+                section_name=section.sectionName,
+                section_content=section.content,
+                duration_sec=section.duration,
+                related_node_id=related_node_id,
+                related_page_range=section.relatedPage,
+                sort_no=sort_no,
+            )
+        )
+
+
+def _build_script_detail(script: ChapterScript, parse_result: ParseQueryData | None = None) -> ScriptDetail:
+    parse_result = parse_result or get_parse_task(script.parse_task.parse_no)
+    node_lookup = _build_node_lookup(parse_result.cir)
+    chapter_lookup = _build_chapter_lookup(parse_result.cir)
+    knowledge_lookup = {node.id: node.node_code for node in script.parse_task.knowledge_nodes}
+    sections = [
+        _build_script_section(section, knowledge_lookup, node_lookup, chapter_lookup)
+        for section in sorted(script.sections, key=lambda item: (item.sort_no, item.id))
+    ]
+    return ScriptDetail(
+        scriptId=script.script_no,
+        parseId=script.parse_task.parse_no,
+        teachingStyle=script.teaching_style,
+        speechSpeed=script.speech_speed,
+        scriptStructure=sections,
+        version=script.version_no,
+    )
+
+
+def _build_section_nodes_from_parse(parse_result: ParseQueryData) -> dict[str, LessonNode]:
+    if parse_result.cir is None:
+        return {}
+    section_nodes: dict[str, LessonNode] = {}
+    section_index = 1
+    for chapter in parse_result.cir.chapters:
+        for node in chapter.nodes:
+            section_nodes[f"sec{section_index:03d}"] = node
+            section_index += 1
+    return section_nodes
+
+
+def _build_node_lookup(cir: CIR | None) -> dict[str, LessonNode]:
+    if cir is None:
+        return {}
+    return {node.nodeId: node for chapter in cir.chapters for node in chapter.nodes}
+
+
+def _build_chapter_lookup(cir: CIR | None) -> dict[str, str]:
+    if cir is None:
+        return {}
+    chapter_lookup: dict[str, str] = {}
+    for chapter in cir.chapters:
+        for node in chapter.nodes:
+            chapter_lookup[node.nodeId] = chapter.chapterId
+    return chapter_lookup
+
+
+def _build_script_section(
+    section: ChapterScriptSection,
+    knowledge_lookup: dict[int, str],
+    node_lookup: dict[str, LessonNode],
+    chapter_lookup: dict[str, str],
+) -> ScriptSection:
+    node_code = knowledge_lookup.get(section.related_node_id) if section.related_node_id is not None else None
+    node = node_lookup.get(node_code) if node_code else None
+    return ScriptSection(
+        sectionId=section.section_code,
+        sectionName=section.section_name,
+        content=section.section_content,
+        duration=section.duration_sec or 0,
+        relatedChapterId=chapter_lookup.get(node_code) if node_code else None,
+        relatedPage=section.related_page_range,
+        keyPoints=node.keyPoints[:3] if node else [],
+    )
 
 
 def _try_fill_sections_with_llm(

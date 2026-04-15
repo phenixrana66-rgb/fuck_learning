@@ -112,23 +112,17 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
         except PermissionError:
             raise ApiError(401, "token 无效", status_code=401)
 
-        action = payload.get("action")
         try:
-            if action == "upload":
-                data = upload_parse(
-                    db,
-                    teacher,
-                    payload.get("courseId"),
-                    payload.get("fileName"),
-                    payload.get("fileContent"),
-                    str(request.base_url),
-                )
-                Thread(target=run_teacher_parse_task, args=(data["parseId"],), daemon=True).start()
-                return teacher_response(request, data)
-            if action == "status":
-                data = get_parse_status(db, payload.get("parseId"))
-                return teacher_response(request, data)
-            raise ApiError(400, "action 无效，仅支持 upload/status", status_code=400)
+            data = upload_parse(
+                db,
+                teacher,
+                payload.get("courseId"),
+                payload.get("fileName"),
+                payload.get("fileContent"),
+                str(request.base_url),
+            )
+            Thread(target=run_teacher_parse_task, args=(data["parseId"],), daemon=True).start()
+            return teacher_response(request, data)
         except ValueError as exc:
             raise ApiError(400, str(exc), status_code=400)
         except LookupError as exc:
@@ -142,9 +136,17 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
 
 
 @router.get("/api/v1/lesson/parse/{parseId}")
-def get_parse_task_endpoint(parseId: str, request: Request) -> dict:
-    data = get_parse_task(parseId)
-    return success_response(request, data.model_dump(), msg="课件解析结果查询成功")
+def get_parse_task_endpoint(parseId: str, request: Request, db: Session = Depends(get_db)) -> dict:
+    """
+    统一的解析状态查询接口。
+    """
+    # 1. 尝试从老师的 ChapterParseTask 表查询
+    try:
+        # 注意：这里调用你之前的 get_parse_status
+        teacher_data = get_parse_status(db, parseId)
+        return teacher_response(request, teacher_data)
+    except Exception as exc:
+        raise ApiError(404, f"未找到任务或查询失败: {parseId}", status_code=404)
 
 
 @router.post("/api/v1/lesson/generateScript")
@@ -161,13 +163,6 @@ async def generate_script_endpoint(request: Request, db: Session = Depends(get_d
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = generate_main_script(typed_payload)
     return success_response(request, data.model_dump(), msg="脚本生成成功")
-
-
-@router.get("/api/v1/scripts/{scriptId}")
-def get_script_endpoint(scriptId: str, request: Request) -> dict:
-    data = get_script(scriptId)
-    return success_response(request, data.model_dump(), msg="脚本查询成功")
-
 
 @router.put("/api/v1/scripts/{scriptId}")
 async def update_script_endpoint(scriptId: str, request: Request) -> dict:

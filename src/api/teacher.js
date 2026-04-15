@@ -24,6 +24,13 @@ export function lessonParse(data) {
   })
 }
 
+export function getParseStatusAPI(parseId) {
+  return request({
+    url: `/api/v1/lesson/parse/${parseId}`,
+    method: 'get'
+  })
+}
+
 export function generateScript(data) {
   return request({
     url: '/api/v1/lesson/generateScript',

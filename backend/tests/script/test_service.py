@@ -6,14 +6,11 @@ from unittest.mock import patch
 from backend.app.cir.schemas import CIR, CirChapter, LessonNode
 from backend.app.common.db import configure_database_url, reset_database_url
 from backend.app.common.exceptions import ApiError
-from backend.app.courseware.schemas import ParseQueryData, ParseRequest
-from backend.app.courseware.service import create_parse_task, run_parse_task
-from backend.app.parser.schemas import ParseTaskStatus
-from backend.app.parser.schemas import FileInfo, StructurePreview
+from backend.app.courseware.schemas import ParseRequest
+from backend.app.courseware.service import clear_parse_tasks, create_parse_task, run_parse_task
+from backend.app.parser.schemas import FileInfo, ParseTaskStatus, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest, UpdateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script, update_script
-from backend.app.tasks.repository import configure_task_storage, reset_task_storage
-from backend.app.tasks.service import clear_tasks
 
 
 class ScriptServiceTestCase(unittest.TestCase):
@@ -22,10 +19,9 @@ class ScriptServiceTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        configure_task_storage(Path(self.temp_dir.name) / "logs")
         configure_database_url(f"sqlite+pysqlite:///{Path(self.temp_dir.name) / 'script-test.db'}")
-        clear_tasks()
         clear_scripts()
+        clear_parse_tasks()
         self.parse_payload = ParseRequest(
             schoolId="school-001",
             userId="teacher-001",
@@ -37,10 +33,9 @@ class ScriptServiceTestCase(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        clear_tasks()
         clear_scripts()
+        clear_parse_tasks()
         reset_database_url()
-        reset_task_storage()
         assert self.temp_dir is not None
         self.temp_dir.cleanup()
 
@@ -154,24 +149,29 @@ class ScriptServiceTestCase(unittest.TestCase):
         self.assertIn("什么是人工智能", summary.scriptStructure[0].content)
         self.assertIn("重点包括：定义", summary.scriptStructure[0].content)
 
-    @patch("backend.app.script.service.get_parse_task")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
     @patch("backend.app.script.service.generate_script_sections_with_llm")
     def test_generate_script_uses_fallback_when_parse_has_no_nodes(
         self,
         mock_generate_script_sections_with_llm,
-        mock_get_parse_task,
+        mock_parse_courseware,
+        mock_build_cir,
     ) -> None:
-        mock_get_parse_task.return_value = ParseQueryData(
-            parseId="parse-001",
-            taskStatus=ParseTaskStatus.COMPLETED,
-            cir=CIR(coursewareId="cw-course-001", title="人工智能导论", chapters=[]),
-            progressPercent=100,
+        parse_payload = self.parse_payload
+        assert parse_payload is not None
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
         )
+        mock_build_cir.return_value = CIR(coursewareId="cw-course-001", title="人工智能导论", chapters=[])
         mock_generate_script_sections_with_llm.return_value = {}
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
 
         summary = generate_script(
             GenerateScriptRequest(
-                parseId="parse-001",
+                parseId=accepted.parseId,
                 teachingStyle="standard",
                 speechSpeed="normal",
                 customOpening="同学们好，下面我们开始。",

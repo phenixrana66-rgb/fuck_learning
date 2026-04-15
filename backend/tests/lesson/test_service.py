@@ -7,7 +7,7 @@ from backend.app.cir.schemas import CIR, CirChapter, LessonNode
 from backend.app.common.db import configure_database_url, reset_database_url
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.schemas import ParseRequest
-from backend.app.courseware.service import create_parse_task, run_parse_task
+from backend.app.courseware.service import clear_parse_tasks, create_parse_task, run_parse_task
 from backend.app.lesson.schemas import GenerateAudioRequest, PlayRequest, PublishRequest
 from backend.app.lesson.service import clear_lessons, generate_audio, play_lesson, publish_lesson
 from backend.app.parser.schemas import FileInfo, StructurePreview
@@ -27,6 +27,7 @@ class LessonServiceTestCase(unittest.TestCase):
         configure_database_url(f"sqlite+pysqlite:///{Path(self.temp_dir.name) / 'lesson-test.db'}")
         clear_tasks()
         clear_scripts()
+        clear_parse_tasks()
         clear_lessons()
         self.parse_payload = ParseRequest(
             schoolId="school-001",
@@ -41,6 +42,7 @@ class LessonServiceTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         clear_tasks()
         clear_scripts()
+        clear_parse_tasks()
         clear_lessons()
         reset_database_url()
         reset_task_storage()

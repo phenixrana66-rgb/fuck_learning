@@ -296,6 +296,7 @@ CREATE TABLE `chapter_scripts` (
   `speech_speed` VARCHAR(16) NOT NULL DEFAULT 'normal',
   `custom_opening` TEXT,
   `script_status` ENUM('generated', 'edited', 'published') NOT NULL DEFAULT 'generated',
+  `version_no` INT NOT NULL DEFAULT 1,
   `edit_url` VARCHAR(255) DEFAULT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

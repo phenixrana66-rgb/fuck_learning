@@ -1,16 +1,15 @@
-import unittest
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from backend.app.cir.schemas import CIR
-from backend.app.common.db import configure_database_url, reset_database_url
+from backend.app.common.db import configure_database_url, reset_database_url, session_scope
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.schemas import ParseRequest
-from backend.app.courseware.service import create_parse_task, get_parse_task, run_parse_task
+from backend.app.courseware.service import clear_parse_tasks, create_parse_task, get_parse_task, run_parse_task
 from backend.app.parser.schemas import FileInfo, ParseTaskStatus, StructurePreview
-from backend.app.tasks.repository import configure_task_storage, get_task_log_path, reset_task_storage
-from backend.app.tasks.service import clear_tasks, get_task
+from backend.chaoxing_db.models import ChapterParseResult, ChapterParseTask
 
 
 class CoursewareServiceTestCase(unittest.TestCase):
@@ -19,9 +18,8 @@ class CoursewareServiceTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        configure_task_storage(Path(self.temp_dir.name) / "logs")
         configure_database_url(f"sqlite+pysqlite:///{Path(self.temp_dir.name) / 'courseware-test.db'}")
-        clear_tasks()
+        clear_parse_tasks()
         self.payload = ParseRequest(
             schoolId="school-001",
             userId="teacher-001",
@@ -33,9 +31,8 @@ class CoursewareServiceTestCase(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        clear_tasks()
+        clear_parse_tasks()
         reset_database_url()
-        reset_task_storage()
         assert self.temp_dir is not None
         self.temp_dir.cleanup()
 
@@ -51,14 +48,13 @@ class CoursewareServiceTestCase(unittest.TestCase):
         mock_build_cir.return_value = cir
 
         accepted = create_parse_task(payload, request_id="req-001")
-        stored_task = get_task(accepted.parseId)
+        with session_scope() as db:
+            stored_task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == accepted.parseId).first()
+            stored_task_status = stored_task.task_status if stored_task else None
 
         self.assertIsNotNone(stored_task)
-        assert stored_task is not None
         self.assertEqual(accepted.taskStatus, ParseTaskStatus.PROCESSING)
-        self.assertEqual(stored_task.status, ParseTaskStatus.PROCESSING.value)
-        self.assertEqual(stored_task.requestId, "req-001")
-        self.assertTrue(get_task_log_path(accepted.parseId).exists())
+        self.assertEqual(stored_task_status, ParseTaskStatus.PROCESSING.value)
 
     @patch("backend.app.courseware.service.build_cir")
     @patch("backend.app.courseware.service.parse_courseware")
@@ -75,13 +71,21 @@ class CoursewareServiceTestCase(unittest.TestCase):
 
         run_parse_task(accepted.parseId, payload)
 
-        stored_task = get_task(accepted.parseId)
+        with session_scope() as db:
+            stored_task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == accepted.parseId).first()
+            stored_result = (
+                db.query(ChapterParseResult)
+                .join(ChapterParseTask, ChapterParseResult.parse_task_id == ChapterParseTask.id)
+                .filter(ChapterParseTask.parse_no == accepted.parseId)
+                .first()
+            )
+            stored_task_status = stored_task.task_status if stored_task else None
         queried = get_parse_task(accepted.parseId)
 
         self.assertIsNotNone(stored_task)
-        assert stored_task is not None
-        self.assertEqual(stored_task.status, ParseTaskStatus.COMPLETED.value)
-        self.assertEqual(stored_task.result["parseId"], accepted.parseId)
+        self.assertIsNotNone(stored_result)
+        self.assertEqual(stored_task_status, ParseTaskStatus.COMPLETED.value)
+        self.assertEqual(queried.parseId, accepted.parseId)
         self.assertEqual(queried.taskStatus, ParseTaskStatus.COMPLETED)
         self.assertIsNotNone(queried.cir)
         assert queried.cir is not None
@@ -97,15 +101,15 @@ class CoursewareServiceTestCase(unittest.TestCase):
 
         run_parse_task(accepted.parseId, payload)
 
-        stored_task = get_task(accepted.parseId)
+        with session_scope() as db:
+            stored_task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == accepted.parseId).first()
+            stored_task_status = stored_task.task_status if stored_task else None
         queried = get_parse_task(accepted.parseId)
 
         self.assertIsNotNone(stored_task)
-        assert stored_task is not None
-        self.assertEqual(stored_task.status, ParseTaskStatus.FAILED.value)
+        self.assertEqual(stored_task_status, ParseTaskStatus.FAILED.value)
         self.assertEqual(queried.taskStatus, ParseTaskStatus.FAILED)
         self.assertEqual(queried.errorMessage, "当前 demo 仅支持 .pptx 文件解析")
-        self.assertTrue(get_task_log_path(accepted.parseId).exists())
 
     def test_get_parse_task_raises_for_missing_task(self) -> None:
         with self.assertRaises(ApiError) as context:
