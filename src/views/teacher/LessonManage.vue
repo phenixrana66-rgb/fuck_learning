@@ -95,7 +95,7 @@ const statusTable = computed(() => [
     name: '脚本生成',
     id: scriptResult.scriptId || '-',
     status: scriptResult.status || '未开始',
-    desc: scriptResult.scriptType || '尚未生成脚本'
+    desc: scriptResult.teachingStyle || '尚未生成脚本'
   },
   {
     name: '语音合成',

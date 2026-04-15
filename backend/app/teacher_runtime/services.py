@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.common.db import session_scope
 from backend.app.common.config import get_settings
+from backend.app.common.exceptions import ApiError
 from backend.chaoxing_db.models import (
     ChapterAudioAsset,
     ChapterKnowledgeNode,
@@ -30,11 +31,19 @@ from backend.chaoxing_db.models import (
     UserPlatformBinding,
 )
 from backend.app.courseware.service import execute_parse_pipeline
+from backend.app.script.schemas import GenerateScriptRequest
+from backend.app.script.service import generate_script as generate_main_script
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_ROOT = PROJECT_ROOT / "examples"
 MOCK_REMOTE_PREFIX = "/mock-remote/examples"
-SCRIPT_LABELS = {"standard": "标准", "detail": "详细", "simple": "简洁"}
+SCRIPT_TYPE_MAPPING = {
+    "standard": "standard",
+    "detail": "detailed",
+    "simple": "concise",
+    "detailed": "detailed",
+    "concise": "concise",
+}
 JsonDict = dict[str, Any]
 
 
@@ -262,6 +271,7 @@ def _build_tree(db: Session, task_id: int) -> list[JsonDict]:
 
 
 def upload_parse(db: Session, teacher: User, course_id: str, file_name: str, file_content: str | None, base_url: str) -> JsonDict:
+    settings = get_settings()
     course = _resolve_course(db, course_id)
     if not course:
         raise ValueError("courseId 不能为空或课程不存在")
@@ -292,7 +302,7 @@ def upload_parse(db: Session, teacher: User, course_id: str, file_name: str, fil
         chapter_id=chapter.id,
         ppt_asset_id=asset.id,
         teacher_id=teacher.id,
-        llm_model="gpt-5.4",
+        llm_model=settings.llm_model,
         task_status="processing",
     )
     db.add(task)
@@ -338,32 +348,40 @@ def get_parse_status(db: Session, parse_id: str) -> JsonDict:
     return {"parseId": task.parse_no, "status": "processing", "knowledgeTree": []}
 
 
-def _build_script_content(script_type: str, chapter_name: str, parse_no: str) -> str:
-    label = SCRIPT_LABELS.get(script_type, "标准")
-    return f"《{label}讲稿》\nparseId：{parse_no}\n\n本节内容围绕《{chapter_name}》展开。\n先介绍核心背景与学习目标，再讲解关键概念、典型问题和课堂总结。"
+def _map_script_type(script_type: str | None) -> str:
+    normalized = (script_type or "standard").strip()
+    mapped = SCRIPT_TYPE_MAPPING.get(normalized)
+    if mapped is None:
+        raise ApiError(400, f"scriptType is not supported: {normalized}", status_code=400)
+    return mapped
+
+
+def _build_teacher_script_response(parse_id: str, script_type: str | None, summary) -> JsonDict:
+    script_content = "\n\n".join(
+        section.content.strip() for section in summary.scriptStructure if isinstance(section.content, str) and section.content.strip()
+    )
+    return {
+        "scriptId": summary.scriptId,
+        "parseId": parse_id,
+        "scriptType": script_type or "standard",
+        "scriptContent": script_content,
+        "scriptStructure": [section.model_dump() for section in summary.scriptStructure],
+        "status": "success",
+    }
 
 
 def generate_script(db: Session, parse_id: str, script_type: str) -> JsonDict:
-    task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == parse_id).first()
-    if not task:
-        raise LookupError("parseId 不存在")
-    content = _build_script_content(script_type, task.chapter.chapter_name, task.parse_no)
-    script_no = f"S{uuid4().hex[:12].upper()}"
-    script = ChapterScript(
-        script_no=script_no,
-        course_id=task.course_id,
-        chapter_id=task.chapter_id,
-        parse_task_id=task.id,
-        teacher_id=task.teacher_id,
-        teaching_style=script_type,
-        speech_speed="normal",
-        script_status="generated",
+    _ = db
+    summary = generate_main_script(
+        GenerateScriptRequest(
+            parseId=parse_id,
+            teachingStyle=_map_script_type(script_type),
+            speechSpeed="normal",
+            customOpening=None,
+            enc="teacher-compat",
+        )
     )
-    db.add(script)
-    db.flush()
-    db.add(ChapterScriptSection(script_id=script.id, section_code=f"{script_no}-01", section_name=task.chapter.chapter_name, section_content=content, sort_no=0))
-    db.commit()
-    return {"scriptId": script.script_no, "parseId": parse_id, "scriptType": script_type, "scriptContent": content, "status": "success"}
+    return _build_teacher_script_response(parse_id, script_type, summary)
 
 
 def generate_audio(db: Session, script_id: str, voice_type: str) -> JsonDict:

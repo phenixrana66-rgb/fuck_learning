@@ -25,7 +25,6 @@ export function lessonParse(data) {
 }
 
 export function getParseStatusAPI(parseId) {
-  console.log('pollStatus 被调用')
   return request({
     url: `/api/v1/lesson/parse/${parseId}`,
     method: 'get'
@@ -44,6 +43,13 @@ export function generateAudio(data) {
   return request({
     url: '/api/v1/lesson/generateAudio',
     method: 'post',
+    data
+  })
+}
+export function updateScript(scriptId, data) {
+  return request({
+    url: `/api/v1/scripts/${scriptId}`,
+    method: 'put',
     data
   })
 }

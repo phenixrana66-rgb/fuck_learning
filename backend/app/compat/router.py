@@ -1,6 +1,7 @@
 from threading import Thread
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from backend.app.common.db import get_db
@@ -19,7 +20,6 @@ from backend.app.script.schemas import GenerateScriptRequest, UpdateScriptReques
 from backend.app.script.service import generate_script as generate_main_script
 from backend.app.script.service import get_script, update_script
 from backend.app.teacher_runtime.services import generate_audio as generate_teacher_audio
-from backend.app.teacher_runtime.services import generate_script as generate_teacher_script
 from backend.app.teacher_runtime.services import (
     get_parse_status,
     require_teacher,
@@ -62,15 +62,11 @@ def _is_teacher_parse_payload(payload: dict) -> bool:
     return "action" in payload
 
 
-def _is_teacher_script_payload(payload: dict) -> bool:
-    return "scriptType" in payload and "teachingStyle" not in payload
-
-
 def _is_teacher_audio_payload(payload: dict) -> bool:
     return "enc" not in payload and "audioFormat" not in payload and "sectionIds" not in payload
 
 
-@router.post("/api/v1/platform/syncUser")
+@router.post("/platform/syncUser")
 async def sync_user_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     if _is_teacher_compat_platform_payload(payload):
@@ -86,7 +82,7 @@ async def sync_user_endpoint(request: Request, db: Session = Depends(get_db)) ->
     return success_response(request, data, msg="用户同步成功")
 
 
-@router.post("/api/v1/platform/syncCourse")
+@router.post("/platform/syncCourse")
 async def sync_course_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     if _is_teacher_compat_platform_payload(payload):
@@ -103,7 +99,7 @@ async def sync_course_endpoint(request: Request, db: Session = Depends(get_db)) 
     return success_response(request, data, msg="课程同步成功")
 
 
-@router.post("/api/v1/lesson/parse")
+@router.post("/lesson/parse")
 async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     try:
@@ -134,7 +130,7 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
     # return success_response(request, data.model_dump(), msg="课件解析任务已创建")
 
 
-@router.get("/api/v1/lesson/parse/{parseId}")
+@router.get("/lesson/parse/{parseId}")
 def get_parse_task_endpoint(parseId: str, request: Request, db: Session = Depends(get_db)) -> dict:
     """
     统一的解析状态查询接口。
@@ -148,22 +144,20 @@ def get_parse_task_endpoint(parseId: str, request: Request, db: Session = Depend
         raise ApiError(404, f"未找到任务或查询失败: {parseId}", status_code=404)
 
 
-@router.post("/api/v1/lesson/generateScript")
+@router.post("/lesson/generateScript")
 async def generate_script_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
+    _ = db
     payload = await request_payload(request)
-    if _is_teacher_script_payload(payload):
-        try:
-            data = generate_teacher_script(db, payload.get("parseId"), payload.get("scriptType", "standard"))
-            return teacher_response(request, data)
-        except LookupError as exc:
-            raise ApiError(404, str(exc), status_code=404)
+    try:
+        typed_payload = GenerateScriptRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise ApiError(400, "generateScript payload is invalid", status_code=400, data={"errors": exc.errors()})
 
-    typed_payload = GenerateScriptRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = generate_main_script(typed_payload)
-    return success_response(request, data.model_dump(), msg="脚本生成成功")
+    return success_response(request, data.model_dump(), msg="script generated successfully")
 
-@router.put("/api/v1/scripts/{scriptId}")
+@router.put("/scripts/{scriptId}")
 async def update_script_endpoint(scriptId: str, request: Request) -> dict:
     payload = await request_payload(request)
     typed_payload = UpdateScriptRequest.model_validate(payload)
@@ -180,7 +174,7 @@ async def update_script_endpoint(scriptId: str, request: Request) -> dict:
     )
 
 
-@router.post("/api/v1/lesson/generateAudio")
+@router.post("/lesson/generateAudio")
 async def generate_audio_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     if _is_teacher_audio_payload(payload):
@@ -196,7 +190,7 @@ async def generate_audio_endpoint(request: Request, db: Session = Depends(get_db
     return success_response(request, data, msg="语音合成任务已创建")
 
 
-@router.post("/api/v1/lesson/publish")
+@router.post("/lesson/publish")
 async def publish_lesson_endpoint(request: Request) -> dict:
     payload = await request_payload(request)
     typed_payload = PublishRequest.model_validate(payload)
@@ -205,7 +199,7 @@ async def publish_lesson_endpoint(request: Request) -> dict:
     return success_response(request, data, msg="智课发布任务已创建")
 
 
-@router.post("/api/v1/lesson/play")
+@router.post("/lesson/play")
 async def play_lesson_endpoint(request: Request) -> dict:
     payload = await request_payload(request)
     typed_payload = PlayRequest.model_validate(payload)

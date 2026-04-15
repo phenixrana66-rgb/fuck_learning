@@ -27,7 +27,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.mount("/mock-remote/examples", StaticFiles(directory=str(PROJECT_ROOT / "examples")), name="mock-remote-examples")
 
-    app.include_router(compat_router)
+    app.include_router(compat_router, prefix=settings.api_prefix)
     app.include_router(qa_router, prefix=settings.api_prefix)
     app.include_router(progress_router, prefix=settings.api_prefix)
     app.include_router(student_router, prefix="/student-api")

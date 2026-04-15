@@ -123,7 +123,6 @@ class ChapterScript(Base):
     script_status: Mapped[str] = mapped_column(
         Enum("generated", "edited", "published", name="script_status"), default="generated", nullable=False
     )
-    version_no: Mapped[int] = mapped_column(default=1, nullable=False)
     edit_url: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
