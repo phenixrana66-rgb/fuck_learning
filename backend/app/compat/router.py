@@ -1,4 +1,4 @@
-from threading import Thread
+﻿from threading import Thread
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import ValidationError
@@ -69,12 +69,12 @@ async def sync_user_endpoint(request: Request, db: Session = Depends(get_db)) ->
             data = sync_user(db, _extract_token(request, payload))
             return teacher_response(request, data)
         except PermissionError:
-            raise ApiError(401, "token 无效", status_code=401)
+            raise ApiError(401, "token 鏃犳晥", status_code=401)
 
     typed_payload = SyncUserRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = sync_main_user(typed_payload)
-    return success_response(request, data, msg="用户同步成功")
+    return success_response(request, data, msg="鐢ㄦ埛鍚屾鎴愬姛")
 
 
 @router.post("/platform/syncCourse")
@@ -86,12 +86,12 @@ async def sync_course_endpoint(request: Request, db: Session = Depends(get_db)) 
             data = sync_courses(db, teacher)
             return teacher_response(request, data)
         except PermissionError:
-            raise ApiError(401, "token 无效", status_code=401)
+            raise ApiError(401, "token 鏃犳晥", status_code=401)
 
     typed_payload = SyncCourseRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = sync_main_course(typed_payload)
-    return success_response(request, data, msg="课程同步成功")
+    return success_response(request, data, msg="璇剧▼鍚屾鎴愬姛")
 
 
 @router.post("/lesson/parse")
@@ -100,7 +100,7 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
     try:
         teacher = require_teacher(db, _extract_token(request, payload))
     except PermissionError:
-        raise ApiError(401, "token 无效", status_code=401)
+        raise ApiError(401, "token 鏃犳晥", status_code=401)
 
     try:
         data = upload_parse(
@@ -122,21 +122,21 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
     # verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     # data = create_parse_task(typed_payload, request_id=getattr(request.state, "request_id", None))
     # Thread(target=run_parse_task, args=(data.parseId, typed_payload.model_copy(deep=True)), daemon=True).start()
-    # return success_response(request, data.model_dump(), msg="课件解析任务已创建")
+    # return success_response(request, data.model_dump(), msg="璇句欢瑙ｆ瀽浠诲姟宸插垱寤?)
 
 
 @router.get("/lesson/parse/{parseId}")
 def get_parse_task_endpoint(parseId: str, request: Request, db: Session = Depends(get_db)) -> dict:
     """
-    统一的解析状态查询接口。
+    缁熶竴鐨勮В鏋愮姸鎬佹煡璇㈡帴鍙ｃ€?
     """
-    # 1. 尝试从老师的 ChapterParseTask 表查询
+    # 1. 灏濊瘯浠庤€佸笀鐨?ChapterParseTask 琛ㄦ煡璇?
     try:
-        # 注意：这里调用你之前的 get_parse_status
+        # 娉ㄦ剰锛氳繖閲岃皟鐢ㄤ綘涔嬪墠鐨?get_parse_status
         teacher_data = get_parse_status(db, parseId)
         return teacher_response(request, teacher_data)
     except Exception as exc:
-        raise ApiError(404, f"未找到任务或查询失败: {parseId}", status_code=404)
+        raise ApiError(404, f"鏈壘鍒颁换鍔℃垨鏌ヨ澶辫触: {parseId}", status_code=404)
 
 
 @router.post("/lesson/generateScript")
@@ -152,6 +152,12 @@ async def generate_script_endpoint(request: Request, db: Session = Depends(get_d
     data = generate_main_script(typed_payload)
     return success_response(request, data.model_dump(), msg="script generated successfully")
 
+@router.get("/scripts/{scriptId}")
+async def get_script_endpoint(scriptId: str, request: Request) -> dict:
+    data = get_script(scriptId)
+    return success_response(request, data.model_dump(), msg="script fetched successfully")
+
+
 @router.put("/scripts/{scriptId}")
 async def update_script_endpoint(scriptId: str, request: Request) -> dict:
     payload = await request_payload(request)
@@ -165,7 +171,7 @@ async def update_script_endpoint(scriptId: str, request: Request) -> dict:
             "version": data.version,
             "savedAt": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         },
-        msg="脚本保存成功",
+        msg="鑴氭湰淇濆瓨鎴愬姛",
     )
 
 
@@ -198,4 +204,6 @@ async def play_lesson_endpoint(request: Request) -> dict:
     typed_payload = PlayRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = play_lesson(typed_payload)
-    return success_response(request, data, msg="智课播放装配成功")
+    return success_response(request, data, msg="鏅鸿鎾斁瑁呴厤鎴愬姛")
+
+

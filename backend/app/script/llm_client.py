@@ -4,77 +4,52 @@ from typing import Any
 
 import httpx
 
-from backend.app.cir.schemas import CIR, LessonNode
+from backend.app.cir.schemas import CirSlideContent
 from backend.app.common.config import get_settings
 from backend.app.common.exceptions import ApiError
-from backend.app.script.schemas import GenerateScriptRequest, ScriptSection
-
-_BANNED_PATTERNS = (
-    re.compile(r'\bPage\s*\d+', re.IGNORECASE),
-    re.compile(r'The slide', re.IGNORECASE),
-    re.compile(r'The table', re.IGNORECASE),
-    re.compile(r'speaker notes', re.IGNORECASE),
-)
-_TRANSITION_MARKERS = ('接着', '继续', '进一步', '下面', '随后', '在此基础上', '顺着这个思路', '过渡到')
-_SUMMARY_MARKERS = ('最后', '总结', '回顾', '整体来看', '到这里', '归纳起来')
+from backend.app.script.schemas import GenerateScriptRequest
 
 
-def generate_script_sections_with_llm(
-    cir: CIR,
+def generate_script_section_with_llm(
     payload: GenerateScriptRequest,
-    sections: list[ScriptSection],
-    section_nodes: dict[str, LessonNode],
+    *,
+    section_name: str,
+    section_key_points: list[str],
+    page_contents: list[CirSlideContent],
+    previous_summary: str | None,
+    next_section_name: str | None,
+    is_first_section: bool,
+    is_last_section: bool,
 ) -> dict[str, str]:
     settings = get_settings()
     if not settings.llm_api_key:
         raise ApiError(code=500, msg='未配置 A12_LLM_API_KEY，无法调用脚本生成 LLM 接口', status_code=500)
 
-    system_prompt = _build_system_prompt()
-    messages: list[dict[str, str]] = [
-        {'role': 'system', 'content': system_prompt},
-        {'role': 'user', 'content': _build_user_prompt(cir, payload, sections, section_nodes)},
-    ]
-
-    last_errors: list[str] = []
-    for _ in range(2):
-        content = _request_completion(messages, settings)
-        result = _extract_section_contents(content)
-        validation_errors = _validate_section_contents(result, payload, sections)
-        if not validation_errors:
-            return result
-        last_errors = validation_errors
-        messages.extend(
-            [
-                {'role': 'assistant', 'content': content},
-                {'role': 'user', 'content': _build_revision_prompt(validation_errors)},
-            ]
-        )
-
-    error_text = '；'.join(last_errors[:3]) if last_errors else '输出未通过质量校验'
-    raise ApiError(code=502, msg=f'脚本生成 LLM 输出质量不足：{error_text}', status_code=502)
-
-
-def _build_system_prompt() -> str:
-    return (
-        '你是高校教师讲稿生成助手。'
-        '你会根据课件结构、知识点和页面原始内容，为每个 section 生成可直接授课的中文讲稿。'
-        '你必须输出严格 JSON，格式为 {"sections": [{"sectionId": "sec001", "content": "..."}] }。'
-        '不要输出 JSON 之外的任何说明。'
-        '每个 content 都必须是自然中文，口吻像老师在课堂上讲解。'
-        '每个 section 的讲稿都要包含三个语义动作：自然引入、贴合课件事实的讲解、承接下一节的过渡或总结。'
-        '讲解必须优先使用 pageContents 中的标题、正文、表格和备注，不要只复述 sectionName、summary 或 keyPoints。'
-        '除 VIN、WMI 等术语外，不要混入英文句式，不要写 Page、slide、table、speaker notes 这类元描述。'
-        '不要照抄“理解、掌握、复述”这类教学目标模板，要把具体知识讲出来。'
-    )
-
-
-def _request_completion(messages: list[dict[str, str]], settings) -> str:
     request_payload = {
         'model': settings.llm_model,
-        'temperature': 0.35,
+        'temperature': 0.55,
         'stream': False,
-        'messages': messages,
+        'messages': [
+            {
+                'role': 'system',
+                'content': _build_system_prompt(),
+            },
+            {
+                'role': 'user',
+                'content': _build_user_prompt(
+                    payload,
+                    section_name=section_name,
+                    section_key_points=section_key_points,
+                    page_contents=page_contents,
+                    previous_summary=previous_summary,
+                    next_section_name=next_section_name,
+                    is_first_section=is_first_section,
+                    is_last_section=is_last_section,
+                ),
+            },
+        ],
     }
+
     base_url = settings.llm_api_base_url.rstrip('/')
     try:
         with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
@@ -94,75 +69,64 @@ def _request_completion(messages: list[dict[str, str]], settings) -> str:
         raise ApiError(code=502, msg=f'调用脚本生成 LLM 接口失败：{exc}', status_code=502) from exc
 
     response_json = _parse_llm_response_json(response)
-    return _extract_message_content(response_json)
+    content = _extract_message_content(response_json)
+    return _extract_section_result(content)
+
+
+def _build_system_prompt() -> str:
+    return (
+        '你是高校课堂讲稿写作助手。'
+        '请根据当前章节的课件内容，生成可以直接拿来授课的中文讲稿。'
+        '讲稿必须非常口语化、循循善诱，像老师面对学生讲解，不要像摘要器、解说词或系统提示。'
+        '必须严格围绕课件原始内容展开，优先解释定义、分类、结构、规则、步骤、表格信息和举例。'
+        '不要写“课件标题聚焦”“结合课件内容”“课堂上可以把重点收束为”这类元话术。'
+        '不要复读“理解、掌握、复述”这类教学目标句。'
+        '除 VIN、WMI 等术语外，不要混入英文句式。'
+        '只输出严格 JSON，格式为 {"content": "...", "summaryForNext": "..."}。'
+        'content 是当前章节讲稿；summaryForNext 是给下一章节使用的 1 到 2 句承接总结。'
+    )
 
 
 def _build_user_prompt(
-    cir: CIR,
     payload: GenerateScriptRequest,
-    sections: list[ScriptSection],
-    section_nodes: dict[str, LessonNode],
+    *,
+    section_name: str,
+    section_key_points: list[str],
+    page_contents: list[CirSlideContent],
+    previous_summary: str | None,
+    next_section_name: str | None,
+    is_first_section: bool,
+    is_last_section: bool,
 ) -> str:
-    chapter_lookup = {chapter.chapterId: chapter.chapterName for chapter in cir.chapters}
-    ordered_sections: list[dict[str, Any]] = []
-
-    for index, section in enumerate(sections):
-        node = section_nodes.get(section.sectionId)
-        previous_section = sections[index - 1] if index > 0 else None
-        next_section = sections[index + 1] if index + 1 < len(sections) else None
-        ordered_sections.append(
-            {
-                'sectionId': section.sectionId,
-                'sectionName': section.sectionName,
-                'relatedChapterId': section.relatedChapterId,
-                'relatedChapterName': chapter_lookup.get(section.relatedChapterId or ''),
-                'relatedPage': section.relatedPage,
-                'sectionPosition': _section_position(index, len(sections)),
-                'previousSectionName': previous_section.sectionName if previous_section else None,
-                'nextSectionName': next_section.sectionName if next_section else None,
-                'nodeSummary': node.summary if node else '',
-                'keyPoints': section.keyPoints,
-                'pageContents': _serialize_page_contents(node.pageContents if node else []),
-            }
-        )
-
     return json.dumps(
         {
-            'courseTitle': cir.title,
             'teachingStyle': payload.teachingStyle,
             'speechSpeed': payload.speechSpeed,
             'customOpening': payload.customOpening,
+            'currentSection': {
+                'sectionName': section_name,
+                'keyPoints': section_key_points,
+                'pageContents': _serialize_page_contents(page_contents),
+                'isFirstSection': is_first_section,
+                'isLastSection': is_last_section,
+            },
+            'previousSectionSummary': previous_summary,
+            'nextSectionName': next_section_name,
             'requirements': [
-                '每个 section 都必须返回一段完整讲稿，不能遗漏任何 sectionId。',
-                '首段若 customOpening 非空，必须自然融入开场白。',
-                '中间段必须有承接上一节并引向下一节的过渡语。',
-                '最后一段必须做收束或总结，不能突然结束。',
-                '讲解内容要基于 pageContents 的真实事实展开，优先讲定义、分类、用途、结构、规则、条件、表格信息。',
-                '不要写 Page 1 is titled、The slide highlights 这类元描述，也不要输出英文模板。',
+                'content 只写当前章节，不要把整份课件都概述一遍。',
+                '如果是首章且 customOpening 非空，请自然融入开场白。',
+                '开头要自然切入本章主题，不要机械重复固定模板。',
+                '中间要把课件里的核心事实讲明白，可以适度补一句老师式解释，但不能脱离原始内容。',
+                '如果存在下一章节，结尾要自然过渡到下一章节。',
+                '如果已经是最后一章节，结尾做课堂收束。',
+                'summaryForNext 保持简短，只概括已讲内容和下一章如何承接。',
             ],
-            'sections': ordered_sections,
         },
         ensure_ascii=False,
     )
 
 
-def _section_position(index: int, total: int) -> str:
-    if total <= 1:
-        return 'single'
-    if index == 0:
-        return 'first'
-    if index == total - 1:
-        return 'last'
-    return 'middle'
-
-
-def _build_revision_prompt(validation_errors: list[str]) -> str:
-    lines = ['你刚才的 JSON 已被解析，但以下 section 没通过质量校验，请直接重新输出完整 JSON：']
-    lines.extend(f'- {error}' for error in validation_errors[:8])
-    return '\n'.join(lines)
-
-
-def _serialize_page_contents(page_contents: list[Any]) -> list[dict[str, Any]]:
+def _serialize_page_contents(page_contents: list[CirSlideContent]) -> list[dict[str, Any]]:
     serialized: list[dict[str, Any]] = []
     for page_content in page_contents:
         serialized.append(
@@ -212,25 +176,32 @@ def _extract_message_content(response_json: dict[str, Any]) -> str:
     return content
 
 
-def _extract_section_contents(content: str) -> dict[str, str]:
+def _extract_section_result(content: str) -> dict[str, str]:
     parsed = _extract_json_object(content)
-    sections = parsed.get('sections')
-    if not isinstance(sections, list) or not sections:
-        raise ApiError(code=502, msg='脚本生成 LLM 返回格式异常：缺少 sections', status_code=502)
+    section_content = parsed.get('content')
+    summary_for_next = parsed.get('summaryForNext')
+    if not isinstance(section_content, str) or not section_content.strip():
+        raise ApiError(code=502, msg='脚本生成 LLM 返回格式异常：缺少 content', status_code=502)
 
-    result: dict[str, str] = {}
-    for item in sections:
-        if not isinstance(item, dict):
-            raise ApiError(code=502, msg='脚本生成 LLM 返回格式异常：section 不是对象', status_code=502)
-        section_id = item.get('sectionId')
-        section_content = item.get('content')
-        if not isinstance(section_id, str) or not section_id.strip():
-            raise ApiError(code=502, msg='脚本生成 LLM 返回格式异常：缺少 sectionId', status_code=502)
-        if not isinstance(section_content, str) or not section_content.strip():
-            raise ApiError(code=502, msg='脚本生成 LLM 返回格式异常：缺少 content', status_code=502)
-        result[section_id] = section_content.strip()
+    normalized_content = section_content.strip()
+    normalized_summary = (
+        summary_for_next.strip()
+        if isinstance(summary_for_next, str) and summary_for_next.strip()
+        else _build_fallback_summary(normalized_content)
+    )
+    return {
+        'content': normalized_content,
+        'summaryForNext': normalized_summary,
+    }
 
-    return result
+
+def _build_fallback_summary(content: str) -> str:
+    normalized = ' '.join(part.strip() for part in content.splitlines() if part.strip())
+    parts = [segment.strip() for segment in re.split(r'[。！？!?]', normalized) if segment.strip()]
+    if not parts:
+        return normalized[:60] or '上一章节已经讲完。'
+    summary = parts[-1]
+    return summary[:60] if len(summary) > 60 else summary
 
 
 def _extract_json_object(content: str) -> dict[str, Any]:
@@ -252,65 +223,3 @@ def _extract_json_object(content: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ApiError(code=502, msg='脚本生成 LLM 返回格式异常：顶层不是对象', status_code=502)
     return parsed
-
-
-def _validate_section_contents(
-    generated_contents: dict[str, str],
-    payload: GenerateScriptRequest,
-    sections: list[ScriptSection],
-) -> list[str]:
-    errors: list[str] = []
-    expected_ids = {section.sectionId for section in sections}
-    missing_ids = [section_id for section_id in expected_ids if section_id not in generated_contents]
-    if missing_ids:
-        errors.append(f'缺少 section：{", ".join(sorted(missing_ids))}')
-
-    for index, section in enumerate(sections):
-        content = generated_contents.get(section.sectionId, '')
-        if not content:
-            continue
-        if len(content.strip()) < 60:
-            errors.append(f'{section.sectionId} 内容过短，无法形成可讲授的脚本')
-        if any(pattern.search(content) for pattern in _BANNED_PATTERNS):
-            errors.append(f'{section.sectionId} 含有 Page 或 The slide 之类的英文元描述')
-        if _contains_goal_template(content):
-            errors.append(f'{section.sectionId} 仍在重复“理解/掌握/复述”式模板目标')
-        if _chinese_ratio(content) < 0.55:
-            errors.append(f'{section.sectionId} 中文占比过低，疑似混入英文模板')
-        if index == 0 and payload.customOpening and not _contains_opening_hint(content, payload.customOpening):
-            errors.append(f'{section.sectionId} 没有自然融入自定义开场白')
-        if index < len(sections) - 1 and not _has_transition_language(content, sections[index + 1].sectionName):
-            errors.append(f'{section.sectionId} 缺少承接下一节的过渡语')
-        if index == len(sections) - 1 and not _has_summary_language(content):
-            errors.append(f'{section.sectionId} 结尾缺少总结或收束')
-
-    return errors
-
-
-def _contains_goal_template(content: str) -> bool:
-    return all(token in content for token in ('理解', '掌握', '复述'))
-
-
-def _contains_opening_hint(content: str, opening: str) -> bool:
-    normalized_opening = re.sub(r'[\s，。；;：:、！？!?,]', '', opening)
-    normalized_content = re.sub(r'[\s，。；;：:、！？!?,]', '', content)
-    if not normalized_opening:
-        return True
-    return normalized_opening[: min(6, len(normalized_opening))] in normalized_content
-
-
-def _has_transition_language(content: str, next_section_name: str) -> bool:
-    return any(marker in content for marker in _TRANSITION_MARKERS) or next_section_name in content
-
-
-def _has_summary_language(content: str) -> bool:
-    return any(marker in content for marker in _SUMMARY_MARKERS)
-
-
-def _chinese_ratio(content: str) -> float:
-    chinese_count = len(re.findall(r'[\u4e00-\u9fff]', content))
-    latin_count = len(re.findall(r'[A-Za-z]', content))
-    denominator = chinese_count + latin_count
-    if denominator == 0:
-        return 0.0
-    return chinese_count / denominator

@@ -1,32 +1,51 @@
-<template>
+﻿<template>
   <TeacherLayout>
     <div class="page-card">
       <div class="page-title">脚本编辑</div>
 
       <div class="toolbar top-actions">
-        <el-button :loading="restoring" @click="loadLastResult">加载上次结果</el-button>
-        <el-button v-if="form.scriptId" @click="refreshFromServer">保存脚本</el-button>
+        <el-button :loading="restoring" @click="loadLastResult({ forceRemote: true })">刷新</el-button>
+        <el-button v-if="form.scriptId" type="primary" :disabled="!canSave" :loading="saving" @click="handleSave">
+          保存脚本
+        </el-button>
+        <el-button type="success" :disabled="!canGoAudio" @click="goAudioPage">进入音频生成</el-button>
       </div>
 
       <template v-if="hasScript">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="脚本编号">{{ form.scriptId }}</el-descriptions-item>
           <el-descriptions-item label="解析任务编号">{{ form.parseId }}</el-descriptions-item>
-          <el-descriptions-item label="风格">{{ styleLabel }}</el-descriptions-item>
+          <el-descriptions-item label="讲解风格">{{ styleLabel }}</el-descriptions-item>
+          <el-descriptions-item label="进度">{{ progressLabel }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ generationStatusLabel }}</el-descriptions-item>
+          <el-descriptions-item label="总耗时">{{ elapsedLabel }}</el-descriptions-item>
+          <el-descriptions-item label="当前章节">{{ form.currentSectionName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="章节数">{{ form.scriptStructure.length }}</el-descriptions-item>
         </el-descriptions>
 
-        <div class="toolbar">
-          <el-button type="primary" :loading="saving" @click="handleSave">保存脚本</el-button>
-          <el-button type="success" @click="goAudioPage">进入语音合成</el-button>
-        </div>
+        <el-alert
+          v-if="isRunning"
+          class="status-alert"
+          type="info"
+          :closable="false"
+          show-icon
+          title="脚本正在按章节逐步生成，已经完成的章节会立即显示。"
+        />
+        <el-alert
+          v-else-if="form.generationStatus === 'failed'"
+          class="status-alert"
+          type="error"
+          :closable="false"
+          show-icon
+          :title="form.errorMsg || '脚本尚未全部生成完成，生成过程已失败。'"
+        />
       </template>
 
       <el-empty
         v-else
-        description="No editable script is available yet. Load the last result or generate a new one."
+        description="当前还没有可编辑的脚本，请先加载上次结果或重新生成。"
       >
-        <el-button type="primary" :loading="restoring" @click="loadLastResult">加载上次的结果</el-button>
+        <el-button type="primary" :loading="restoring" @click="loadLastResult({ forceRemote: true })">加载上次结果</el-button>
         <el-button @click="goGeneratePage">开始生成</el-button>
       </el-empty>
     </div>
@@ -46,7 +65,8 @@
           </div>
           <div class="section-tags">
             <el-tag size="small">{{ section.sectionId }}</el-tag>
-            <el-tag v-if="section.relatedPage" size="small" type="success">Page {{ section.relatedPage }}</el-tag>
+            <el-tag v-if="section.relatedPage" size="small" type="success">页码 {{ section.relatedPage }}</el-tag>
+            <el-tag size="small" :type="sectionTagType(section)">{{ sectionStatusLabel(section) }}</el-tag>
             <el-tag size="small" type="warning">{{ section.duration || 0 }} 秒</el-tag>
           </div>
         </div>
@@ -66,6 +86,8 @@
           type="textarea"
           :rows="8"
           resize="vertical"
+          :disabled="!section.content"
+          :placeholder="sectionPlaceholder(section)"
         />
       </div>
     </div>
@@ -81,6 +103,7 @@ import { getScript, updateScript } from '@/api/teacher'
 import { getScriptResult, getScriptTask, patchScriptTask, saveScriptResult } from '@/utils/platform'
 
 const TASK_PAGE = 'script-edit'
+const POLL_INTERVAL_MS = 2000
 const router = useRouter()
 const cachedResult = getScriptResult()
 const cachedTask = getScriptTask()
@@ -89,14 +112,34 @@ const form = reactive(createFormState(cachedResult.scriptId ? cachedResult : cac
 const saving = ref(false)
 const restoring = ref(false)
 const bootstrapped = ref(false)
+const elapsedSeconds = ref(0)
+let pollTimerId = null
+let elapsedTimerId = null
 
 const hasScript = computed(() => Boolean(form.scriptId) && form.scriptStructure.length > 0)
+const isRunning = computed(() => form.generationStatus === 'running')
+const canSave = computed(() => hasScript.value && !isRunning.value)
+const completedSections = computed(() => Number(form.completedSections || countCompletedSections(form.scriptStructure)))
+const totalSections = computed(() => Number(form.totalSections || form.scriptStructure.length || 0))
+const canGoAudio = computed(() => hasScript.value && !isRunning.value && completedSections.value > 0)
+const progressLabel = computed(() => (totalSections.value > 0 ? `${completedSections.value}/${totalSections.value}` : '-'))
 const styleLabelMap = {
-  standard: 'Standard',
-  detailed: 'Detailed',
-  concise: 'Concise'
+  standard: '标准',
+  detailed: '详细',
+  concise: '简洁'
 }
 const styleLabel = computed(() => styleLabelMap[form.teachingStyle] || form.teachingStyle || '-')
+const generationStatusLabel = computed(() => {
+  const statusMap = {
+    pending: '待开始',
+    running: '生成中',
+    completed: '已完成',
+    failed: '失败',
+    interrupted: '已中断'
+  }
+  return statusMap[form.generationStatus] || '待开始'
+})
+const elapsedLabel = computed(() => formatElapsed(elapsedSeconds.value))
 
 watch(
   form,
@@ -109,23 +152,45 @@ watch(
   { deep: true }
 )
 
+watch(
+  isRunning,
+  (running) => {
+    if (running) {
+      startPolling()
+      startElapsedTimer()
+    } else {
+      stopPolling()
+      stopElapsedTimer()
+      syncElapsed()
+    }
+  },
+  { immediate: false }
+)
+
 onMounted(async () => {
   patchScriptTask({ lastPage: TASK_PAGE })
-  await loadLastResult({ silent: true })
+  await loadLastResult({ silent: true, forceRemote: hasRemoteScriptSource() })
   bootstrapped.value = true
   window.addEventListener('beforeunload', persistDraft)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  syncElapsed()
+  if (isRunning.value) {
+    startPolling()
+    startElapsedTimer()
+  }
 })
 
 onBeforeUnmount(() => {
   persistDraft()
+  stopPolling()
+  stopElapsedTimer()
   window.removeEventListener('beforeunload', persistDraft)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 async function handleSave() {
-  if (!hasScript.value) {
-    ElMessage.warning('No script is available to save')
+  if (!canSave.value) {
+    ElMessage.warning('请等待脚本生成完成后再保存编辑')
     return
   }
 
@@ -141,18 +206,19 @@ async function handleSave() {
       ...getScriptResult(),
       ...serializeForm(),
       version: data.version || 2,
-      status: 'success',
+      status: 'completed',
+      generationStatus: 'completed',
       savedAt: data.savedAt || ''
     }
     saveScriptResult(nextResult)
     patchScriptTask({
       ...nextResult,
-      status: 'success',
+      status: 'completed',
       lastPage: TASK_PAGE
     })
-    ElMessage.success('Script saved')
+    ElMessage.success('脚本已保存')
   } catch (error) {
-    ElMessage.error(error.msg || 'Failed to save script')
+    ElMessage.error(error.msg || '保存脚本失败')
   } finally {
     saving.value = false
   }
@@ -162,24 +228,25 @@ async function loadLastResult(options = {}) {
   const { silent = false, forceRemote = false } = options
   const latestResult = getScriptResult()
   const latestTask = getScriptTask()
+  const scriptId = latestResult.scriptId || latestTask.scriptId || form.scriptId
 
-  if (!forceRemote && hasScriptStructure(latestResult)) {
+  if (!forceRemote && hasScriptStructure(latestResult) && latestResult.generationStatus !== 'running') {
     applyForm(latestResult)
     patchScriptTask({
       ...latestResult,
-      status: latestTask.status || latestResult.status || 'success',
+      status: latestTask.status || mapGenerationStatus(latestResult.generationStatus),
       lastPage: TASK_PAGE
     })
+    syncElapsed()
     if (!silent) {
-      ElMessage.success('Loaded the last cached result')
+      ElMessage.success('已加载缓存结果')
     }
     return
   }
 
-  const scriptId = latestResult.scriptId || latestTask.scriptId || form.scriptId
   if (!scriptId) {
     if (!silent) {
-      ElMessage.warning('No previous script result is available')
+      ElMessage.warning('暂无可用的脚本结果')
     }
     return
   }
@@ -192,29 +259,27 @@ async function loadLastResult(options = {}) {
       ...latestTask,
       ...latestResult,
       ...data,
-      status: 'success'
+      status: mapGenerationStatus(data.generationStatus),
+      startedAt: data.startedAt || latestTask.startedAt || latestResult.startedAt || '',
+      finishedAt: data.finishedAt || latestTask.finishedAt || latestResult.finishedAt || ''
     }
     applyForm(mergedResult)
     saveScriptResult(mergedResult)
     patchScriptTask({
       ...mergedResult,
-      status: 'success',
       lastPage: TASK_PAGE
     })
+    syncElapsed()
     if (!silent) {
-      ElMessage.success('Loaded the last result')
+      ElMessage.success('已加载最新脚本状态')
     }
   } catch (error) {
     if (!silent) {
-      ElMessage.error(error.msg || 'Failed to load the last result')
+      ElMessage.error(error.msg || '加载脚本状态失败')
     }
   } finally {
     restoring.value = false
   }
-}
-
-async function refreshFromServer() {
-  await loadLastResult({ forceRemote: true })
 }
 
 function persistDraft() {
@@ -228,7 +293,7 @@ function persistDraft() {
     ...currentResult,
     ...serializeForm(),
     version: currentResult.version || currentTask.version || 1,
-    status: currentTask.status || currentResult.status || 'success',
+    status: currentTask.status || mapGenerationStatus(form.generationStatus),
     savedAt: currentResult.savedAt || currentTask.savedAt || ''
   }
   saveScriptResult(nextResult)
@@ -249,6 +314,10 @@ function goGeneratePage() {
 }
 
 function goAudioPage() {
+  if (!canGoAudio.value) {
+    ElMessage.warning('请先等待脚本生成完成')
+    return
+  }
   router.push('/teacher/audio-generate')
 }
 
@@ -258,7 +327,17 @@ function applyForm(source) {
   form.parseId = next.parseId
   form.teachingStyle = next.teachingStyle
   form.speechSpeed = next.speechSpeed
+  form.customOpening = next.customOpening
   form.scriptStructure = next.scriptStructure
+  form.version = next.version
+  form.generationStatus = next.generationStatus
+  form.completedSections = next.completedSections
+  form.totalSections = next.totalSections
+  form.currentSectionId = next.currentSectionId
+  form.currentSectionName = next.currentSectionName
+  form.startedAt = next.startedAt
+  form.finishedAt = next.finishedAt
+  form.errorMsg = next.errorMsg
 }
 
 function createFormState(source = {}) {
@@ -267,7 +346,17 @@ function createFormState(source = {}) {
     parseId: source.parseId || '',
     teachingStyle: source.teachingStyle || 'standard',
     speechSpeed: source.speechSpeed || 'normal',
-    scriptStructure: cloneSections(source.scriptStructure)
+    customOpening: source.customOpening || '',
+    scriptStructure: cloneSections(source.scriptStructure),
+    version: source.version || 1,
+    generationStatus: source.generationStatus || 'pending',
+    completedSections: Number(source.completedSections || 0),
+    totalSections: Number(source.totalSections || (Array.isArray(source.scriptStructure) ? source.scriptStructure.length : 0)),
+    currentSectionId: source.currentSectionId || '',
+    currentSectionName: source.currentSectionName || '',
+    startedAt: source.startedAt || '',
+    finishedAt: source.finishedAt || '',
+    errorMsg: source.errorMsg || ''
   }
 }
 
@@ -277,7 +366,17 @@ function serializeForm() {
     parseId: form.parseId,
     teachingStyle: form.teachingStyle,
     speechSpeed: form.speechSpeed,
-    scriptStructure: cloneSections(form.scriptStructure)
+    customOpening: form.customOpening,
+    scriptStructure: cloneSections(form.scriptStructure),
+    version: form.version,
+    generationStatus: form.generationStatus,
+    completedSections: completedSections.value,
+    totalSections: totalSections.value,
+    currentSectionId: form.currentSectionId,
+    currentSectionName: form.currentSectionName,
+    startedAt: form.startedAt,
+    finishedAt: form.finishedAt,
+    errorMsg: form.errorMsg
   }
 }
 
@@ -293,6 +392,127 @@ function cloneSections(sections = []) {
 function hasScriptStructure(value) {
   return Array.isArray(value?.scriptStructure) && value.scriptStructure.length > 0
 }
+
+function hasRemoteScriptSource() {
+  return Boolean(getScriptTask().scriptId || getScriptResult().scriptId)
+}
+
+function countCompletedSections(sections = []) {
+  return Array.isArray(sections)
+    ? sections.filter((section) => typeof section.content === 'string' && section.content.trim()).length
+    : 0
+}
+
+function mapGenerationStatus(status) {
+  if (status === 'completed') {
+    return 'completed'
+  }
+  if (status === 'failed') {
+    return 'failed'
+  }
+  if (status === 'interrupted') {
+    return 'interrupted'
+  }
+  if (status === 'running') {
+    return 'running'
+  }
+  return 'pending'
+}
+
+function sectionStatusLabel(section) {
+  if (section.content && section.content.trim()) {
+    return '已生成'
+  }
+  if (isRunning.value && section.sectionId === form.currentSectionId) {
+    return '生成中'
+  }
+  return '待开始'
+}
+
+function sectionTagType(section) {
+  if (section.content && section.content.trim()) {
+    return 'success'
+  }
+  if (isRunning.value && section.sectionId === form.currentSectionId) {
+    return 'warning'
+  }
+  return 'info'
+}
+
+function sectionPlaceholder(section) {
+  if (section.content && section.content.trim()) {
+    return ''
+  }
+  if (isRunning.value && section.sectionId === form.currentSectionId) {
+    return '当前章节正在生成中...'
+  }
+  return '等待生成进入当前章节。'
+}
+
+function startPolling() {
+  if (pollTimerId || !form.scriptId) {
+    return
+  }
+  pollTimerId = window.setInterval(() => {
+    if (!restoring.value && form.scriptId) {
+      loadLastResult({ silent: true, forceRemote: true })
+    }
+  }, POLL_INTERVAL_MS)
+}
+
+function stopPolling() {
+  if (pollTimerId) {
+    window.clearInterval(pollTimerId)
+    pollTimerId = null
+  }
+}
+
+function startElapsedTimer() {
+  if (elapsedTimerId) {
+    return
+  }
+  syncElapsed()
+  elapsedTimerId = window.setInterval(syncElapsed, 1000)
+}
+
+function stopElapsedTimer() {
+  if (elapsedTimerId) {
+    window.clearInterval(elapsedTimerId)
+    elapsedTimerId = null
+  }
+}
+
+function syncElapsed() {
+  elapsedSeconds.value = getElapsedSeconds(form.startedAt, form.finishedAt, form.generationStatus)
+}
+
+function getElapsedSeconds(startedAt, finishedAt, status) {
+  if (!startedAt) {
+    return 0
+  }
+
+  const startMs = new Date(startedAt).getTime()
+  if (Number.isNaN(startMs)) {
+    return 0
+  }
+
+  const endCandidate = status === 'running' ? Date.now() : new Date(finishedAt || Date.now()).getTime()
+  const endMs = Number.isNaN(endCandidate) ? Date.now() : endCandidate
+  return Math.max(0, Math.floor((endMs - startMs) / 1000))
+}
+
+function formatElapsed(totalSeconds) {
+  const safeSeconds = Math.max(0, Number(totalSeconds) || 0)
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const seconds = safeSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}小时 ${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`
+  }
+
+  return `${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`
+}
 </script>
 
 <style scoped>
@@ -303,6 +523,10 @@ function hasScriptStructure(value) {
 .top-actions {
   margin-top: 0;
   margin-bottom: 16px;
+}
+
+.status-alert {
+  margin-top: 16px;
 }
 
 .section-card {

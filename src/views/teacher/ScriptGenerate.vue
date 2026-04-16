@@ -1,27 +1,41 @@
-<template>
+﻿<template>
   <TeacherLayout>
     <div class="page-card">
       <div class="page-title">脚本生成</div>
 
       <el-form :model="form" label-width="110px">
-        <el-form-item label="parseId">
+        <el-form-item label="解析任务编号">
           <el-input v-model="form.parseId" readonly />
         </el-form-item>
 
-        <el-form-item label="Style">
+        <el-form-item label="讲解风格">
           <el-radio-group v-model="form.teachingStyle">
             <el-radio label="standard">标准</el-radio>
             <el-radio label="detailed">详细</el-radio>
             <el-radio label="concise">简洁</el-radio>
           </el-radio-group>
-          <div class="light-tip" style="margin-top: 8px;">
-            标准版适合常规教学，详细版适合深入讲解，简洁版适合短时课程指导.
-          </div>
+        </el-form-item>
+
+        <el-form-item label="讲解语速">
+          <el-radio-group v-model="form.speechSpeed">
+            <el-radio label="slow">慢</el-radio>
+            <el-radio label="normal">正常</el-radio>
+            <el-radio label="fast">快</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="开场白">
+          <el-input
+            v-model="form.customOpening"
+            type="textarea"
+            :rows="3"
+            placeholder="可选。生成首章时会自然融入这段开场白。"
+          />
         </el-form-item>
 
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="handleGenerate">
-            开始生成脚本
+            开始生成
           </el-button>
           <el-button v-if="canOpenLastResult" @click="openLastResult">
             打开上次结果
@@ -29,28 +43,18 @@
         </el-form-item>
       </el-form>
 
-      <div v-if="isRunning" class="status-panel">
-        <el-alert type="info" :closable="false" show-icon>
-          <template #title>
-            脚本生成中，已用时间： {{ elapsedLabel }}.
-          </template>
-        </el-alert>
-      </div>
-
-      <div v-else-if="hasLastTask" class="status-panel">
+      <div v-if="hasLastTask" class="status-panel">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="结果">{{ taskStatusLabel }}</el-descriptions-item>
-          <el-descriptions-item label="处理用时">{{ elapsedLabel }}</el-descriptions-item>
-          <el-descriptions-item label="解析任务编号">{{ taskSnapshot.parseId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ taskStatusLabel }}</el-descriptions-item>
+          <el-descriptions-item label="总耗时">{{ elapsedLabel }}</el-descriptions-item>
           <el-descriptions-item label="脚本编号">{{ taskSnapshot.scriptId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="进度">{{ progressLabel }}</el-descriptions-item>
+          <el-descriptions-item label="当前章节">{{ taskSnapshot.currentSectionName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="解析任务编号">{{ taskSnapshot.parseId || '-' }}</el-descriptions-item>
         </el-descriptions>
-        <div class="toolbar compact">
-          <el-button v-if="canOpenLastResult" type="success" @click="openLastResult">加载上次结果</el-button>
-          <el-button @click="useLastTask">使用上次的参数</el-button>
-        </div>
       </div>
 
-      <Loading :visible="loading" :text="`Generating script... ${elapsedLabel}`" />
+      <Loading :visible="loading" :text="`正在启动脚本生成，已处理 ${elapsedLabel}`" />
 
       <ErrorTip
         v-if="errorCode"
@@ -93,15 +97,21 @@ let timerId = null
 
 const hasLastTask = computed(() => Boolean(taskSnapshot.value.parseId || taskSnapshot.value.scriptId))
 const canOpenLastResult = computed(() => Boolean(taskSnapshot.value.scriptId))
-const isRunning = computed(() => taskSnapshot.value.status === 'running')
 const taskStatusLabel = computed(() => {
   const statusMap = {
-    running: 'Running',
-    interrupted: 'Interrupted',
-    success: 'Success',
-    failed: 'Failed'
+    pending: '待开始',
+    running: '生成中',
+    completed: '已完成',
+    failed: '失败',
+    interrupted: '已中断',
+    success: '已完成'
   }
-  return statusMap[taskSnapshot.value.status] || 'Idle'
+  return statusMap[taskSnapshot.value.status] || '空闲'
+})
+const progressLabel = computed(() => {
+  const completed = Number(taskSnapshot.value.completedSections || 0)
+  const total = Number(taskSnapshot.value.totalSections || 0)
+  return total > 0 ? `${completed}/${total}` : '-'
 })
 const elapsedLabel = computed(() => formatElapsed(elapsedSeconds.value))
 
@@ -114,32 +124,25 @@ watch(
 )
 
 onMounted(() => {
-  const restoredTask = getScriptTask()
-  if (restoredTask.status === 'running') {
-    taskSnapshot.value = patchScriptTask({
-      status: 'interrupted',
-      lastPage: TASK_PAGE
-    })
-    errorMsg.value = 'The previous script generation was interrupted. Parameters have been restored.'
-  } else {
-    persistTaskSnapshot({ lastPage: TASK_PAGE })
-  }
-
+  persistTaskSnapshot({ lastPage: TASK_PAGE })
   syncElapsed()
   window.addEventListener('beforeunload', persistBeforeUnload)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  if (taskSnapshot.value.status === 'running') {
+    startTimer()
+  }
 })
 
 onBeforeUnmount(() => {
   stopTimer()
   window.removeEventListener('beforeunload', persistBeforeUnload)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  persistTaskSnapshot({ status: loading.value ? 'running' : taskSnapshot.value.status })
+  persistTaskSnapshot({ status: taskSnapshot.value.status })
 })
 
 async function handleGenerate() {
   if (!form.value.parseId) {
-    ElMessage.warning('Complete courseware parsing first')
+    ElMessage.warning('请先完成课件解析')
     return
   }
 
@@ -153,13 +156,16 @@ async function handleGenerate() {
     speechSpeed: form.value.speechSpeed,
     customOpening: form.value.customOpening,
     status: 'running',
+    generationStatus: 'running',
     startedAt,
     finishedAt: '',
     scriptId: '',
     scriptStructure: [],
     version: 1,
-    savedAt: '',
-    errorCode: '',
+    completedSections: 0,
+    totalSections: 0,
+    currentSectionId: '',
+    currentSectionName: '',
     errorMsg: '',
     lastPage: TASK_PAGE
   })
@@ -173,67 +179,57 @@ async function handleGenerate() {
       customOpening: form.value.customOpening
     })
 
-    const finishedAt = new Date().toISOString()
     const data = res.data || {}
+    const runtimeStatus = normalizeGenerationStatus(data.generationStatus)
     const result = {
       ...data,
       parseId: form.value.parseId,
       teachingStyle: form.value.teachingStyle,
       speechSpeed: form.value.speechSpeed,
       customOpening: form.value.customOpening,
-      status: 'success',
-      startedAt,
-      finishedAt
+      status: runtimeStatus,
+      generationStatus: data.generationStatus || runtimeStatus,
+      startedAt: data.startedAt || startedAt,
+      finishedAt: data.finishedAt || ''
     }
 
     saveScriptResult(result)
     taskSnapshot.value = patchScriptTask({
       ...result,
-      status: 'success',
+      status: runtimeStatus,
       lastPage: 'script-edit'
     })
     router.push('/teacher/script-edit')
   } catch (error) {
     const finishedAt = new Date().toISOString()
     errorCode.value = error.code || 500
-    errorMsg.value = error.msg || 'Failed to generate script'
+    errorMsg.value = error.msg || '脚本生成任务启动失败'
     taskSnapshot.value = patchScriptTask({
       parseId: form.value.parseId,
       teachingStyle: form.value.teachingStyle,
       speechSpeed: form.value.speechSpeed,
       customOpening: form.value.customOpening,
       status: 'failed',
+      generationStatus: 'failed',
       startedAt,
       finishedAt,
       errorCode: errorCode.value,
       errorMsg: errorMsg.value,
       lastPage: TASK_PAGE
     })
+    stopTimer()
   } finally {
     loading.value = false
-    stopTimer()
     syncElapsed()
   }
 }
 
 function openLastResult() {
   if (!canOpenLastResult.value) {
-    ElMessage.warning('No previous script result is available')
+    ElMessage.warning('暂无可打开的脚本结果')
     return
   }
   router.push('/teacher/script-edit')
-}
-
-function useLastTask() {
-  const lastTask = getScriptTask()
-  form.value = {
-    parseId: lastTask.parseId || parseResult.parseId || '',
-    teachingStyle: lastTask.teachingStyle || 'standard',
-    speechSpeed: lastTask.speechSpeed || 'normal',
-    customOpening: lastTask.customOpening || ''
-  }
-  taskSnapshot.value = lastTask
-  syncElapsed()
 }
 
 function persistTaskSnapshot(extra = {}) {
@@ -249,13 +245,26 @@ function persistTaskSnapshot(extra = {}) {
 }
 
 function persistBeforeUnload() {
-  persistTaskSnapshot({ status: loading.value ? 'running' : taskSnapshot.value.status })
+  persistTaskSnapshot({ status: taskSnapshot.value.status })
 }
 
 function handleVisibilityChange() {
   if (document.visibilityState === 'hidden') {
     persistBeforeUnload()
   }
+}
+
+function normalizeGenerationStatus(status) {
+  if (status === 'completed') {
+    return 'completed'
+  }
+  if (status === 'failed') {
+    return 'failed'
+  }
+  if (status === 'interrupted') {
+    return 'interrupted'
+  }
+  return 'running'
 }
 
 function startTimer() {
@@ -297,19 +306,15 @@ function formatElapsed(totalSeconds) {
   const seconds = safeSeconds % 60
 
   if (hours > 0) {
-    return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+    return `${hours}小时 ${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`
   }
 
-  return `${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+  return `${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`
 }
 </script>
 
 <style scoped>
 .status-panel {
-  margin-top: 16px;
-}
-
-.toolbar.compact {
   margin-top: 16px;
 }
 </style>

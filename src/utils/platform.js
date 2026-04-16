@@ -1,4 +1,4 @@
-const SCRIPT_TASK_KEY = 'scriptTask'
+﻿const SCRIPT_TASK_KEY = 'scriptTask'
 const SCRIPT_RESULT_KEY = 'scriptResult'
 
 function readJsonStorage(key, fallback) {
@@ -34,7 +34,15 @@ function extractScriptResult(task) {
     status: task.status || '',
     savedAt: task.savedAt || '',
     editUrl: task.editUrl || '',
-    audioGenerateUrl: task.audioGenerateUrl || ''
+    audioGenerateUrl: task.audioGenerateUrl || '',
+    generationStatus: task.generationStatus || '',
+    completedSections: task.completedSections || 0,
+    totalSections: task.totalSections || 0,
+    currentSectionId: task.currentSectionId || '',
+    currentSectionName: task.currentSectionName || '',
+    startedAt: task.startedAt || '',
+    finishedAt: task.finishedAt || '',
+    errorMsg: task.errorMsg || ''
   }
 }
 
@@ -142,7 +150,15 @@ export function saveScriptResult(data) {
       status: next.status || 'success',
       savedAt: next.savedAt || '',
       editUrl: next.editUrl || '',
-      audioGenerateUrl: next.audioGenerateUrl || ''
+      audioGenerateUrl: next.audioGenerateUrl || '',
+      generationStatus: next.generationStatus || '',
+      completedSections: next.completedSections || 0,
+      totalSections: next.totalSections || 0,
+      currentSectionId: next.currentSectionId || '',
+      currentSectionName: next.currentSectionName || '',
+      startedAt: next.startedAt || '',
+      finishedAt: next.finishedAt || '',
+      errorMsg: next.errorMsg || ''
     })
   }
 }

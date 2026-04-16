@@ -1,11 +1,11 @@
-import unittest
+﻿import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from backend.app.common.db import get_db
 from backend.app.main import create_app
-from backend.app.script.schemas import ScriptSection, ScriptSummary
+from backend.app.script.schemas import ScriptDetail, ScriptSection, ScriptSummary
 
 
 class CompatRouterTestCase(unittest.TestCase):
@@ -60,6 +60,35 @@ class CompatRouterTestCase(unittest.TestCase):
         self.assertEqual(request_payload.customOpening, '')
         self.assertEqual(request_payload.enc, 'demo-signature')
         self.assertEqual(request_payload.time, '1700000000000')
+
+    @patch('backend.app.compat.router.get_script')
+    def test_get_script_endpoint_uses_main_service(self, mock_get_script) -> None:
+        mock_get_script.return_value = ScriptDetail(
+            scriptId='script-001',
+            parseId='parse-001',
+            teachingStyle='standard',
+            speechSpeed='normal',
+            scriptStructure=[
+                ScriptSection(sectionId='sec001', sectionName='intro', content='alpha script', duration=40)
+            ],
+            version=1,
+            generationStatus='running',
+            completedSections=1,
+            totalSections=3,
+            currentSectionId='sec002',
+            currentSectionName='第二章',
+            startedAt='2026-04-16T08:00:00Z',
+        )
+
+        response = self.client.get('/api/v1/scripts/script-001')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['data']['scriptId'], 'script-001')
+        self.assertEqual(payload['data']['generationStatus'], 'running')
+        self.assertEqual(payload['data']['completedSections'], 1)
+        self.assertEqual(payload['data']['currentSectionName'], '第二章')
+        mock_get_script.assert_called_once_with('script-001')
 
     def test_generate_script_old_payload_is_rejected(self) -> None:
         response = self.client.post(
