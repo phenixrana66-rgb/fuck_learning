@@ -13,7 +13,6 @@ from backend.app.lesson.tts_client import synthesize_speech
 from backend.app.lesson.voice_storage import build_voice_public_url, save_audio_file
 from backend.app.parser.schemas import ParseTaskStatus
 from backend.app.script.service import get_script
-from backend.app.tasks.service import create_task, mark_task_completed
 from backend.chaoxing_db.models import (
     ChapterAudioAsset,
     ChapterKnowledgeNode,
@@ -133,7 +132,6 @@ def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -
         db.flush()
         audio_id = str(audio_asset.id)
 
-    create_task(audio_id, "lesson.generateAudio", {"scriptId": payload.scriptId})
     data = {
         "audioId": audio_id,
         "scriptId": payload.scriptId,
@@ -149,7 +147,6 @@ def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -
         "status": "success",
     }
     _AUDIO_STORE[audio_id] = data
-    mark_task_completed(audio_id, result=data)
     return data
 
 
@@ -296,7 +293,6 @@ def publish_lesson(payload: PublishRequest) -> dict:
         parse_id = script_entity.parse_task.parse_no
 
     publish_id = _build_id("publish")
-    create_task(publish_id, "lesson.publish", {"lessonId": lesson_id, "scriptId": payload.scriptId, "audioId": payload.audioId})
     data = {
         "publishId": publish_id,
         "lessonId": lesson_id,
@@ -312,7 +308,6 @@ def publish_lesson(payload: PublishRequest) -> dict:
         },
     }
     _LESSON_PACKAGES[lesson_id] = data
-    mark_task_completed(publish_id, result=data)
     return data
 
 

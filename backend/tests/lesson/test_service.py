@@ -15,8 +15,6 @@ from backend.app.lesson.tts_client import TtsSynthesisResult
 from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
-from backend.app.tasks.repository import configure_task_storage, reset_task_storage
-from backend.app.tasks.service import clear_tasks
 from backend.chaoxing_db.models import ChapterAudioAsset, ChapterScript, ChapterSectionAudioAsset, Lesson, LessonSection
 
 
@@ -26,9 +24,7 @@ class LessonServiceTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        configure_task_storage(Path(self.temp_dir.name) / 'logs')
         configure_database_url(f"sqlite+pysqlite:///{Path(self.temp_dir.name) / 'lesson-test.db'}")
-        clear_tasks()
         clear_scripts()
         clear_parse_tasks()
         clear_lessons()
@@ -43,12 +39,10 @@ class LessonServiceTestCase(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        clear_tasks()
         clear_scripts()
         clear_parse_tasks()
         clear_lessons()
         reset_database_url()
-        reset_task_storage()
         assert self.temp_dir is not None
         self.temp_dir.cleanup()
 

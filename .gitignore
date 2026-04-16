@@ -6,6 +6,7 @@
 .idea/
 .DS_Store
 Thumbs.db
+cache/
 
 *.log
 npm-debug.log*

@@ -30,7 +30,16 @@
         </el-form-item>
       </el-form>
 
-      <Loading :visible="loading" text="Generating audio, please wait..." />
+      <div v-if="loading" class="status-panel">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          :title="`Audio generation in progress, processed ${elapsedLabel}`"
+        />
+      </div>
+
+      <Loading :visible="loading" :text="`Generating audio, elapsed ${elapsedLabel}`" />
 
       <ErrorTip
         v-if="errorCode"
@@ -69,7 +78,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
@@ -102,9 +111,16 @@ const publishInfo = ref({
 const loading = ref(false)
 const errorCode = ref('')
 const errorMsg = ref('')
+const elapsedSeconds = ref(0)
+let timerId = null
 
 const selectedVoiceLabel = computed(() => {
   return voiceList.find((item) => item.value === form.value.voiceType)?.label || '-'
+})
+const elapsedLabel = computed(() => formatElapsed(elapsedSeconds.value))
+
+onBeforeUnmount(() => {
+  stopTimer()
 })
 
 async function handleGenerateAudio() {
@@ -113,9 +129,11 @@ async function handleGenerateAudio() {
     return
   }
 
+  resetElapsed()
   loading.value = true
   errorCode.value = ''
   errorMsg.value = ''
+  startTimer()
 
   try {
     const res = await generateAudio({
@@ -134,12 +152,14 @@ async function handleGenerateAudio() {
       ...data,
       scriptId: form.value.scriptId,
       voiceType: form.value.voiceType,
-      status: form.value.status
+      status: form.value.status,
+      elapsedSeconds: elapsedSeconds.value
     })
   } catch (error) {
     errorCode.value = error.code || 500
     errorMsg.value = error.msg || 'Failed to generate audio'
   } finally {
+    stopTimer()
     loading.value = false
   }
 }
@@ -158,9 +178,44 @@ function publishLesson() {
 
   ElMessage.success('Lesson has been bound to the course and published')
 }
+
+function startTimer() {
+  stopTimer()
+  timerId = window.setInterval(() => {
+    elapsedSeconds.value += 1
+  }, 1000)
+}
+
+function stopTimer() {
+  if (timerId) {
+    window.clearInterval(timerId)
+    timerId = null
+  }
+}
+
+function resetElapsed() {
+  elapsedSeconds.value = 0
+}
+
+function formatElapsed(totalSeconds) {
+  const safeSeconds = Math.max(0, Number(totalSeconds) || 0)
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const seconds = safeSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+  }
+
+  return `${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+}
 </script>
 
 <style scoped>
+.status-panel {
+  margin-bottom: 16px;
+}
+
 .voice-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

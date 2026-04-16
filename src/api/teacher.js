@@ -59,6 +59,7 @@ export function generateAudio(data) {
   return request({
     url: '/api/v1/lesson/generateAudio',
     method: 'post',
-    data
+    data,
+    timeout: 0
   })
 }
