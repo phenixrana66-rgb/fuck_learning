@@ -1,4 +1,4 @@
-from threading import Thread
+﻿from threading import Thread
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import ValidationError
@@ -10,23 +10,17 @@ from backend.app.common.responses import success_response
 from backend.app.common.security import verify_signature_placeholder
 from backend.app.courseware.schemas import ParseRequest
 from backend.app.courseware.service import create_parse_task, get_parse_task, run_parse_task
+from backend.app.courseware.teacher_service import get_parse_status, run_teacher_parse_task, upload_parse
 from backend.app.lesson.schemas import GenerateAudioRequest, PlayRequest, PublishRequest
 from backend.app.lesson.service import generate_audio as generate_main_audio
 from backend.app.lesson.service import play_lesson, publish_lesson
 from backend.app.platform.schemas import SyncCourseRequest, SyncUserRequest
 from backend.app.platform.service import sync_course as sync_main_course
 from backend.app.platform.service import sync_user as sync_main_user
+from backend.app.platform.teacher_service import require_teacher, sync_courses, sync_user
 from backend.app.script.schemas import GenerateScriptRequest, UpdateScriptRequest
 from backend.app.script.service import generate_script as generate_main_script
 from backend.app.script.service import get_script, update_script
-from backend.app.teacher_runtime.services import (
-    get_parse_status,
-    require_teacher,
-    run_teacher_parse_task,
-    sync_courses,
-    sync_user,
-    upload_parse,
-)
 
 router = APIRouter(tags=["compat"])
 
@@ -69,12 +63,12 @@ async def sync_user_endpoint(request: Request, db: Session = Depends(get_db)) ->
             data = sync_user(db, _extract_token(request, payload))
             return teacher_response(request, data)
         except PermissionError:
-            raise ApiError(401, "token 鏃犳晥", status_code=401)
+            raise ApiError(401, "token invalid", status_code=401)
 
     typed_payload = SyncUserRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = sync_main_user(typed_payload)
-    return success_response(request, data, msg="鐢ㄦ埛鍚屾鎴愬姛")
+    return success_response(request, data, msg="user synced successfully")
 
 
 @router.post("/platform/syncCourse")
@@ -86,12 +80,12 @@ async def sync_course_endpoint(request: Request, db: Session = Depends(get_db)) 
             data = sync_courses(db, teacher)
             return teacher_response(request, data)
         except PermissionError:
-            raise ApiError(401, "token 鏃犳晥", status_code=401)
+            raise ApiError(401, "token invalid", status_code=401)
 
     typed_payload = SyncCourseRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = sync_main_course(typed_payload)
-    return success_response(request, data, msg="璇剧▼鍚屾鎴愬姛")
+    return success_response(request, data, msg="course synced successfully")
 
 
 @router.post("/lesson/parse")
@@ -100,7 +94,7 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
     try:
         teacher = require_teacher(db, _extract_token(request, payload))
     except PermissionError:
-        raise ApiError(401, "token 鏃犳晥", status_code=401)
+        raise ApiError(401, "token invalid", status_code=401)
 
     try:
         data = upload_parse(
@@ -122,21 +116,16 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
     # verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     # data = create_parse_task(typed_payload, request_id=getattr(request.state, "request_id", None))
     # Thread(target=run_parse_task, args=(data.parseId, typed_payload.model_copy(deep=True)), daemon=True).start()
-    # return success_response(request, data.model_dump(), msg="璇句欢瑙ｆ瀽浠诲姟宸插垱寤?)
+    # return success_response(request, data.model_dump(), msg="parse task created successfully")
 
 
 @router.get("/lesson/parse/{parseId}")
 def get_parse_task_endpoint(parseId: str, request: Request, db: Session = Depends(get_db)) -> dict:
-    """
-    缁熶竴鐨勮В鏋愮姸鎬佹煡璇㈡帴鍙ｃ€?
-    """
-    # 1. 灏濊瘯浠庤€佸笀鐨?ChapterParseTask 琛ㄦ煡璇?
     try:
-        # 娉ㄦ剰锛氳繖閲岃皟鐢ㄤ綘涔嬪墠鐨?get_parse_status
         teacher_data = get_parse_status(db, parseId)
         return teacher_response(request, teacher_data)
-    except Exception as exc:
-        raise ApiError(404, f"鏈壘鍒颁换鍔℃垨鏌ヨ澶辫触: {parseId}", status_code=404)
+    except Exception:
+        raise ApiError(404, f"parse task not found: {parseId}", status_code=404)
 
 
 @router.post("/lesson/generateScript")
@@ -151,6 +140,7 @@ async def generate_script_endpoint(request: Request, db: Session = Depends(get_d
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = generate_main_script(typed_payload)
     return success_response(request, data.model_dump(), msg="script generated successfully")
+
 
 @router.get("/scripts/{scriptId}")
 async def get_script_endpoint(scriptId: str, request: Request) -> dict:
@@ -171,7 +161,7 @@ async def update_script_endpoint(scriptId: str, request: Request) -> dict:
             "version": data.version,
             "savedAt": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         },
-        msg="鑴氭湰淇濆瓨鎴愬姛",
+        msg="script updated successfully",
     )
 
 
@@ -195,7 +185,7 @@ async def publish_lesson_endpoint(request: Request) -> dict:
     typed_payload = PublishRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = publish_lesson(typed_payload)
-    return success_response(request, data, msg="智课发布任务已创建")
+    return success_response(request, data, msg="lesson publish task created")
 
 
 @router.post("/lesson/play")
@@ -204,4 +194,4 @@ async def play_lesson_endpoint(request: Request) -> dict:
     typed_payload = PlayRequest.model_validate(payload)
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = play_lesson(typed_payload)
-    return success_response(request, data, msg="鏅鸿鎾斁瑁呴厤鎴愬姛")
+    return success_response(request, data, msg="lesson playback prepared")
