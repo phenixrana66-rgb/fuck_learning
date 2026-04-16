@@ -158,3 +158,47 @@ class CompatRouterTestCase(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload['msg'], 'generateAudio payload is invalid')
         self.assertIn('errors', payload['data'])
+
+    @patch('backend.app.compat.router.publish_lesson')
+    def test_publish_lesson_uses_main_service(self, mock_publish_lesson) -> None:
+        mock_publish_lesson.return_value = {
+            'publishId': 'publish-001',
+            'lessonId': 'lesson-001',
+            'publishStatus': 'published',
+            'snapshot': {
+                'coursewareId': 'cw-course-001',
+                'scriptId': 'script-001',
+                'audioId': '1',
+                'parseId': 'parse-001',
+                'nodeSequence': [],
+                'scriptRefs': [],
+                'audioRefs': [],
+            },
+        }
+
+        response = self.client.post(
+            '/api/v1/lesson/publish',
+            json={
+                'coursewareId': 'cw-course-001',
+                'scriptId': 'script-001',
+                'audioId': '1',
+                'publisherId': 'teacher-001',
+                'enc': 'demo-signature',
+                'time': '1700000000000',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['data']['publishId'], 'publish-001')
+        self.assertEqual(payload['data']['lessonId'], 'lesson-001')
+        self.assertEqual(payload['data']['publishStatus'], 'published')
+
+        mock_publish_lesson.assert_called_once()
+        request_payload = mock_publish_lesson.call_args.args[0]
+        self.assertEqual(request_payload.coursewareId, 'cw-course-001')
+        self.assertEqual(request_payload.scriptId, 'script-001')
+        self.assertEqual(request_payload.audioId, '1')
+        self.assertEqual(request_payload.publisherId, 'teacher-001')
+        self.assertEqual(request_payload.enc, 'demo-signature')
+        self.assertEqual(request_payload.time, '1700000000000')

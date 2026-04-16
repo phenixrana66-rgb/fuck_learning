@@ -71,7 +71,7 @@ service.interceptors.response.use(
 
     switch (status) {
       case 400:
-        msg = '请求参数错误'
+        msg = error?.response?.data?.msg || '请求参数错误'
         break
       case 401:
         msg = '登录状态失效或鉴权失败'

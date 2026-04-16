@@ -5,6 +5,8 @@ from math import ceil
 import re
 from uuid import uuid4
 
+from sqlalchemy import func
+
 from backend.app.common.db import session_scope
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.service import get_parse_task
@@ -29,6 +31,7 @@ from backend.chaoxing_db.models import (
 
 _AUDIO_STORE: dict[str, dict] = {}
 _LESSON_PACKAGES: dict[str, dict] = {}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}
 
 
 def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -> dict:
@@ -43,6 +46,20 @@ def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -
         raise ApiError(code=404, msg="script sections were not found", status_code=404, data={"sectionIds": missing_sections})
 
     selected_sections = [section_map[section_id] for section_id in target_sections]
+    synthesizable_sections = [section for section in selected_sections if _build_synthesis_text(section.content)]
+    skipped_sections = [
+        {"sectionId": section.sectionId, "reason": "empty_content"}
+        for section in selected_sections
+        if not _build_synthesis_text(section.content)
+    ]
+    if not synthesizable_sections:
+        raise ApiError(
+            code=400,
+            msg="selected sections have no content",
+            status_code=400,
+            data={"sectionIds": target_sections},
+        )
+    active_section_ids = [section.sectionId for section in synthesizable_sections]
 
     with session_scope() as db:
         script_entity = db.query(ChapterScript).filter(ChapterScript.script_no == payload.scriptId).first()
@@ -51,12 +68,12 @@ def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -
 
         section_entities = (
             db.query(ChapterScriptSection)
-            .filter(ChapterScriptSection.script_id == script_entity.id, ChapterScriptSection.section_code.in_(target_sections))
+            .filter(ChapterScriptSection.script_id == script_entity.id, ChapterScriptSection.section_code.in_(active_section_ids))
             .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
             .all()
         )
         section_entity_map = {section.section_code: section for section in section_entities}
-        entity_missing_sections = [section_id for section_id in target_sections if section_id not in section_entity_map]
+        entity_missing_sections = [section_id for section_id in active_section_ids if section_id not in section_entity_map]
         if entity_missing_sections:
             raise ApiError(
                 code=404,
@@ -85,7 +102,7 @@ def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -
         total_file_size = 0
         preview_audio_url = ""
 
-        for selected_section in selected_sections:
+        for selected_section in synthesizable_sections:
             section_entity = section_entity_map[selected_section.sectionId]
             synthesis = _synthesize_section_audio(
                 selected_section,
@@ -143,6 +160,7 @@ def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -
             bitRate=_resolve_bit_rate(total_file_size, total_duration),
         ).model_dump(),
         "sectionAudios": section_audios,
+        "skippedSections": skipped_sections,
         "taskStatus": "completed",
         "status": "success",
     }
@@ -194,12 +212,13 @@ def publish_lesson(payload: PublishRequest) -> dict:
 
         chapter = script_entity.chapter
         unit_chapter = chapter.parent if chapter and chapter.parent is not None else chapter
+        next_publish_version = _next_publish_version(db, script_entity.course_id)
         lesson = Lesson(
             lesson_no=_build_id("lesson"),
             course_id=script_entity.course_id,
             lesson_name=(chapter.chapter_name if chapter is not None else "Published Lesson"),
             teacher_id=script_entity.teacher_id,
-            publish_version=1,
+            publish_version=next_publish_version,
             publish_status="published",
             published_at=_utc_now_naive(),
         )
@@ -464,6 +483,11 @@ def _utc_now_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _next_publish_version(db, course_id: int) -> int:
+    latest_version = db.query(func.max(Lesson.publish_version)).filter(Lesson.course_id == course_id).scalar()
+    return int(latest_version or 0) + 1
+
+
 def _build_section_summary(content: str | None) -> str:
     text = re.sub(r"\s+", " ", content or "").strip()
     if not text:
@@ -524,13 +548,22 @@ def _create_lesson_pages(
             page_no=page_no,
             page_title=page_mapping.get("title") or f"Page {page_no}",
             page_summary=(page_mapping.get("title") or f"Page {page_no}"),
-            ppt_page_url=page_mapping.get("previewUrl"),
+            ppt_page_url=_normalize_preview_url(page_mapping.get("previewUrl")),
             parsed_content="\n".join(page_mapping.get("bodyTexts") or []),
             sort_no=sort_no,
         )
         db.add(row)
         created_page_numbers.append(page_no)
     return created_page_numbers
+
+
+def _normalize_preview_url(url: str | None) -> str:
+    if not url:
+        return ""
+    lower = url.lower()
+    if any(lower.endswith(ext) for ext in IMAGE_EXTENSIONS):
+        return url
+    return ""
 
 
 def _create_lesson_knowledge_point(db, lesson_id: int, lesson_section_id: int, related_node_id: int | None) -> str | None:

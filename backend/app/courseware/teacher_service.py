@@ -32,6 +32,10 @@ MOCK_REMOTE_PREFIX = "/mock-remote/examples"
 JsonDict = dict[str, Any]
 
 
+def _build_courseware_id(course_code: str | None) -> str:
+    return f"cw-{course_code or ''}"
+
+
 def upload_parse(
     db: Session,
     teacher: User,
@@ -76,7 +80,12 @@ def upload_parse(
     )
     db.add(task)
     db.commit()
-    return {"parseId": parse_no, "status": "processing", "knowledgeTree": []}
+    return {
+        "parseId": parse_no,
+        "status": "processing",
+        "knowledgeTree": [],
+        "coursewareId": _build_courseware_id(course.course_code),
+    }
 
 
 def run_teacher_parse_task(parse_id: str) -> None:
@@ -90,7 +99,7 @@ def run_teacher_parse_task(parse_id: str) -> None:
                 file_url=task.ppt_asset.file_url,
                 file_type=task.ppt_asset.file_type,
                 is_extract_key_point=task.is_extract_key_point,
-                courseware_id=f"cw-{task.chapter.course.course_code}",
+                courseware_id=_build_courseware_id(task.chapter.course.course_code),
             )
             _ensure_parse_result(db, task, file_info, preview, extracted, cir)
         except Exception as exc:  # noqa: BLE001
@@ -110,11 +119,28 @@ def get_parse_status(db: Session, parse_id: str) -> JsonDict:
     task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == parse_id).first()
     if not task:
         raise LookupError("parseId 不存在")
+    courseware_id = _build_courseware_id(task.chapter.course.course_code if task.chapter and task.chapter.course else None)
     if task.task_status == "completed":
-        return {"parseId": task.parse_no, "status": "success", "knowledgeTree": _build_tree(db, task.id)}
+        return {
+            "parseId": task.parse_no,
+            "status": "success",
+            "knowledgeTree": _build_tree(db, task.id),
+            "coursewareId": courseware_id,
+        }
     if task.task_status == "failed":
-        return {"parseId": task.parse_no, "status": "failed", "knowledgeTree": [], "msg": task.error_msg or "解析失败"}
-    return {"parseId": task.parse_no, "status": "processing", "knowledgeTree": []}
+        return {
+            "parseId": task.parse_no,
+            "status": "failed",
+            "knowledgeTree": [],
+            "msg": task.error_msg or "解析失败",
+            "coursewareId": courseware_id,
+        }
+    return {
+        "parseId": task.parse_no,
+        "status": "processing",
+        "knowledgeTree": [],
+        "coursewareId": courseware_id,
+    }
 
 
 def _resolve_course(db: Session, external_course_id: str) -> Course | None:
@@ -196,7 +222,7 @@ def _sync_parse_result(db: Session, task: ChapterParseTask, file_info, preview, 
             {
                 "pageNo": slide.slideNumber,
                 "title": slide.title or f"第 {slide.slideNumber} 页",
-                "previewUrl": task.ppt_asset.file_url,
+                "previewUrl": "",
                 "bodyTexts": slide.bodyTexts,
                 "tableTexts": slide.tableTexts,
                 "notes": slide.notes,
@@ -251,7 +277,7 @@ def _sync_lesson_section_pages(db: Session, task: ChapterParseTask, parse_result
         row.source_page_no = slide.slideNumber
         row.page_title = slide.title or f"第 {slide.slideNumber} 页"
         row.page_summary = f"查看《{section.section_name}》课件第 {slide.slideNumber} 页内容。"
-        row.ppt_page_url = task.ppt_asset.file_url
+        row.ppt_page_url = ""
         row.parsed_content = "\n".join([*slide.bodyTexts, *slide.tableTexts, *([slide.notes] if slide.notes else [])])
         row.sort_no = slide.slideNumber
 

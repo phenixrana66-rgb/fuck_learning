@@ -63,3 +63,11 @@ export function generateAudio(data) {
     timeout: 0
   })
 }
+
+export function publishLesson(data) {
+  return request({
+    url: '/api/v1/lesson/publish',
+    method: 'post',
+    data
+  })
+}

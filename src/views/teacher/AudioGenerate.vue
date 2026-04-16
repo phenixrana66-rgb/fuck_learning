@@ -63,7 +63,9 @@
       <audio class="audio-preview" :src="form.audioUrl" controls />
 
       <div class="toolbar" style="margin-top: 16px;">
-        <el-button type="success" @click="publishLesson">Publish Lesson</el-button>
+        <el-button type="success" :loading="publishing" @click="publishLesson">
+          Publish Lesson
+        </el-button>
       </div>
     </div>
 
@@ -71,7 +73,7 @@
       <el-result
         icon="success"
         title="Lesson Published"
-        :sub-title="`Course: ${currentCourse.courseName || '-'}, audio: ${form.audioId || '-'}`"
+        :sub-title="`Course: ${currentCourse.courseName || '-'}, lesson: ${publishInfo.lessonId || '-'}, audio: ${form.audioId || '-'}`"
       />
     </div>
   </TeacherLayout>
@@ -83,11 +85,15 @@ import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
-import { generateAudio } from '@/api/teacher'
-import { getCurrentCourse, getScriptResult, saveAudioResult } from '@/utils/platform'
+import { generateAudio, getParseStatusAPI, publishLesson as publishLessonAPI } from '@/api/teacher'
+import { getAudioResult, getCurrentCourse, getParseResult, getScriptResult, getTeacherProfile, saveAudioResult, saveParseResult } from '@/utils/platform'
 
 const currentCourse = getCurrentCourse()
+const teacherInfo = getTeacherProfile()
+const parseResult = getParseResult()
 const scriptResult = getScriptResult()
+const audioResult = getAudioResult()
+const cachedAudioResult = audioResult.scriptId === scriptResult.scriptId ? audioResult : {}
 
 const voiceList = [
   { label: 'Female Standard', value: 'female_standard', desc: 'Clear and neutral for everyday teaching.' },
@@ -98,17 +104,20 @@ const voiceList = [
 
 const form = ref({
   scriptId: scriptResult.scriptId || '',
-  voiceType: 'female_standard',
-  audioId: '',
-  audioUrl: '',
-  status: ''
+  voiceType: cachedAudioResult.voiceType || 'female_standard',
+  audioId: cachedAudioResult.audioId || '',
+  audioUrl: cachedAudioResult.audioUrl || '',
+  status: cachedAudioResult.status || ''
 })
 
 const publishInfo = ref({
-  published: false
+  published: Boolean(cachedAudioResult.lessonId),
+  lessonId: cachedAudioResult.lessonId || '',
+  publishId: cachedAudioResult.publishId || ''
 })
 
 const loading = ref(false)
+const publishing = ref(false)
 const errorCode = ref('')
 const errorMsg = ref('')
 const elapsedSeconds = ref(0)
@@ -153,7 +162,10 @@ async function handleGenerateAudio() {
       scriptId: form.value.scriptId,
       voiceType: form.value.voiceType,
       status: form.value.status,
-      elapsedSeconds: elapsedSeconds.value
+      elapsedSeconds: elapsedSeconds.value,
+      lessonId: '',
+      publishId: '',
+      publishStatus: ''
     })
   } catch (error) {
     errorCode.value = error.code || 500
@@ -164,19 +176,82 @@ async function handleGenerateAudio() {
   }
 }
 
-function publishLesson() {
+async function publishLesson() {
   if (!form.value.audioId) {
     ElMessage.warning('Generate audio first')
     return
   }
 
-  publishInfo.value = {
-    published: true,
-    courseId: currentCourse.courseId,
-    audioId: form.value.audioId
+  const coursewareId = await resolveCoursewareId()
+  if (!coursewareId) {
+    ElMessage.warning('Missing coursewareId, please re-run course parse first')
+    return
   }
 
-  ElMessage.success('Lesson has been bound to the course and published')
+  publishing.value = true
+
+  try {
+    const res = await publishLessonAPI({
+      coursewareId,
+      scriptId: form.value.scriptId,
+      audioId: form.value.audioId,
+      publisherId: teacherInfo.teacherId || teacherInfo.userId || ''
+    })
+
+    const data = res.data || {}
+    publishInfo.value = {
+      published: data.publishStatus === 'published',
+      lessonId: data.lessonId || '',
+      publishId: data.publishId || ''
+    }
+
+    saveAudioResult({
+      ...cachedAudioResult,
+      audioId: form.value.audioId,
+      audioUrl: form.value.audioUrl,
+      scriptId: form.value.scriptId,
+      voiceType: form.value.voiceType,
+      status: form.value.status,
+      lessonId: data.lessonId || '',
+      publishId: data.publishId || '',
+      publishStatus: data.publishStatus || ''
+    })
+
+    ElMessage.success(`Lesson published successfully: ${data.lessonId || '-'}`)
+  } catch (error) {
+    errorCode.value = error.code || 500
+    errorMsg.value = error.msg || 'Failed to publish lesson'
+  } finally {
+    publishing.value = false
+  }
+}
+
+async function resolveCoursewareId() {
+  if (parseResult.coursewareId) {
+    return parseResult.coursewareId
+  }
+
+  const parseId = scriptResult.parseId || parseResult.parseId
+  if (!parseId) {
+    return ''
+  }
+
+  try {
+    const res = await getParseStatusAPI(parseId)
+    const data = res.data || {}
+    if (data.coursewareId) {
+      saveParseResult({
+        ...parseResult,
+        ...data,
+        parseId
+      })
+      return data.coursewareId
+    }
+  } catch (error) {
+    return ''
+  }
+
+  return ''
 }
 
 function startTimer() {

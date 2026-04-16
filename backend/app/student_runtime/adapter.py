@@ -53,6 +53,9 @@ class ChaoxingAdapter:
 
     def get_progress(self, lesson_id):
         progress = deepcopy(self._progress.get(lesson_id, get_default_progress(lesson_id)))
+        if lesson_id not in self._players:
+            progress["progressPercent"] = int(progress.get("progressPercent") or 0)
+            return progress
         progress["progressPercent"] = self._average_progress(lesson_id)
         return progress
 

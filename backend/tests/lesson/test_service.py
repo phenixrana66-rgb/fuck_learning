@@ -200,11 +200,154 @@ class LessonServiceTestCase(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 409)
 
+    @patch('backend.app.lesson.voice_storage.get_voice_cache_dir')
+    @patch('backend.app.lesson.service.synthesize_speech')
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
+    def test_generate_audio_skips_empty_sections_instead_of_rolling_back(self, mock_parse_courseware, mock_build_cir, mock_synthesize_speech, mock_get_voice_cache_dir) -> None:
+        parse_payload = self.parse_payload
+        assert parse_payload is not None
+        voice_cache_dir = Path(self.temp_dir.name) / 'voice-cache'
+        mock_get_voice_cache_dir.return_value = voice_cache_dir
+        mock_synthesize_speech.return_value = TtsSynthesisResult(
+            audio_bytes=b'ID3demo-audio',
+            duration_ms=2200,
+            reqid='req-001',
+            log_id='log-001',
+            voice_type='volcano-voice',
+        )
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId='cw-course-001',
+            title='demo',
+            chapters=[
+                CirChapter(
+                    chapterId='course-001-chap-001',
+                    chapterName='chapter',
+                    nodes=[
+                        LessonNode(nodeId='node-01-01', nodeName='node-1', pageRefs=[1], keyPoints=['k1'], summary='summary-1'),
+                        LessonNode(nodeId='node-01-02', nodeName='node-2', pageRefs=[2], keyPoints=['k2'], summary='summary-2'),
+                        LessonNode(nodeId='node-01-03', nodeName='node-3', pageRefs=[3], keyPoints=['k3'], summary='summary-3'),
+                    ],
+                )
+            ],
+        )
+        script_summary = self._create_script_summary(parse_payload)
+        script_detail = get_script_detail(script_summary.scriptId).model_copy(deep=True)
+        script_detail.scriptStructure[0].content = 'audio section one'
+        script_detail.scriptStructure[1].content = 'audio section two'
+        script_detail.scriptStructure[2].content = ''
+        section_ids = [section.sectionId for section in script_detail.scriptStructure[:3]]
+
+        with patch('backend.app.lesson.service.get_script', return_value=script_detail):
+            audio = generate_audio(
+                GenerateAudioRequest(
+                    scriptId=script_summary.scriptId,
+                    voiceType='female_standard',
+                    audioFormat='mp3',
+                    sectionIds=section_ids,
+                    enc='demo-signature',
+                ),
+                base_url='http://testserver/',
+            )
+
+        with session_scope() as db:
+            stored_section_audios = (
+                db.query(ChapterSectionAudioAsset)
+                .join(ChapterAudioAsset, ChapterSectionAudioAsset.audio_asset_id == ChapterAudioAsset.id)
+                .join(ChapterScript, ChapterAudioAsset.script_id == ChapterScript.id)
+                .filter(ChapterScript.script_no == script_summary.scriptId)
+                .order_by(ChapterSectionAudioAsset.sort_no.asc(), ChapterSectionAudioAsset.id.asc())
+                .all()
+            )
+
+        self.assertEqual(audio['taskStatus'], 'completed')
+        self.assertEqual(len(audio['sectionAudios']), 2)
+        self.assertEqual([item['sectionId'] for item in audio['sectionAudios']], section_ids[:2])
+        self.assertEqual(audio['skippedSections'], [{'sectionId': section_ids[2], 'reason': 'empty_content'}])
+        self.assertEqual(len(stored_section_audios), 2)
+
     def test_play_rejects_missing_lesson(self) -> None:
         with self.assertRaises(ApiError) as context:
             play_lesson(PlayRequest(lessonId='lesson-missing', userId='student-demo', resumeContext=None, enc='demo-signature'))
 
         self.assertEqual(context.exception.status_code, 404)
+
+    @patch('backend.app.lesson.voice_storage.get_voice_cache_dir')
+    @patch('backend.app.lesson.service.synthesize_speech')
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
+    def test_publish_assigns_next_publish_version_when_course_already_has_lesson(self, mock_parse_courseware, mock_build_cir, mock_synthesize_speech, mock_get_voice_cache_dir) -> None:
+        parse_payload = self.parse_payload
+        assert parse_payload is not None
+        mock_get_voice_cache_dir.return_value = Path(self.temp_dir.name) / 'voice-cache'
+        mock_synthesize_speech.return_value = TtsSynthesisResult(
+            audio_bytes=b'ID3demo-audio',
+            duration_ms=1800,
+            reqid='req-001',
+            log_id='log-001',
+            voice_type='volcano-voice',
+        )
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId='cw-course-001',
+            title='demo',
+            chapters=[CirChapter(chapterId='course-001-chap-001', chapterName='chapter', nodes=[LessonNode(nodeId='node-01-01', nodeName='node-1', pageRefs=[1], keyPoints=['k1'], summary='summary-1')])],
+        )
+        script_summary = self._create_script_summary(parse_payload)
+        script_detail = get_script_detail(script_summary.scriptId).model_copy(deep=True)
+        script_detail.scriptStructure[0].content = 'publish version test'
+
+        with patch('backend.app.lesson.service.get_script', return_value=script_detail):
+            audio = generate_audio(
+                GenerateAudioRequest(
+                    scriptId=script_summary.scriptId,
+                    voiceType='female_standard',
+                    audioFormat='mp3',
+                    sectionIds=[script_detail.scriptStructure[0].sectionId],
+                    enc='demo-signature',
+                ),
+                base_url='http://testserver/',
+            )
+
+        with session_scope() as db:
+            script_entity = db.query(ChapterScript).filter(ChapterScript.script_no == script_summary.scriptId).first()
+            assert script_entity is not None
+            db.add(
+                Lesson(
+                    lesson_no='lesson-existing',
+                    course_id=script_entity.course_id,
+                    lesson_name='existing',
+                    teacher_id=script_entity.teacher_id,
+                    publish_version=1,
+                    publish_status='published',
+                    published_at=None,
+                )
+            )
+            db.commit()
+
+        publish = publish_lesson(
+            PublishRequest(
+                coursewareId='cw-course-001',
+                scriptId=script_summary.scriptId,
+                audioId=audio['audioId'],
+                publisherId='teacher-demo',
+                enc='demo-signature',
+            )
+        )
+
+        with session_scope() as db:
+            lesson = db.query(Lesson).filter(Lesson.lesson_no == publish['lessonId']).first()
+            lesson_publish_version = lesson.publish_version if lesson is not None else None
+
+        self.assertIsNotNone(lesson)
+        self.assertEqual(lesson_publish_version, 2)
 
     def _create_script_summary(self, parse_payload: ParseRequest):
         accepted = create_parse_task(parse_payload)

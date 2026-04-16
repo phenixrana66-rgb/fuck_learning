@@ -13,7 +13,7 @@ from backend.app.lesson.tts_client import TtsSynthesisResult
 from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
-from backend.app.student_runtime.db_learning_service import get_student_lessons_from_db
+from backend.app.student_runtime.db_learning_service import get_db_progress_state, get_section_detail, get_student_lessons_from_db
 
 
 class StudentDbLearningServiceTestCase(unittest.TestCase):
@@ -127,3 +127,21 @@ class StudentDbLearningServiceTestCase(unittest.TestCase):
         self.assertTrue(lesson["audioUrl"].startswith("/cache/voice/") or lesson["audioUrl"].startswith("http://testserver/cache/voice/"))
         self.assertEqual(len(lesson["units"]), 1)
         self.assertEqual(len(lesson["units"][0]["chapters"]), 2)
+
+        with session_scope() as db:
+            progress = get_db_progress_state(db=db, student_id="missing-student", lesson_identifier=publish["lessonId"])
+            detail = get_section_detail(
+                db=db,
+                student_id="missing-student",
+                lesson_identifier=publish["lessonId"],
+                section_identifier=lesson["units"][0]["chapters"][0]["sectionId"],
+            )
+
+        self.assertIsNotNone(progress)
+        self.assertIsNotNone(detail)
+        assert progress is not None
+        assert detail is not None
+        self.assertEqual(progress["progressPercent"], 0)
+        self.assertEqual(progress["sectionId"], lesson["units"][0]["chapters"][0]["sectionId"])
+        self.assertNotEqual(detail["aiGuideContent"], "summary-1\n\nsummary-2")
+        self.assertEqual(detail["pages"][0]["imageUrl"], "")

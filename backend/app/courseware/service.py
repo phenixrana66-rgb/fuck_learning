@@ -252,7 +252,7 @@ def _sync_parse_result(
             {
                 "pageNo": slide.slideNumber,
                 "title": slide.title or f"第 {slide.slideNumber} 页",
-                "previewUrl": task.ppt_asset.file_url,
+                "previewUrl": "",
                 "bodyTexts": slide.bodyTexts,
                 "tableTexts": slide.tableTexts,
                 "notes": slide.notes,
