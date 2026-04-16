@@ -57,7 +57,32 @@ class ChaoxingAdapter:
         return progress
 
     def play_lesson(self, lesson_id):
-        player = deepcopy(self._players.get(lesson_id, next(iter(self._players.values()))))
+        player = deepcopy(self._players.get(lesson_id))
+        if player is None:
+            player = {
+                "lessonId": lesson_id,
+                "courseId": "",
+                "courseName": "",
+                "lessonName": "",
+                "teacherName": "",
+                "category": "published",
+                "coverImage": "",
+                "units": [],
+                "slides": [],
+                "anchors": [],
+                "progressPercent": 0,
+                "masteryPercent": 0,
+                "currentPage": 1,
+                "currentKnowledgePointName": "",
+                "questionCount": 0,
+                "lastStudyAt": "",
+                "audioUrl": "",
+                "duration": 0,
+                "aiWelcome": "",
+                "aiPrompt": "",
+                "aiTools": [],
+            }
+            return player
         player["progressPercent"] = self._average_progress(player["lessonId"])
         return player
 

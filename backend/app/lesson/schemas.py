@@ -15,9 +15,11 @@ class GenerateAudioRequest(AppBaseModel):
 
 
 class SectionAudio(AppBaseModel):
+    sectionAudioId: str | None = None
     sectionId: str
     audioUrl: str
     duration: int
+    status: str = "generated"
 
 
 class AudioInfo(AppBaseModel):

@@ -20,6 +20,7 @@ from backend.chaoxing_db.models import (
     ChapterParseResult,
     ChapterParseTask,
     ChapterPptAsset,
+    ChapterSectionAudioAsset,
     ChapterScript,
     ChapterScriptSection,
     Course,
@@ -110,6 +111,7 @@ def get_parse_task(parse_id: str) -> ParseQueryData:
 
 def clear_parse_tasks() -> None:
     with session_scope() as db:
+        _ = db.execute(delete(ChapterSectionAudioAsset))
         _ = db.execute(delete(ChapterAudioAsset))
         _ = db.execute(delete(ChapterScriptSection))
         _ = db.execute(delete(ChapterScript))

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from urllib.parse import quote, urljoin
 from uuid import uuid4
 
@@ -23,10 +24,14 @@ def get_voice_cache_dir() -> Path:
     return voice_dir
 
 
-def save_audio_file(audio_bytes: bytes, audio_format: str) -> StoredAudioFile:
+def save_audio_file(audio_bytes: bytes, audio_format: str, filename_prefix: str | None = None) -> StoredAudioFile:
     voice_dir = get_voice_cache_dir()
     voice_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid4().hex}.{audio_format.lower()}"
+    if filename_prefix:
+        safe_prefix = re.sub(r"[^A-Za-z0-9._-]+", "-", filename_prefix).strip("-")
+    else:
+        safe_prefix = ""
+    filename = f"{safe_prefix + '-' if safe_prefix else ''}{uuid4().hex}.{audio_format.lower()}"
     path = voice_dir / filename
     path.write_bytes(audio_bytes)
     return StoredAudioFile(filename=filename, path=path, file_size=path.stat().st_size)

@@ -10,6 +10,7 @@ from ..base import Base
 
 if TYPE_CHECKING:
     from .course import Course
+    from .teacher_content import ChapterAudioAsset, ChapterScript, ChapterSectionAudioAsset
 
 
 class Lesson(Base):
@@ -62,6 +63,7 @@ class LessonSection(Base):
     ppt_asset_id: Mapped[int | None] = mapped_column(ForeignKey("chapter_ppt_assets.id"))
     script_id: Mapped[int | None] = mapped_column(ForeignKey("chapter_scripts.id"))
     audio_asset_id: Mapped[int | None] = mapped_column(ForeignKey("chapter_audio_assets.id"))
+    section_audio_asset_id: Mapped[int | None] = mapped_column(ForeignKey("chapter_section_audio_assets.id"))
     section_code: Mapped[str] = mapped_column(String(64), nullable=False)
     section_name: Mapped[str] = mapped_column(String(255), nullable=False)
     section_summary: Mapped[str | None] = mapped_column(Text)
@@ -75,6 +77,9 @@ class LessonSection(Base):
     pages: Mapped[list["LessonSectionPage"]] = relationship(back_populates="section")
     anchors: Mapped[list["LessonSectionAnchor"]] = relationship(back_populates="section")
     knowledge_points: Mapped[list["LessonSectionKnowledgePoint"]] = relationship(back_populates="section")
+    script: Mapped["ChapterScript | None"] = relationship()
+    audio_asset: Mapped["ChapterAudioAsset | None"] = relationship()
+    section_audio_asset: Mapped["ChapterSectionAudioAsset | None"] = relationship()
 
 
 class LessonSectionPage(Base):

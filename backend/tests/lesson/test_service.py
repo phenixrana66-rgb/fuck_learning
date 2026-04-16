@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import backend.app.lesson.service as lesson_service_module
 from backend.app.cir.schemas import CIR, CirChapter, LessonNode
 from backend.app.common.db import configure_database_url, reset_database_url, session_scope
 from backend.app.common.exceptions import ApiError
@@ -16,7 +17,7 @@ from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
 from backend.app.tasks.repository import configure_task_storage, reset_task_storage
 from backend.app.tasks.service import clear_tasks
-from backend.chaoxing_db.models import ChapterAudioAsset, ChapterScript
+from backend.chaoxing_db.models import ChapterAudioAsset, ChapterScript, ChapterSectionAudioAsset, Lesson, LessonSection
 
 
 class LessonServiceTestCase(unittest.TestCase):
@@ -111,6 +112,8 @@ class LessonServiceTestCase(unittest.TestCase):
                     enc='demo-signature',
                 )
             )
+        lesson_service_module._AUDIO_STORE.clear()
+        lesson_service_module._LESSON_PACKAGES.clear()
         play = play_lesson(
             PlayRequest(
                 lessonId=publish['lessonId'],
@@ -122,22 +125,38 @@ class LessonServiceTestCase(unittest.TestCase):
 
         with session_scope() as db:
             stored_audio = db.query(ChapterAudioAsset).join(ChapterScript).filter(ChapterScript.script_no == script_summary.scriptId).first()
+            stored_section_audios = (
+                db.query(ChapterSectionAudioAsset)
+                .join(ChapterAudioAsset, ChapterSectionAudioAsset.audio_asset_id == ChapterAudioAsset.id)
+                .join(ChapterScript, ChapterAudioAsset.script_id == ChapterScript.id)
+                .filter(ChapterScript.script_no == script_summary.scriptId)
+                .all()
+            )
+            published_lesson = db.query(Lesson).filter(Lesson.lesson_no == publish['lessonId']).first()
+            published_sections = db.query(LessonSection).filter(LessonSection.lesson_id == published_lesson.id).all() if published_lesson else []
 
         generated_filename = audio['audioUrl'].rsplit('/', 1)[-1]
         generated_file = voice_cache_dir / generated_filename
+        section_files = [voice_cache_dir / item['audioUrl'].rsplit('/', 1)[-1] for item in audio['sectionAudios']]
 
         self.assertIsNotNone(stored_audio)
+        self.assertEqual(len(stored_section_audios), len(section_ids))
         self.assertEqual(audio['taskStatus'], 'completed')
         self.assertEqual(audio['status'], 'success')
         self.assertEqual(audio['scriptId'], script_summary.scriptId)
         self.assertEqual(len(audio['sectionAudios']), len(section_ids))
         self.assertTrue(audio['audioUrl'].startswith('http://testserver/cache/voice/'))
         self.assertTrue(generated_file.exists())
-        self.assertEqual(audio['audioInfo']['fileSize'], generated_file.stat().st_size)
+        self.assertTrue(all(section_file.exists() for section_file in section_files))
+        self.assertTrue(all(item['sectionAudioId'] for item in audio['sectionAudios']))
+        self.assertEqual(audio['audioInfo']['fileSize'], sum(section_file.stat().st_size for section_file in section_files))
         self.assertEqual(publish['publishStatus'], 'published')
+        self.assertIsNotNone(published_lesson)
+        self.assertEqual(len(published_sections), len(section_ids))
         self.assertEqual(play['nodeSequence'], ['node-01-01', 'node-01-02'])
         self.assertEqual(play['scriptRefs'][0]['scriptId'], script_summary.scriptId)
         self.assertEqual(play['audioRefs'][0]['audioId'], audio['audioId'])
+        self.assertTrue(play['audioRefs'][0]['sectionAudioId'])
 
     @patch('backend.app.lesson.voice_storage.get_voice_cache_dir')
     @patch('backend.app.lesson.service.synthesize_speech')
