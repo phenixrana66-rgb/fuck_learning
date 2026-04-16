@@ -1,4 +1,4 @@
-﻿from threading import Thread
+from threading import Thread
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import ValidationError
@@ -185,7 +185,7 @@ async def generate_audio_endpoint(request: Request, db: Session = Depends(get_db
         raise ApiError(400, "generateAudio payload is invalid", status_code=400, data={"errors": exc.errors()})
 
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
-    data = generate_main_audio(typed_payload)
+    data = generate_main_audio(typed_payload, base_url=str(request.base_url))
     return success_response(request, data, msg="audio generated successfully")
 
 
@@ -205,5 +205,3 @@ async def play_lesson_endpoint(request: Request) -> dict:
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = play_lesson(typed_payload)
     return success_response(request, data, msg="鏅鸿鎾斁瑁呴厤鎴愬姛")
-
-

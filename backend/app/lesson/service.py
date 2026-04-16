@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from math import ceil
 from uuid import uuid4
 
-from backend.app.common.config import get_settings
 from backend.app.common.db import session_scope
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.service import get_parse_task
 from backend.app.lesson.schemas import AudioInfo, GenerateAudioRequest, PlayRequest, PublishRequest, SectionAudio
+from backend.app.lesson.tts_client import synthesize_speech
+from backend.app.lesson.voice_storage import build_voice_public_url, save_audio_file
 from backend.app.parser.schemas import ParseTaskStatus
 from backend.app.script.service import get_script
 from backend.app.tasks.service import create_task, mark_task_completed
@@ -20,7 +19,7 @@ _AUDIO_STORE: dict[str, dict] = {}
 _LESSON_PACKAGES: dict[str, dict] = {}
 
 
-def generate_audio(payload: GenerateAudioRequest) -> dict:
+def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -> dict:
     script = get_script(payload.scriptId)
     section_map = {section.sectionId: section for section in script.scriptStructure}
     target_sections = payload.sectionIds or list(section_map.keys())
@@ -32,7 +31,7 @@ def generate_audio(payload: GenerateAudioRequest) -> dict:
         raise ApiError(code=404, msg='script sections were not found', status_code=404, data={'sectionIds': missing_sections})
 
     selected_sections = [section_map[section_id] for section_id in target_sections]
-    synthesis = _synthesize_audio(selected_sections, payload)
+    synthesis = _synthesize_audio(selected_sections, payload, base_url=base_url)
 
     with session_scope() as db:
         script_entity = db.query(ChapterScript).filter(ChapterScript.script_no == payload.scriptId).first()
@@ -184,54 +183,46 @@ def _load_audio_payload(audio_id: str, script_id: str) -> dict:
     return data
 
 
-def _synthesize_audio(selected_sections: list, payload: GenerateAudioRequest) -> dict:
-    settings = get_settings()
-    text = '\n\n'.join(section.content.strip() for section in selected_sections if isinstance(section.content, str) and section.content.strip())
+def _synthesize_audio(selected_sections: list, payload: GenerateAudioRequest, base_url: str | None = None) -> dict:
+    text = _build_synthesis_text(selected_sections)
+    if not text:
+        raise ApiError(code=400, msg='selected sections have no content', status_code=400)
+
     estimated_duration = sum(section.duration for section in selected_sections)
-    fallback = {
-        'audioUrl': settings.default_audio_url,
-        'totalDuration': estimated_duration,
-        'fileSize': 4_800_000 + len(selected_sections) * 320_000,
-        'bitRate': 128_000,
-        'sectionAudioUrlTemplate': settings.default_audio_url,
-    }
-    if not settings.tts_api_url:
-        return fallback
-
-    request_body = json.dumps(
-        {
-            'text': text,
-            'voiceType': payload.voiceType,
-            'audioFormat': payload.audioFormat,
-        }
-    ).encode('utf-8')
-    headers = {'Content-Type': 'application/json'}
-    if settings.tts_api_key:
-        headers['Authorization'] = f'Bearer {settings.tts_api_key}'
-
-    request = Request(settings.tts_api_url, data=request_body, headers=headers, method='POST')
-    try:
-        with urlopen(request, timeout=settings.tts_timeout_seconds) as response:
-            raw = response.read().decode('utf-8')
-    except (HTTPError, URLError, TimeoutError, OSError):
-        return fallback
-
-    try:
-        payload_data = json.loads(raw)
-    except json.JSONDecodeError:
-        return fallback
-
-    audio_url = payload_data.get('audioUrl') or payload_data.get('url') or settings.default_audio_url
-    if not isinstance(audio_url, str) or not audio_url:
-        audio_url = settings.default_audio_url
+    synthesis_result = synthesize_speech(text=text, voice_type=payload.voiceType, audio_format=payload.audioFormat)
+    stored_audio = save_audio_file(synthesis_result.audio_bytes, payload.audioFormat)
+    total_duration = _resolve_total_duration(synthesis_result.duration_ms, estimated_duration)
+    audio_url = build_voice_public_url(stored_audio.filename, base_url=base_url)
 
     return {
         'audioUrl': audio_url,
-        'totalDuration': int(payload_data.get('durationSec') or payload_data.get('totalDuration') or estimated_duration),
-        'fileSize': int(payload_data.get('fileSize') or fallback['fileSize']),
-        'bitRate': int(payload_data.get('bitRate') or fallback['bitRate']),
-        'sectionAudioUrlTemplate': payload_data.get('sectionAudioUrlTemplate') or audio_url,
+        'totalDuration': total_duration,
+        'fileSize': stored_audio.file_size,
+        'bitRate': _resolve_bit_rate(stored_audio.file_size, total_duration),
+        'sectionAudioUrlTemplate': audio_url,
     }
+
+
+def _build_synthesis_text(selected_sections: list) -> str:
+    return '\n\n'.join(
+        section.content.strip()
+        for section in selected_sections
+        if isinstance(section.content, str) and section.content.strip()
+    )
+
+
+def _resolve_total_duration(duration_ms: int | None, estimated_duration: int) -> int:
+    if duration_ms and duration_ms > 0:
+        return max(1, ceil(duration_ms / 1000))
+    if estimated_duration > 0:
+        return estimated_duration
+    return 1
+
+
+def _resolve_bit_rate(file_size: int, duration_seconds: int) -> int:
+    if duration_seconds <= 0:
+        return 0
+    return max(1, int((file_size * 8) / duration_seconds))
 
 
 def _section_audio_url(template: str, audio_id: str, section_id: str) -> str:

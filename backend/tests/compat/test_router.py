@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -146,6 +146,7 @@ class CompatRouterTestCase(unittest.TestCase):
         self.assertEqual(request_payload.sectionIds, [])
         self.assertEqual(request_payload.enc, 'demo-signature')
         self.assertEqual(request_payload.time, '1700000000000')
+        self.assertEqual(mock_generate_main_audio.call_args.kwargs['base_url'], 'http://testserver/')
 
     def test_generate_audio_old_payload_is_rejected(self) -> None:
         response = self.client.post(

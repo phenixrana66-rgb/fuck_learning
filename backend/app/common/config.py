@@ -5,8 +5,19 @@ from runpy import run_path
 from pydantic import BaseModel, ConfigDict
 
 
+_SETTING_ALIASES = {
+    "appid": "APPID",
+    "access_token": "ACCESS_TOKEN",
+    "tts_url": "TTS_URL",
+    "tts_cluster": "TTS_CLUSTER",
+    "tts_voice_type": "TTS_VOICE_TYPE",
+    "asr_url": "ASR_URL",
+    "asr_cluster": "ASR_CLUSTER",
+}
+
+
 class Settings(BaseModel):
-    app_name: str = "AI互动智课后端服务"
+    app_name: str = "AI Lesson Backend Service"
     app_version: str = "0.1.0"
     api_prefix: str = "/api/v1"
     debug: bool = True
@@ -27,6 +38,7 @@ class Settings(BaseModel):
     TTS_URL: str | None = None
     TTS_CLUSTER: str | None = None
     TTS_VOICE_TYPE: str | None = None
+    tts_timeout_seconds: float = 60.0
     ASR_URL: str | None = None
     ASR_CLUSTER: str | None = None
     llm_api_base_url: str = "http://10.195.20.215:13010/v1"
@@ -48,10 +60,21 @@ def get_settings() -> Settings:
     return Settings(**{**defaults, **file_overrides})
 
 
+def get_setting(name: str, default=None):
+    settings = get_settings()
+    resolved_name = _SETTING_ALIASES.get(name, _SETTING_ALIASES.get(name.lower(), name))
+    return getattr(settings, resolved_name, default)
+
+
 def _load_local_config_values() -> dict[str, object]:
     if not _LOCAL_CONFIG_PATH.exists():
         return {}
 
     local_namespace = run_path(str(_LOCAL_CONFIG_PATH))
     declared_keys = set(Settings.model_fields)
-    return {key: value for key, value in local_namespace.items() if key in declared_keys}
+    loaded_values: dict[str, object] = {}
+    for key, value in local_namespace.items():
+        resolved_key = _SETTING_ALIASES.get(key, _SETTING_ALIASES.get(key.lower(), key))
+        if resolved_key in declared_keys:
+            loaded_values[resolved_key] = value
+    return loaded_values
