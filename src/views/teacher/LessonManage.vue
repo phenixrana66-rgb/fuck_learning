@@ -1,7 +1,7 @@
 <template>
   <TeacherLayout>
     <div class="page-card teacher-card">
-      <div class="page-title">智课管理</div>
+      <div class="page-title">智慧课管理</div>
 
       <div class="toolbar teacher-manage-toolbar">
         <el-select
@@ -39,7 +39,7 @@
         </div>
       </div>
 
-      <Loading :visible="loading" text="正在读取课程状态…" />
+      <Loading :visible="loading" text="正在读取课程状态..." />
       <ErrorTip v-if="errorCode" :code="errorCode" :message="errorMsg" @retry="fetchStatus" />
     </div>
 
@@ -73,7 +73,7 @@
 
       <div class="page-card teacher-card status-card">
         <div class="status-card-header">
-          <div class="sub-title">智课发布</div>
+          <div class="sub-title">智慧课发布</div>
           <el-tag :type="statusType(statusData.publish?.status)">{{ statusText(statusData.publish?.status) }}</el-tag>
         </div>
         <div class="status-card-id">课程序号：{{ statusData.publish?.lessonNo || '-' }}</div>
@@ -94,9 +94,12 @@ import { getCourseList, getCurrentCourse, saveCurrentCourse } from '@/utils/plat
 
 const router = useRouter()
 
-const courseList = ref(getCourseList())
-const currentCourse = ref(getCurrentCourse())
-const selectedCourseId = ref(currentCourse.value.courseId || courseList.value[0]?.courseId || '')
+const initialCourseList = getCourseList()
+const initialCourse = getCurrentCourse() || initialCourseList[0] || {}
+
+const courseList = ref(initialCourseList)
+const currentCourse = ref(initialCourse)
+const selectedCourseId = ref(initialCourse.courseId || '')
 const loading = ref(false)
 const errorCode = ref('')
 const errorMsg = ref('')
@@ -106,30 +109,6 @@ const statusData = ref({
   script: {},
   audio: {},
   publish: {}
-})
-
-const selectedCourseId = ref(currentCourse.courseId || '')
-
-const statusTable = computed(() => [
-  {
-    name: '课件解析',
-    id: parseResult.parseId || '-',
-    status: parseResult.status || '未开始',
-    desc: parseResult.fileName || '尚未上传课件'
-  },
-  {
-    name: '脚本生成',
-    id: scriptResult.scriptId || '-',
-    status: scriptResult.status || '未开始',
-    desc: scriptResult.teachingStyle || '尚未生成脚本'
-  },
-  {
-    name: '语音合成',
-    id: audioResult.audioId || '-',
-    status: audioResult.status || '未开始',
-    desc: audioResult.voiceType || '尚未生成音频'
-  }
-  fetchStatus()
 })
 
 async function fetchStatus() {
@@ -152,9 +131,11 @@ async function fetchStatus() {
 function handleChangeCourse(courseId) {
   const target = courseList.value.find((item) => String(item.courseId) === String(courseId))
   if (!target) return
+
   currentCourse.value = target
+  selectedCourseId.value = target.courseId
   saveCurrentCourse(target)
-  window.location.reload()
+  fetchStatus()
 }
 
 function goPage(path) {
@@ -193,10 +174,10 @@ function scriptTypeText(type) {
 
 function voiceTypeText(type) {
   const map = {
-    female_standard: '女声·标准',
-    male_standard: '男声·标准',
-    female_warm: '女声·亲和',
-    male_deep: '男声·磁性'
+    female_standard: '女声-标准',
+    male_standard: '男声-标准',
+    female_warm: '女声-亲和',
+    male_deep: '男声-深沉'
   }
   return map[type] || '-'
 }
@@ -209,6 +190,10 @@ function formatDateTime(value) {
     return value
   }
 }
+
+onMounted(() => {
+  fetchStatus()
+})
 </script>
 
 <style scoped>

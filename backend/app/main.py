@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     app.mount("/mock-remote/examples", StaticFiles(directory=str(PROJECT_ROOT / "examples")), name="mock-remote-examples")
     app.mount("/cache/voice", StaticFiles(directory=str(get_voice_cache_dir())), name="lesson-audio-cache")
 
+    app.include_router(teacher_extra_router, prefix=settings.api_prefix)
     app.include_router(compat_router, prefix=settings.api_prefix)
     app.include_router(qa_router, prefix=settings.api_prefix)
     app.include_router(progress_router, prefix=settings.api_prefix)
