@@ -33,10 +33,10 @@ def generate_outline_with_llm(
                 "role": "system",
                 "content": (
                     "你是课件结构化分析助手。"
-                    "你会根据 PPT 每页文本输出严格 JSON，结构必须为："
+                    "你会根据课件每页文本输出严格 JSON，结构必须为："
                     '{"title": "课程标题", "chapters": [{"name": "章节名", "subChapters": [{"name": "小节名", '
                     '"pageStart": 1, "pageEnd": 2, "isKeyPoint": true}]}]}。'
-                    "pageStart/pageEnd 使用 slideNumber。"
+                    "pageStart/pageEnd 使用页码对应的 slideNumber。"
                     "所有页必须被顺序覆盖，页码不能超出范围，章节和小节名称必须简洁明确。"
                     "不要输出 JSON 之外的任何说明。"
                 ),

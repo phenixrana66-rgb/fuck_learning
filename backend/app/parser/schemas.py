@@ -41,10 +41,11 @@ class ExtractedSlide(AppBaseModel):
     bodyTexts: list[str] = Field(default_factory=list)
     tableTexts: list[str] = Field(default_factory=list)
     notes: str | None = None
+    previewUrl: str | None = None
 
 
 class ExtractedPresentation(AppBaseModel):
-    sourceType: Literal["pptx"] = "pptx"
+    sourceType: Literal["pptx", "pdf"] = "pptx"
     slides: list[ExtractedSlide] = Field(default_factory=list)
 
 
