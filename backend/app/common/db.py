@@ -61,6 +61,11 @@ def get_engine() -> Engine:
         engine_kwargs["connect_args"] = {"check_same_thread": False}
     else:
         engine_kwargs["pool_pre_ping"] = True
+        engine_kwargs["connect_args"] = {
+            "connect_timeout": 5,
+            "read_timeout": 5,
+            "write_timeout": 5,
+        }
 
     try:
         _engine = create_engine(database_url, **engine_kwargs)

@@ -264,6 +264,12 @@
                   </div>
                 </div>
               </div>
+              <div v-if="asking && !assistantStreamingStarted" class="student-chat-item is-assistant pending">
+                <div class="student-chat-role">AI 学伴</div>
+                <div class="student-chat-loading">
+                  <span class="student-inline-loading" aria-hidden="true"></span>
+                </div>
+              </div>
             </div>
             <div v-else class="student-ai-welcome">
               <div class="student-ai-welcome-suggestions">
@@ -288,16 +294,33 @@
               :rows="4"
               resize="none"
               placeholder="输入你的问题"
+              @keydown.enter.exact.prevent="submitTextQuestion"
             />
             <div class="student-ai-input-actions">
+              <div v-if="isRecording" class="student-ai-voice-status">
+                <span class="student-ai-voice-timer">{{ formatRecordingDuration(recordingSeconds) }}</span>
+                <button
+                  type="button"
+                  class="student-ai-icon-button voice stop"
+                  aria-label="结束录音"
+                  @click="toggleRecording"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="7" y="7" width="10" height="10" rx="2" />
+                  </svg>
+                </button>
+              </div>
               <button
+                v-else
                 type="button"
                 class="student-ai-icon-button voice"
+                :class="{ loading: voiceLoading }"
                 :disabled="voiceLoading"
-                :aria-label="isRecording ? '结束录音' : '语音输入'"
-                @click="toggleRecording"
+                :aria-label="voiceLoading ? '语音识别中' : '语音输入'"
+                @click="!voiceLoading ? toggleRecording() : undefined"
               >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
+                <span v-if="voiceLoading" class="student-inline-loading" aria-hidden="true"></span>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 3.5a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 12 3.5Z" />
                   <path d="M7.5 10.5a4.5 4.5 0 0 0 9 0" />
                   <path d="M12 15v5" />
@@ -307,13 +330,17 @@
               <button
                 type="button"
                 class="student-ai-icon-button send"
-                :disabled="asking || !questionText.trim()"
-                aria-label="发送问题"
-                @click="submitTextQuestion"
+                :class="{ 'is-stop': asking }"
+                :disabled="!asking && !questionText.trim()"
+                :aria-label="asking ? '终止回答' : '发送问题'"
+                @click="asking ? stopStreamingAnswer() : submitTextQuestion()"
               >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
+                <svg v-if="!asking" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 4v12" />
                   <path d="m7 9 5-5 5 5" />
+                </svg>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="2" />
                 </svg>
               </button>
             </div>
@@ -394,19 +421,19 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { streamLessonInteraction } from '@/api/studentStream'
 import {
   adjustStudentProgress,
   getStudentQaSessions as fetchStudentQaSessions,
   getStudentLessonList,
   getStudentProgress,
-  interactWithLesson,
   playStudentLesson,
   resumeStudentLesson,
   saveStudentQaSession as persistStudentQaSession,
-  verifyStudentAuth,
-  voiceToText
+  verifyStudentAuth
 } from '@/api/student'
 import { findFrontendTestLesson, getFrontendTestLessons } from '@/mock/studentLessons'
+import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
 import {
   ensurePlatformToken,
   getPlatformToken,
@@ -439,10 +466,11 @@ const activeView = ref('progress')
 const aiToolsVisible = ref(true)
 const questionText = ref('')
 const asking = ref(false)
-const voiceLoading = ref(false)
+const activeAnswerController = ref(null)
+const voiceDraftPrefix = ref('')
+const assistantStreamingStarted = ref(false)
 const resumeLoading = ref(false)
 const adjustLoading = ref('')
-const isRecording = ref(false)
 const activeChapterId = ref('')
 const chatList = ref([])
 const qaSessions = ref([])
@@ -454,9 +482,6 @@ const navIndicator = ref({ width: 0, left: 0, opacity: 0 })
 const progressFallbackNote = ref('若服务端节奏接口暂不可用，系统会自动回退为本地建议。')
 const rhythmSuggestion = ref('建议先完成当前章节，再根据掌握度决定是否进入下一章。')
 
-let mediaRecorder = null
-let recordChunks = []
-
 const primaryNavItems = [
   { label: '学习进度', value: 'progress' },
   { label: '智课讲授', value: 'knowledge' },
@@ -466,6 +491,37 @@ const primaryNavItems = [
 const lessonId = computed(() => route.params.lessonId)
 const allChapters = computed(() => (lesson.value.units || []).flatMap((unit) => unit.chapters || []))
 const activeChapter = computed(() => allChapters.value.find((chapter) => chapter.chapterId === activeChapterId.value) || allChapters.value[0] || {})
+const firstRealtimeChapter = computed(() => allChapters.value.find((chapter) => chapter.sectionId) || {})
+const aiContextChapter = computed(() => {
+  if (activeChapter.value?.sectionId) return activeChapter.value
+  if (progressState.value?.sectionId) {
+    return allChapters.value.find((chapter) => String(chapter.sectionId || '') === String(progressState.value.sectionId || ''))
+      || firstRealtimeChapter.value
+      || activeChapter.value
+  }
+  return firstRealtimeChapter.value || activeChapter.value
+})
+const { isRecording, voiceLoading, recordingSeconds, toggleRecording, cleanupRealtimeAsr } = useRealtimeAsr({
+  getContext: () => ({
+    studentId: studentProfile.value.studentId,
+    lessonId: lessonId.value,
+    sectionId: aiContextChapter.value.sectionId || progressState.value.sectionId || ''
+  }),
+  onTranscript: (text) => {
+    questionText.value = `${voiceDraftPrefix.value}${text}`.trim()
+  },
+  onRecordingStart: () => {
+    const prefix = questionText.value.trim()
+    voiceDraftPrefix.value = prefix ? `${prefix}\n` : ''
+  }
+})
+
+function formatRecordingDuration(totalSeconds) {
+  const safeSeconds = Number(totalSeconds || 0)
+  const minutes = Math.floor(safeSeconds / 60)
+  const seconds = safeSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
 const currentUnit = computed(() => (
   (lesson.value.units || []).find((unit) => (unit.chapters || []).some((chapter) => chapter.chapterId === activeChapter.value.chapterId)) || {}
 ))
@@ -489,7 +545,7 @@ const filteredAiTools = computed(() => {
   }))
 })
 const aiSuggestedQuestions = computed(() => {
-  const chapterTitle = activeChapter.value.chapterTitle || lesson.value.currentKnowledgePointName || '当前章节'
+  const chapterTitle = aiContextChapter.value.chapterTitle || lesson.value.currentKnowledgePointName || '当前章节'
   return [
     `帮我概括《${chapterTitle}》的重点`,
     `《${chapterTitle}》里的核心公式之间有什么关系`,
@@ -614,7 +670,7 @@ async function persistQaSessions(targetSessionId = activeSessionId.value) {
     await persistStudentQaSession({
       studentId: studentProfile.value.studentId,
       lessonId: lessonId.value,
-      sectionId: activeChapter.value.sectionId || progressState.value.sectionId || '',
+      sectionId: aiContextChapter.value.sectionId || progressState.value.sectionId || '',
       session: currentSession
     })
   } catch {
@@ -944,7 +1000,8 @@ async function loadLesson() {
     progressState.value = getDefaultProgressState(lesson.value)
   }
 
-  const targetChapter = allChapters.value.find((chapter) => chapter.sectionId === progressState.value.sectionId)
+  const targetChapter = allChapters.value.find((chapter) => String(chapter.sectionId || '') === String(progressState.value.sectionId || ''))
+    || allChapters.value.find((chapter) => chapter.sectionId)
     || allChapters.value.find((chapter) => chapter.pageNo === progressState.value.pageNo)
     || allChapters.value[0]
   activeChapterId.value = targetChapter?.chapterId || ''
@@ -988,43 +1045,85 @@ async function loadLesson() {
 async function askQuestion(question, source = 'text') {
   asking.value = true
   try {
-    chatList.value.push({
+    const currentSectionId = aiContextChapter.value.sectionId || progressState.value.sectionId || ''
+    if (!currentSectionId) {
+      ElMessage.warning('当前章节尚未完成定位，请先进入具体章节后再提问')
+      return
+    }
+
+    const userMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: question
-    })
+    }
+    const assistantMessage = {
+      id: `ai-${Date.now()}`,
+      role: 'assistant',
+      content: ''
+    }
+    let assistantInserted = false
+    chatList.value.push(userMessage)
+    questionText.value = ''
+    assistantStreamingStarted.value = false
+    const controller = new AbortController()
+    activeAnswerController.value = controller
 
-    const res = await interactWithLesson({
+    function ensureAssistantVisible() {
+      if (assistantInserted) return
+      assistantInserted = true
+      chatList.value.push(assistantMessage)
+    }
+
+    const donePayload = await streamLessonInteraction({
       studentId: studentProfile.value.studentId,
       lessonId: lessonId.value,
+      sectionId: currentSectionId,
       source,
       question,
       anchorId: progressState.value.anchorId,
-      anchorTitle: activeChapter.value.chapterTitle,
-      pageNo: activeChapter.value.pageNo,
+      anchorTitle: aiContextChapter.value.chapterTitle,
+      pageNo: aiContextChapter.value.pageNo || progressState.value.pageNo,
       context: {
-        slideTitle: activeChapter.value.chapterTitle,
-        slideSummary: activeChapter.value.summary,
-        knowledgePoints: activeChapter.value.knowledgePoints || []
+        slideTitle: aiContextChapter.value.chapterTitle,
+        slideSummary: aiContextChapter.value.summary,
+        knowledgePoints: aiContextChapter.value.knowledgePoints || []
+      }
+    }, {
+      signal: controller.signal,
+      onDelta: (delta) => {
+        assistantStreamingStarted.value = true
+        ensureAssistantVisible()
+        assistantMessage.content += delta
       }
     })
 
-    chatList.value.push({
-      id: `ai-${Date.now()}`,
-      role: 'assistant',
-      content: res.data.answer,
-      relatedPoints: res.data.relatedKnowledgePoints,
-      understandingLevel: res.data.understandingLevel,
-      understandingLabel: res.data.understandingLabel,
-      anchorTitle: res.data.resumeAnchor?.anchorTitle,
-      resumePageNo: res.data.resumeAnchor?.pageNo
-    })
+    assistantStreamingStarted.value = true
+    ensureAssistantVisible()
+    assistantMessage.content = donePayload?.answer || assistantMessage.content || '当前内容暂无更多解读。'
+    assistantMessage.relatedPoints = donePayload?.relatedKnowledgePoints || []
+    assistantMessage.understandingLevel = donePayload?.understandingLevel
+    assistantMessage.understandingLabel = donePayload?.understandingLabel
+    assistantMessage.anchorTitle = donePayload?.resumeAnchor?.anchorTitle
+    assistantMessage.resumePageNo = donePayload?.resumeAnchor?.pageNo
 
     await syncActiveSessionFromChatList()
     syncLessonCache()
-    questionText.value = ''
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      assistantStreamingStarted.value = true
+      const lastAssistant = [...chatList.value].reverse().find((item) => item.role === 'assistant')
+      if (lastAssistant && !lastAssistant.content) {
+        lastAssistant.content = '已终止本次回答。'
+      }
+      await syncActiveSessionFromChatList()
+    } else {
+      chatList.value = chatList.value.filter((item) => !(item.role === 'assistant' && !item.content))
+      ElMessage.error(error?.message || error?.msg || 'AI 问答失败')
+    }
   } finally {
     asking.value = false
+    assistantStreamingStarted.value = false
+    activeAnswerController.value = null
   }
 }
 
@@ -1041,66 +1140,16 @@ async function submitSuggestedQuestion(question) {
   await askQuestion(question, 'text')
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
-async function handleVoiceTextPayload(fileName, audioBase64) {
-  voiceLoading.value = true
-  try {
-    const voiceRes = await voiceToText({
-      studentId: studentProfile.value.studentId,
-      lessonId: lessonId.value,
-      fileName,
-      audioBase64
-    })
-    questionText.value = voiceRes.data.text
-    await askQuestion(voiceRes.data.text, 'voice')
-  } finally {
-    voiceLoading.value = false
-  }
-}
-
-async function toggleRecording() {
-  if (isRecording.value) {
-    mediaRecorder?.stop()
-    return
-  }
-
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-    ElMessage.warning('当前浏览器不支持语音输入，请改用文字提问')
-    return
-  }
-
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-  recordChunks = []
-  mediaRecorder = new MediaRecorder(stream)
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data.size > 0) recordChunks.push(event.data)
-  }
-  mediaRecorder.onstop = async () => {
-    isRecording.value = false
-    const blob = new Blob(recordChunks, { type: 'audio/webm' })
-    const file = new File([blob], 'voice-question.webm', { type: blob.type })
-    const audioBase64 = await fileToBase64(file)
-    await handleVoiceTextPayload(file.name, audioBase64)
-    stream.getTracks().forEach((track) => track.stop())
-  }
-
-  mediaRecorder.start()
-  isRecording.value = true
-}
-
 function toggleAiTools() {
   aiToolsVisible.value = !aiToolsVisible.value
 }
 
+function stopStreamingAnswer() {
+  activeAnswerController.value?.abort()
+}
+
 async function startNewConversation() {
+  activeAnswerController.value?.abort()
   if (chatList.value.length) {
     await syncActiveSessionFromChatList()
   }
@@ -1128,7 +1177,8 @@ watch(activeView, async () => {
 })
 
 onBeforeUnmount(() => {
-  mediaRecorder?.stream?.getTracks?.().forEach((track) => track.stop())
+  activeAnswerController.value?.abort()
+  cleanupRealtimeAsr()
   window.removeEventListener('resize', updateNavIndicator)
 })
 </script>
@@ -1996,6 +2046,18 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.student-ai-voice-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.student-ai-voice-timer {
+  color: #7c8dac;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
 .student-ai-icon-button {
   width: 44px;
   height: 44px;
@@ -2024,6 +2086,14 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 18px rgba(140, 158, 196, 0.14);
 }
 
+.student-ai-icon-button.voice.loading {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.student-ai-icon-button.voice.stop {
+  color: #11161c;
+}
+
 .student-ai-icon-button.send {
   border-color: #101418;
   background: #101418;
@@ -2045,10 +2115,46 @@ onBeforeUnmount(() => {
   border-color: #1c232d;
 }
 
+.student-ai-icon-button.send.is-stop {
+  border-color: #101418;
+  background: #101418;
+  box-shadow: 0 10px 24px rgba(16, 20, 24, 0.18);
+}
+
+.student-ai-icon-button.send.is-stop:hover:not(:disabled) {
+  background: #1c232d;
+  border-color: #1c232d;
+}
+
 .student-ai-icon-button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
+
+.student-inline-loading {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  border-radius: 999px;
+  border: 2px solid rgba(157, 169, 193, 0.28);
+  border-top-color: #c7cedd;
+  animation: student-loading-spin 0.9s linear infinite;
+}
+
+.student-chat-item.pending {
+  justify-items: start;
+}
+
+.student-chat-loading {
+  padding: 8px 0;
+}
+
+@keyframes student-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 
 .student-ai-input-area :deep(.el-textarea) {
   height: 100%;

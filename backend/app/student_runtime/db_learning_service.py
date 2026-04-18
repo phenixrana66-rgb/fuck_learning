@@ -8,7 +8,7 @@ from typing import Any, cast
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from backend.chaoxing_db.models import ChapterPptAsset, ChapterParseResult, Lesson, LessonSection, LessonSectionAnchor, LessonSectionPage, LessonUnit, ProgressTrackLog, ResumeRecord, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionMasteryLog, StudentSectionProgress, User
+from backend.chaoxing_db.models import ChapterPptAsset, ChapterParseResult, ChapterScript, ChapterScriptSection, Lesson, LessonSection, LessonSectionAnchor, LessonSectionPage, LessonUnit, ProgressTrackLog, ResumeRecord, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionMasteryLog, StudentSectionProgress, User
 
 UNDERSTANDING_LABELS = {"weak": "未理解", "partial": "部分理解", "complete": "完全理解"}
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -28,6 +28,68 @@ def _normalize_asset_url(url: str | None) -> str:
     if url.startswith(("http://", "https://", "/")):
         return url
     return f"/{url.lstrip('/')}"
+
+
+def _clean_text(value: str | None) -> str:
+    return (value or "").strip()
+
+
+def _is_placeholder_page_text(section_name: str | None, text: str | None) -> bool:
+    normalized = _clean_text(text)
+    if not normalized:
+        return True
+    section_name = _clean_text(section_name)
+    if section_name and normalized.startswith(f"本页为《{section_name}》课件第 ") and normalized.endswith(" 页。"):
+        return True
+    if section_name and normalized.startswith(f"查看《{section_name}》课件第 ") and normalized.endswith(" 页内容。"):
+        return True
+    return False
+
+
+def _load_primary_script_content(db: Session, section: LessonSection) -> str:
+    if not section.script_id:
+        return ""
+    row = (
+        db.query(ChapterScriptSection)
+        .join(ChapterScript, ChapterScript.id == ChapterScriptSection.script_id)
+        .filter(ChapterScript.id == section.script_id)
+        .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
+        .first()
+    )
+    return _clean_text(row.section_content if row else None)
+
+
+def _build_section_chapter_context(db: Session, section: LessonSection) -> dict[str, str]:
+    parse_result = db.query(ChapterParseResult).filter(ChapterParseResult.id == section.parse_result_id).first() if section.parse_result_id else None
+    summary = _clean_text(section.section_summary)
+    parse_summary = _clean_text(parse_result.chapter_summary if parse_result else None)
+    normalized_content = _clean_text(parse_result.normalized_content if parse_result else None)
+    script_content = _load_primary_script_content(db, section)
+    knowledge_lines = [
+        f"{(point.point_name or '').strip()}：{(point.point_summary or '').strip()}"
+        for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))
+        if _clean_text(point.point_name)
+    ]
+
+    parts: list[str] = []
+    if summary:
+        parts.append(f"章节摘要：{summary}")
+    if parse_summary and parse_summary != summary:
+        parts.append(f"解析摘要：{parse_summary}")
+    if normalized_content:
+        parts.append(f"章节导读：{normalized_content}")
+    if script_content:
+        parts.append(f"教师讲稿：{script_content}")
+    if knowledge_lines:
+        parts.append("核心知识点：" + "；".join(knowledge_lines))
+
+    return {
+        "summary": summary,
+        "parseSummary": parse_summary,
+        "normalizedContent": normalized_content,
+        "scriptContent": script_content,
+        "chapterContextText": "\n".join(parts).strip(),
+    }
 
 
 def _resolve_user_id(db: Session, student_identifier: str | int | None) -> int | None:
@@ -252,6 +314,75 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
     return {"lessonId": lesson.lesson_no, "lessonDbId": lesson.id, "courseName": lesson.course.course_name if lesson.course else lesson.lesson_name, "teacherName": teacher_name, "unitTitle": section.unit.unit_title if section.unit else "", "sectionId": str(section.id), "sectionTitle": section.section_name, "progressPercent": _round_int(progress.progress_percent if progress else 0), "masteryPercent": _round_int(progress.mastery_percent if progress else 0), "practicePercent": _round_int(practice_attempt.accuracy_percent if practice_attempt and practice_attempt.accuracy_percent is not None else 0), "currentPageNo": current_page_no, "aiGuideContent": ((parse_result.normalized_content if parse_result else None) or (parse_result.chapter_summary if parse_result else None) or section.section_summary or ""), "knowledgePoints": [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))], "pages": pages}
 
 
+def get_section_context_for_qa(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None) -> JsonDict | None:
+    lesson = _find_lesson(db, lesson_identifier)
+    if not lesson:
+        return None
+    section = _find_section(db, lesson.id, section_identifier)
+    if not section:
+        return None
+    chapter_context = _build_section_chapter_context(db, section)
+    return {
+        "lessonDbId": lesson.id,
+        "lessonNo": lesson.lesson_no,
+        "courseName": lesson.course.course_name if lesson.course else lesson.lesson_name,
+        "sectionDbId": section.id,
+        "sectionCode": section.section_code,
+        "sectionName": section.section_name,
+        "summary": chapter_context["summary"],
+        "parseSummary": chapter_context["parseSummary"],
+        "normalizedContent": chapter_context["normalizedContent"],
+        "scriptContent": chapter_context["scriptContent"],
+        "chapterContextText": chapter_context["chapterContextText"],
+    }
+
+
+def get_page_context_for_qa(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None, page_no: int | None) -> JsonDict | None:
+    lesson = _find_lesson(db, lesson_identifier)
+    if not lesson:
+        return None
+    section = _find_section(db, lesson.id, section_identifier)
+    if not section:
+        return None
+    pages = sorted(section.pages or [], key=lambda item: (item.sort_no, item.page_no, item.id))
+    current_page = next((item for item in pages if item.page_no == page_no), None) if page_no else None
+    if not current_page and pages:
+        current_page = pages[0]
+    if not current_page:
+        return None
+    anchor = _find_section_anchor(section, current_page.page_no)
+    return {
+        "lessonDbId": lesson.id,
+        "sectionDbId": section.id,
+        "pageDbId": current_page.id,
+        "pageNo": current_page.page_no,
+        "pageTitle": current_page.page_title or "",
+        "pageSummary": current_page.page_summary or "",
+        "parsedContent": current_page.parsed_content or current_page.page_summary or "",
+        "hasMeaningfulContent": not _is_placeholder_page_text(section.section_name, current_page.parsed_content or current_page.page_summary or ""),
+        "anchorId": str(anchor.id) if anchor else "",
+        "anchorTitle": anchor.anchor_title if anchor else section.section_name,
+    }
+
+
+def get_section_knowledge_points_for_qa(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None) -> list[JsonDict]:
+    lesson = _find_lesson(db, lesson_identifier)
+    if not lesson:
+        return []
+    section = _find_section(db, lesson.id, section_identifier)
+    if not section:
+        return []
+    return [
+        {
+            "id": point.id,
+            "pointCode": point.point_code,
+            "pointName": point.point_name,
+            "pointSummary": point.point_summary or "",
+        }
+        for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))
+    ]
+
+
 def save_recent_chapter_visit(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None, page_no: int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     student_db_id = _resolve_user_id(db, student_id)
@@ -385,8 +516,9 @@ def interact_with_section_context(db: Session, lesson_identifier: str | int | No
         understanding = "complete"
     anchor = _find_section_anchor(section, current_page.page_no if current_page else None)
     related_points = [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))][:3]
-    if current_page:
+    chapter_context = _build_section_chapter_context(db, section)
+    if current_page and not _is_placeholder_page_text(section.section_name, current_page.parsed_content or current_page.page_summary or ""):
         answer = f"当前学习章节是《{section.section_name}》，你现在看到的是第 {current_page.page_no} 页。建议先围绕 {', '.join(related_points[:2]) or '本章核心知识点'} 理解本页内容。{current_page.parsed_content or section.section_summary or ''}"
     else:
-        answer = f"当前学习章节是《{section.section_name}》。这次回答将围绕整章内容展开，建议重点关注 {', '.join(related_points[:3]) or '本章核心知识点'}。{section.section_summary or ''}"
+        answer = f"当前学习章节是《{section.section_name}》。这次回答将围绕整章内容展开，建议重点关注 {', '.join(related_points[:3]) or '本章核心知识点'}。{chapter_context['chapterContextText'] or section.section_summary or ''}"
     return {"answer": answer, "relatedKnowledgePoints": related_points, "understandingLevel": understanding, "understandingLabel": UNDERSTANDING_LABELS[understanding], "resumeAnchor": {"anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else section.section_name, "pageNo": current_page.page_no if current_page else (pages[0].page_no if pages else 1)}, "weakPoints": related_points[:2] if understanding != "complete" else []}

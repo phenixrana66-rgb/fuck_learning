@@ -1,27 +1,48 @@
-from uuid import uuid4
+﻿from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+import asyncio
+import json
+
+from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.app.common.db import get_db
 from backend.app.common.exceptions import ApiError
 from backend.app.common.security import verify_signature_payload
 from backend.app.student_runtime.adapter import ChaoxingAdapter
-from backend.app.student_runtime.db_learning_service import enhance_player_with_db, get_db_progress_state, get_recent_chapter_visits, get_section_detail, get_student_profile_from_db, interact_with_section_context, mark_page_read, save_recent_chapter_visit
+from backend.app.student_runtime.db_learning_service import (
+    enhance_player_with_db,
+    get_db_progress_state,
+    get_recent_chapter_visits,
+    get_section_detail,
+    get_student_profile_from_db,
+    interact_with_section_context,
+    mark_page_read,
+    save_recent_chapter_visit,
+)
 from backend.app.student_runtime.db_qa_service import get_qa_sessions, save_qa_session
 from backend.app.student_runtime.learning_service import LearningService
+from backend.app.student_runtime.qa_asr_service import AudioPayloadError, transcribe_audio_payload
+from backend.app.student_runtime.qa_asr_realtime_service import handle_realtime_asr_message
+from backend.app.student_runtime.qa_orchestrator import answer_question
+from backend.app.student_runtime.qa_streaming import iter_answer_chunks
 
 router = APIRouter()
 adapter = ChaoxingAdapter()
 learning_service = LearningService(adapter)
 
 
-def build_response(code=200, msg="success", data=None, request_id=None):
-    return {"code": code, "msg": msg, "data": data, "requestId": request_id or f"req-{uuid4().hex[:12]}"}
+def build_response(code: int = 200, msg: str = "success", data=None, request_id: str | None = None):
+    return {
+        "code": code,
+        "msg": msg,
+        "data": data,
+        "requestId": request_id or f"req-{uuid4().hex[:12]}",
+    }
 
 
-def response(code=200, msg="success", data=None, request_id=None):
+def response(code: int = 200, msg: str = "success", data=None, request_id: str | None = None):
     return JSONResponse(status_code=code, content=build_response(code=code, msg=msg, data=data, request_id=request_id))
 
 
@@ -93,7 +114,18 @@ async def get_progress(request: Request, db: Session = Depends(get_db)):
 @router.post("/api/v1/progress/track")
 async def track_progress(request: Request):
     payload = await require_signature(request)
-    updated = adapter.update_progress(payload.get("lessonId"), {"anchorId": payload.get("anchorId"), "anchorTitle": payload.get("anchorTitle"), "pageNo": payload.get("pageNo"), "currentTime": payload.get("currentTime"), "progressPercent": payload.get("progressPercent"), "understandingLevel": payload.get("understandingLevel"), "weakPoints": payload.get("weakPoints", [])})
+    updated = adapter.update_progress(
+        payload.get("lessonId"),
+        {
+            "anchorId": payload.get("anchorId"),
+            "anchorTitle": payload.get("anchorTitle"),
+            "pageNo": payload.get("pageNo"),
+            "currentTime": payload.get("currentTime"),
+            "progressPercent": payload.get("progressPercent"),
+            "understandingLevel": payload.get("understandingLevel"),
+            "weakPoints": payload.get("weakPoints", []),
+        },
+    )
     return response(200, "success", updated, getattr(request.state, "request_id", None))
 
 
@@ -127,22 +159,94 @@ async def lesson_section_detail(request: Request, db: Session = Depends(get_db))
 
 
 @router.post("/api/v1/qa/voiceToText")
-async def qa_voice_to_text(request: Request):
+async def qa_voice_to_text(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
-    data = {"text": learning_service.voice_to_text(payload.get("fileName", "voice.webm"))}
+    try:
+        data = transcribe_audio_payload(db, payload)
+    except AudioPayloadError as exc:
+        raise ApiError(400, str(exc), status_code=400)
+    except Exception as exc:
+        raise ApiError(500, f"语音识别失败：{exc}", status_code=500)
     return response(200, "success", data, getattr(request.state, "request_id", None))
+
+
+@router.websocket("/ws/qa/asr")
+async def qa_realtime_asr(websocket: WebSocket):
+    await websocket.accept()
+    state: dict[str, str] = {}
+    try:
+        while True:
+            payload = await websocket.receive_json()
+            await handle_realtime_asr_message(websocket, payload, state)
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:  # pragma: no cover - websocket runtime guard
+        try:
+            await websocket.send_json({"type": "error", "message": f"实时语音识别链路异常：{exc}"})
+        finally:
+            await websocket.close()
 
 
 @router.post("/api/v1/qa/interact")
 async def qa_interact(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
     section_id = payload.get("sectionId")
-    if section_id:
-        data = interact_with_section_context(db, payload.get("lessonId"), section_id, payload.get("question", ""), payload.get("pageNo"))
+    question = (payload.get("question") or "").strip()
+    page_no = payload.get("pageNo")
+    lesson_id = payload.get("lessonId")
+    if section_id and question:
+        data = answer_question(db, lesson_id=lesson_id, section_id=section_id, page_no=page_no, question=question)
         if data:
             return response(200, "success", data, getattr(request.state, "request_id", None))
-    data = learning_service.interact(payload.get("lessonId"), payload.get("question", ""), payload.get("anchorId"), payload.get("pageNo"))
+        data = interact_with_section_context(db, lesson_id, section_id, question, page_no)
+        if data:
+            return response(200, "success", data, getattr(request.state, "request_id", None))
+    data = learning_service.interact(lesson_id, question, payload.get("anchorId"), page_no)
     return response(200, "success", data, getattr(request.state, "request_id", None))
+
+
+@router.post("/api/v1/qa/interact/stream")
+async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    section_id = payload.get("sectionId")
+    question = (payload.get("question") or "").strip()
+    page_no = payload.get("pageNo")
+    lesson_id = payload.get("lessonId")
+    request_id = getattr(request.state, "request_id", None)
+
+    async def event_stream():
+        def emit(data: dict) -> str:
+            return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        yield emit({"type": "start", "requestId": request_id})
+
+        try:
+            if section_id and question:
+                data = answer_question(db, lesson_id=lesson_id, section_id=section_id, page_no=page_no, question=question)
+                if not data:
+                    data = interact_with_section_context(db, lesson_id, section_id, question, page_no)
+            else:
+                data = learning_service.interact(lesson_id, question, payload.get("anchorId"), page_no)
+
+            answer = (data or {}).get("answer") or "当前内容暂无更多解读。"
+            for chunk in iter_answer_chunks(answer):
+                if await request.is_disconnected():
+                    return
+                yield emit({"type": "delta", "delta": chunk})
+                await asyncio.sleep(0.03)
+            yield emit({"type": "done", "data": {**(data or {}), "answer": answer}})
+        except Exception as exc:
+            yield emit({"type": "error", "message": str(exc) or "AI 问答失败"})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/v1/qa/sessions/list")

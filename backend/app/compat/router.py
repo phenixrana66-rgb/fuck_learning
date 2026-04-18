@@ -28,7 +28,6 @@ from backend.app.teacher_runtime.services import (
     sync_user,
     upload_parse,
 )
-
 router = APIRouter(tags=["compat"])
 
 

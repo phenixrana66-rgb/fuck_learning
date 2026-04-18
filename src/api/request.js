@@ -1,6 +1,6 @@
 ﻿import axios from 'axios'
-import { ElMessage } from 'element-plus'
 import { buildSignedPayload } from '@/utils/sign'
+import { showErrorMessage } from '@/utils/message'
 import { getPlatformToken } from '@/utils/platform'
 
 const service = axios.create({
@@ -35,7 +35,7 @@ service.interceptors.response.use(
     const res = response.data || {}
 
     if (typeof res.code === 'undefined') {
-      ElMessage.error('接口响应格式错误')
+      showErrorMessage('接口响应格式错误')
       return Promise.reject(res)
     }
 
@@ -44,7 +44,7 @@ service.interceptors.response.use(
     }
 
     const msg = res.msg || '请求失败'
-    ElMessage.error(`${msg}${res.requestId ? `（requestId: ${res.requestId}）` : ''}`)
+    showErrorMessage(`${msg}${res.requestId ? `（requestId: ${res.requestId}）` : ''}`)
     return Promise.reject(res)
   },
   (error) => {
@@ -60,7 +60,7 @@ service.interceptors.response.use(
 
     if (isLocalMockUnavailable) {
       msg = '统一后端未启动，请先运行 backend FastAPI（127.0.0.1:3001），再执行 npm run dev:web'
-      ElMessage.error(msg)
+      showErrorMessage(msg)
       return Promise.reject({
         code: 503,
         msg,
@@ -90,7 +90,7 @@ service.interceptors.response.use(
         break
     }
 
-    ElMessage.error(msg)
+    showErrorMessage(msg)
     return Promise.reject({
       code: status || -1,
       msg,

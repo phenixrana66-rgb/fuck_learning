@@ -1,4 +1,4 @@
-import request from './studentRequest'
+﻿import request from './studentRequest'
 
 export function verifyStudentAuth(data) {
   return request({
@@ -59,14 +59,16 @@ export function getStudentSectionDetail(data) {
 export function voiceToText(data) {
   return request({
     url: '/api/v1/qa/voiceToText',
-    data
+    data,
+    timeout: 180000
   })
 }
 
 export function interactWithLesson(data) {
   return request({
     url: '/api/v1/qa/interact',
-    data
+    data,
+    timeout: 120000
   })
 }
 

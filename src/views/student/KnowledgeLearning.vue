@@ -168,6 +168,12 @@
               <div class="ai-message-role">{{ message.role === 'user' ? '我' : 'AI 学伴' }}</div>
               <div class="ai-message-bubble">{{ message.content }}</div>
             </article>
+            <article v-if="asking && !assistantStreamingStarted" class="ai-message assistant pending">
+              <div class="ai-message-role">AI 学伴</div>
+              <div class="ai-message-loading">
+                <span class="ai-inline-loading" aria-hidden="true"></span>
+              </div>
+            </article>
           </div>
 
           <form class="ai-input-box" @submit.prevent="submitQuestion">
@@ -176,10 +182,54 @@
               class="ai-textarea"
               placeholder="输入你的问题"
               rows="3"
+              @keydown.enter.exact.prevent="submitQuestion"
             ></textarea>
             <div class="ai-input-actions">
-              <button type="submit" class="ai-send-button" :disabled="asking || !questionText.trim()">
-                {{ asking ? '发送中...' : '发送问题' }}
+              <div v-if="isRecording" class="ai-voice-status">
+                <span class="ai-voice-timer">{{ formatRecordingDuration(recordingSeconds) }}</span>
+                <button
+                  type="button"
+                  class="ai-icon-button voice stop"
+                  aria-label="结束录音"
+                  @click="toggleRecording"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="7" y="7" width="10" height="10" rx="2" />
+                  </svg>
+                </button>
+              </div>
+              <button
+                v-else
+                type="button"
+                class="ai-icon-button voice"
+                :class="{ loading: voiceLoading }"
+                :disabled="voiceLoading"
+                :aria-label="voiceLoading ? '语音识别中' : '语音输入'"
+                @click="!voiceLoading ? toggleRecording() : undefined"
+              >
+                <span v-if="voiceLoading" class="ai-inline-loading" aria-hidden="true"></span>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3.5a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 12 3.5Z" />
+                  <path d="M7.5 10.5a4.5 4.5 0 0 0 9 0" />
+                  <path d="M12 15v5" />
+                  <path d="M9 20.5h6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="ai-icon-button send"
+                :class="{ 'is-stop': asking }"
+                :disabled="!asking && !questionText.trim()"
+                :aria-label="asking ? '终止回答' : '发送问题'"
+                @click.prevent="asking ? stopStreamingAnswer() : submitQuestion()"
+              >
+                <svg v-if="!asking" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 4v12" />
+                  <path d="m7 9 5-5 5 5" />
+                </svg>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="2" />
+                </svg>
               </button>
             </div>
           </form>
@@ -193,9 +243,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
+import { streamLessonInteraction } from '@/api/studentStream'
 import {
   getStudentSectionDetail,
-  interactWithLesson,
   markStudentPageRead,
   saveStudentRecentChapter
 } from '@/api/student'
@@ -234,6 +285,9 @@ const activePageNo = ref(1)
 const questionText = ref('')
 const asking = ref(false)
 const chatList = ref([])
+const activeAnswerController = ref(null)
+const voiceDraftPrefix = ref('')
+const assistantStreamingStarted = ref(false)
 const isAudioPlaying = ref(false)
 const thumbnailRailRef = ref(null)
 const viewerShellRef = ref(null)
@@ -258,6 +312,27 @@ const quickQuestions = computed(() => {
     `《${title}》在工程里通常怎么应用`
   ]
 })
+const { isRecording, voiceLoading, recordingSeconds, toggleRecording, cleanupRealtimeAsr } = useRealtimeAsr({
+  getContext: () => ({
+    studentId: studentProfile.value.studentId,
+    lessonId: lessonId.value,
+    sectionId: sectionId.value || detail.value.sectionId || ''
+  }),
+  onTranscript: (text) => {
+    questionText.value = `${voiceDraftPrefix.value}${text}`.trim()
+  },
+  onRecordingStart: () => {
+    const prefix = questionText.value.trim()
+    voiceDraftPrefix.value = prefix ? `${prefix}\n` : ''
+  }
+})
+
+function formatRecordingDuration(totalSeconds) {
+  const safeSeconds = Number(totalSeconds || 0)
+  const minutes = Math.floor(safeSeconds / 60)
+  const seconds = safeSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
 
 function normalizeFallbackDetail() {
   const lesson = findFrontendTestLesson(lessonId.value)
@@ -448,6 +523,12 @@ async function submitQuestion() {
   if (!question || asking.value) return
 
   const page = activePage.value
+  const assistantMessage = {
+    id: `assistant-${Date.now()}`,
+    role: 'assistant',
+    content: ''
+  }
+  let assistantInserted = false
   chatList.value.push({
     id: `user-${Date.now()}`,
     role: 'user',
@@ -455,27 +536,54 @@ async function submitQuestion() {
   })
   questionText.value = ''
   asking.value = true
+  assistantStreamingStarted.value = false
+  const controller = new AbortController()
+  activeAnswerController.value = controller
+
+  function ensureAssistantVisible() {
+    if (assistantInserted) return
+    assistantInserted = true
+    chatList.value.push(assistantMessage)
+  }
 
   try {
-    const res = await interactWithLesson({
+    const donePayload = await streamLessonInteraction({
       studentId: studentProfile.value.studentId,
       lessonId: lessonId.value,
       sectionId: sectionId.value,
       anchorId: page?.anchorId || '',
+      pageNo: page?.pageNo || activePageNo.value,
       question
+    }, {
+      signal: controller.signal,
+      onDelta: (delta) => {
+        assistantStreamingStarted.value = true
+        ensureAssistantVisible()
+        assistantMessage.content += delta
+      }
     })
-    chatList.value.push({
-      id: `assistant-${Date.now()}`,
-      role: 'assistant',
-      content: res.data.answer || '当前内容暂无更多解读。'
-    })
+    assistantStreamingStarted.value = true
+    ensureAssistantVisible()
+    assistantMessage.content = donePayload?.answer || assistantMessage.content || '当前内容暂无更多解读。'
   } catch (error) {
-    ElMessage.error(error?.msg || 'AI 问答失败')
+    if (error?.name === 'AbortError') {
+      assistantStreamingStarted.value = true
+      ensureAssistantVisible()
+      assistantMessage.content = assistantMessage.content || '已终止本次回答。'
+    } else {
+      ElMessage.error(error?.message || error?.msg || 'AI 问答失败')
+    }
   } finally {
     asking.value = false
+    assistantStreamingStarted.value = false
+    activeAnswerController.value = null
     await nextTick()
     chatScrollRef.value?.scrollTo({ top: chatScrollRef.value.scrollHeight, behavior: 'smooth' })
   }
+}
+
+function stopStreamingAnswer() {
+  activeAnswerController.value?.abort()
 }
 
 function goBack() {
@@ -514,12 +622,16 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  activeAnswerController.value?.abort()
+  cleanupRealtimeAsr()
   sectionAudioRef.value?.pause()
   window.removeEventListener('pagehide', persistRecentVisit)
   persistRecentVisit()
 })
 
 onBeforeRouteLeave(() => {
+  activeAnswerController.value?.abort()
+  cleanupRealtimeAsr()
   sectionAudioRef.value?.pause()
   persistRecentVisit()
 })
@@ -1076,25 +1188,122 @@ onBeforeRouteLeave(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 12px;
   margin-top: 8px;
 }
 
-.ai-send-button {
-  height: 36px;
-  padding: 0 14px;
-  border: none;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #557cf0 0%, #6c8aff 100%);
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
-  font-size: 13px;
+.ai-voice-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.ai-send-button:disabled {
+.ai-voice-timer {
+  color: #7c8dac;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-icon-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8e2f3;
+  background: rgba(255, 255, 255, 0.96);
+  color: #5f6a80;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.ai-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ai-icon-button.voice {
+  box-shadow: 0 8px 18px rgba(140, 158, 196, 0.14);
+}
+
+.ai-icon-button.voice.loading {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.ai-icon-button.voice.stop {
+  color: #11161c;
+}
+
+.ai-icon-button.voice.stop {
+  color: #11161c;
+}
+
+
+.ai-icon-button.send {
+  border-color: #101418;
+  background: #101418;
+  color: #fff;
+}
+
+.ai-icon-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ai-icon-button.voice:hover:not(:disabled) {
+  background: #f6f9ff;
+  border-color: #c6d6ef;
+}
+
+.ai-icon-button.send:hover:not(:disabled) {
+  background: #1c232d;
+  border-color: #1c232d;
+}
+
+.ai-icon-button.send.is-stop {
+  border-color: #101418;
+  background: #101418;
+}
+
+.ai-icon-button.send.is-stop:hover:not(:disabled) {
+  background: #1c232d;
+  border-color: #1c232d;
+}
+
+.ai-icon-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.ai-inline-loading {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  border-radius: 999px;
+  border: 2px solid rgba(157, 169, 193, 0.28);
+  border-top-color: #c7cedd;
+  animation: ai-loading-spin 0.9s linear infinite;
+}
+
+.ai-message.pending {
+  align-items: flex-start;
+}
+
+.ai-message-loading {
+  padding: 8px 0;
+}
+
+@keyframes ai-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 
 @media (max-width: 1260px) {
   .knowledge-workspace {

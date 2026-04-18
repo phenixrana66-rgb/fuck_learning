@@ -1,0 +1,52 @@
+{
+  "sampleSize": 3109,
+  "top1HitRate": 0.9939,
+  "top3HitRate": 0.9981,
+  "top5HitRate": 0.9987,
+  "avgLatencyMs": 5638.22,
+  "badCases": [
+    {
+      "faqId": 806,
+      "question": "数字图像相关",
+      "category": "实验原理与方法",
+      "retrievedFaqIds": [
+        240,
+        487,
+        681,
+        699,
+        740
+      ]
+    },
+    {
+      "faqId": 2191,
+      "question": "卡氏定理",
+      "category": null,
+      "retrievedFaqIds": [
+        783,
+        1210,
+        1262,
+        1820,
+        1922
+      ]
+    },
+    {
+      "faqId": 2724,
+      "question": "滞后\\超前串联校正能够改善系统性能的原因",
+      "category": "默认分类",
+      "retrievedFaqIds": []
+    },
+    {
+      "faqId": 2800,
+      "question": "传递函数",
+      "category": "默认分类",
+      "retrievedFaqIds": [
+        2035,
+        2517,
+        2555,
+        2557,
+        2558
+      ]
+    }
+  ],
+  "generatedAt": "2026-04-16T16:39:44"
+}

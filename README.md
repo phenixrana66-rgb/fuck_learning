@@ -1,266 +1,299 @@
 # fuck_learning
 
-<<<<<<< Updated upstream
-当前仓库采用统一前端 + 单 FastAPI 后端 + 一套 MySQL 主库：
-=======
-当前仓库采用一套前端、双 FastAPI 后端、单 MySQL 主库的结构：
->>>>>>> Stashed changes
+本项目是一个前后端一体的课程学习系统：
 
-- 前端：仓库根目录下的 Vite 项目
-- 统一后端入口：`backend.app.main`
-- 共享 ORM：`backend/chaoxing_db`
-- 建表与测试数据：`docs/mysql建表.sql`、`docs/init_test_data.sql`
+- 前端：Vite + Vue 3，位于仓库根目录 `src/`
+- 后端：FastAPI，入口为 `backend.app.main:app`
+- 数据库：MySQL
+- 学生问答：支持流式 LLM 输出、语音输入、章节问答
 
 ## 目录说明
 
-- `src/`：前端代码，学生端和教师端共用同一个 Vite 工程
-- `backend/`：仓库唯一后端目录，包含 FastAPI 应用与共享 SQLAlchemy 模型
-- `public/lesson-previews/pressure-stability/`：压杆稳定章节的测试页图资源
+- `src/`：前端页面与组件
+- `backend/`：后端业务代码
+- `backend/chaoxing_db/`：ORM / 数据模型相关
 - `docs/mysql建表.sql`：MySQL 建表脚本
-- `docs/init_test_data.sql`：初始化测试数据脚本
-
-## 教师端当前已打通的主流程
-
-1. 平台用户同步
-2. 课程同步
-3. 课件解析
-4. 讲稿生成
-5. 讲稿编辑保存
-6. 音频生成
-7. 智课发布到学生端
-8. 教师端管理页查看真实状态
-
-当前教师端新增后端接口：
-
-- `POST /api/v1/lesson/saveScript`
-- `POST /api/v1/lesson/publish`
-- `POST /api/v1/lesson/status`
-
-发布后，教师端产物会写入学生端可读取的 `lessons / lesson_units / lesson_sections / lesson_section_pages / lesson_section_anchors`。
-
-## 压杆稳定 PPT 预览说明
-
-- 学生端“压杆稳定”知识学习页使用真实 PPT 导出的页图，不再使用示意 SVG。
-- 页图默认放在 `public/lesson-previews/pressure-stability/`，命名格式为 `page-1.png`、`page-2.png`。
-- 教师端执行 `POST /api/v1/lesson/parse` 的 `upload/status` 链路时，会尝试把上传的 PPT 导出为 PNG 页图，并同步写入章节页数据。
-- 当前页图导出依赖本机已安装桌面版 Microsoft PowerPoint，因为后端通过 Windows COM 调用 PowerPoint 执行图片导出。
-- 如果机器上没有安装 PowerPoint，教师端解析会失败，学生端只能读取已有的本地测试页图资源。
+- `docs/init_test_data.sql`：测试数据初始化脚本
+- `start-backend.ps1`：后端启动脚本
+- `start-frontend.ps1`：前端启动脚本
 
 ## 默认端口
 
-- 前端：`5173`
-- 统一后端：`3001`
+- 前端开发服务：`5173`
+- 后端服务：`3001`
 
-Vite 代理：
+Vite 代理配置：
 
 - `/student-api -> http://127.0.0.1:3001`
 - `/api -> http://127.0.0.1:3001`
 
-## 默认数据库连接
+## 环境要求
 
-当前代码默认使用下面这条连接：
+- Node.js 18+
+- npm 9+
+- Python 3.11+
+- MySQL 8.x
 
-```powershell
-mysql+pymysql://root:123456@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4
-```
+## 初次使用前必须准备的内容
 
-<<<<<<< Updated upstream
-如果你本机 MySQL 不是这个账号密码，需要在启动前先设置 `DATABASE_URL`，否则统一后端在访问数据库时会返回 500。
+### 1. 安装前后端依赖
 
-PowerShell 设置方式：
-=======
-如果你本机 MySQL 不是这个账号密码，需要先设置 `DATABASE_URL`：
->>>>>>> Stashed changes
+在项目根目录执行：
 
 ```powershell
-$env:DATABASE_URL="mysql+pymysql://root:你的密码@127.0.0.1:3306/chaoxing_ai_course?charset=utf8mb4"
+cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
+npm install
+pip install -r requirements.txt
 ```
 
-<<<<<<< Updated upstream
-建议在启动统一后端前先设置一次。
-=======
-建议在学生端后端终端和教师端后端终端里都设置一次。
->>>>>>> Stashed changes
+如果你使用虚拟环境，建议先激活虚拟环境再执行 `pip install -r requirements.txt`。
 
-## 初始化数据库
+### 2. 准备 MySQL 数据库
 
-先确认本机 MySQL 已启动，然后在 PowerShell 中执行：
+先确认本机 MySQL 已启动，然后创建数据库：
+
+```sql
+CREATE DATABASE chaoxing_ai_course DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+```
+
+再导入建表脚本和初始化测试数据：
 
 ```powershell
-mysql -u root -p
+mysql -u root -p chaoxing_ai_course < "D:\服务外包（学习通）\xuexitong\fuck_learning\docs\mysql建表.sql"
+mysql -u root -p chaoxing_ai_course < "D:\服务外包（学习通）\xuexitong\fuck_learning\docs\init_test_data.sql"
 ```
 
-进入 MySQL 后执行：
+如果你更习惯在 MySQL 控制台里执行，也可以使用：
 
 ```sql
 SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/mysql建表.sql;
 SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/init_test_data.sql;
 ```
 
-如果需要直接在 PowerShell 中执行重定向，必须走 `cmd /c`：
+### 3. 配置后端数据库连接
 
-```powershell
-cmd /c "mysql -u root -p < docs\mysql建表.sql"
-cmd /c "mysql -u root -p < docs\init_test_data.sql"
+后端优先读取环境变量，也支持从仓库根目录的 `config.local.py` 读取默认值。
+
+当前后端支持的主要数据库环境变量：
+
+```text
+A12_DB_URL
+A12_DB_HOST
+A12_DB_PORT
+A12_DB_USER
+A12_DB_PASSWORD
+A12_DB_NAME
+A12_DB_ECHO
 ```
 
-## 首次启动
+当前仓库自带的 [start-backend.ps1](/D:/服务外包（学习通）\xuexitong\fuck_learning\start-backend.ps1) 默认写的是：
 
-先进入仓库根目录：
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning
+```text
+A12_DB_HOST=127.0.0.1
+A12_DB_PORT=3306
+A12_DB_USER=root
+A12_DB_PASSWORD=123456
+A12_DB_NAME=chaoxing_ai_course
 ```
 
-安装前端依赖：
+如果你的 MySQL 用户名、密码、端口或数据库名不同，请先修改：
 
-```powershell
-npm install
+- [start-backend.ps1](/D:/服务外包（学习通）\xuexitong\fuck_learning\start-backend.ps1)
+- 或者在根目录新建 `config.local.py`
+
+### 4. 配置 LLM / 语音识别 API
+
+如果你只想先跑通页面和基础流程，数据库准备好即可。
+
+如果你要使用真实的：
+
+- PPT 解析 / 脚本生成 LLM
+- 学生问答 LLM
+- 语音识别兜底 ASR
+
+则还需要配置下面这些后端参数。
+
+常用环境变量：
+
+```text
+A12_LLM_API_BASE_URL
+A12_LLM_API_KEY
+A12_LLM_MODEL
+A12_QA_LLM_PROVIDER
+A12_QA_LLM_MODEL
+A12_QA_ASR_MODEL
+A12_DASHSCOPE_API_KEY
+A12_DASHSCOPE_BASE_URL
 ```
 
-### 1. 安装后端依赖并启动统一后端
+代码默认配置来源见：
+
+- [backend/app/common/config.py](/D:/服务外包（学习通）\xuexitong\fuck_learning\backend\app\common\config.py)
+
+说明：
+
+- 学生问答当前默认 `qa_llm_provider` 是 `dashscope`
+- 语音识别兜底依赖 `A12_DASHSCOPE_API_KEY`
+- 浏览器原生语音识别可在支持的 Chromium 浏览器中直接使用，不一定强依赖后端 ASR
+- 如果未配置 `A12_LLM_API_KEY`，教师端部分 LLM 能力会报错
+
+### 5. 前端环境变量
+
+前端默认使用：
+
+- [.env.development](/D:/服务外包（学习通）\xuexitong\fuck_learning\.env.development)
+- [.env.production](/D:/服务外包（学习通）\xuexitong\fuck_learning\.env.production)
+
+默认值：
+
+```text
+VITE_API_BASE=
+VITE_STUDENT_API_BASE=/student-api
+VITE_STATIC_KEY=chaoxing-ai-static-key
+```
+
+通常本地开发不需要改这里，除非你把后端代理前缀改掉了。
+
+## 推荐启动顺序
+
+每次启动项目，按下面顺序来：
+
+1. 启动 MySQL
+2. 启动后端
+3. 启动前端
+4. 打开浏览器访问页面
+
+## 后端如何启动
+
+### 方式一：使用脚本启动
+
+在 PowerShell 中执行：
 
 ```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning
-pip install -r requirements.txt
+cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
+.\start-backend.ps1
+```
+
+这个脚本当前实际执行的是：
+
+```powershell
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload
 ```
 
-### 2. 启动前端
+### 方式二：手动启动
+
+如果你不想走脚本，也可以直接执行：
 
 ```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning
-npm run dev:web
-```
-
-## 后续再次启动
-
-<<<<<<< Updated upstream
-如果依赖已经装好，只需要重新启动统一后端与前端。
-
-### 统一后端再次启动
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning
+cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
+$env:A12_DB_HOST="127.0.0.1"
+$env:A12_DB_PORT="3306"
+$env:A12_DB_USER="root"
+$env:A12_DB_PASSWORD="123456"
+$env:A12_DB_NAME="chaoxing_ai_course"
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload
-=======
-如果两个后端的 `.venv` 已经创建过，而且依赖没有变化，只需要重新激活并启动：
-
-### 学生端后端
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\student-ai-course\backend\student_plugin
-.venv\Scripts\activate
-uvicorn app:app --host 0.0.0.0 --port 5000 --reload
 ```
 
-### 教师端后端
+### 判断后端是否启动成功
 
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\teacher-ai-course\backend\teacher_plugin
-.venv\Scripts\activate
-uvicorn app:app --host 0.0.0.0 --port 3001 --reload
->>>>>>> Stashed changes
-```
-
-### 前端
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning
-npm run dev:web
-```
-
-## 依赖更新后的启动方式
-
-<<<<<<< Updated upstream
-如果后端依赖有变更，请在仓库根目录对应的 Python 环境里重新执行 `pip install -r requirements.txt` 后，再启动统一后端。
-=======
-如果任何一个后端的 `requirements.txt` 变了，先重新安装依赖：
-
-### 学生端
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\student-ai-course\backend\student_plugin
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 5000 --reload
-```
-
-### 教师端
-
-```powershell
-cd D:\服务外包（学习通）\xuexitong\fuck_learning\teacher-ai-course\backend\teacher_plugin
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 3001 --reload
-```
->>>>>>> Stashed changes
-
-## 访问方式
-
-### 前端入口
-
-- 门户页：`http://localhost:5173/`
-- 学生端首页：`http://localhost:5173/student/home?token=student_demo_token_001`
-- 教师端登录页：`http://localhost:5173/teacher/login`
-
-### 教师端登录方式
-
-当前教师端测试 token：
+后端启动成功后，终端通常会出现：
 
 ```text
-test_token_001
+Uvicorn running on http://127.0.0.1:3001
+Application startup complete.
 ```
 
-打开 `http://localhost:5173/teacher/login` 后，在输入框中填入 `test_token_001`，点击“同步用户与课程”即可。
+还可以直接访问 Swagger：
 
-### 学生端访问方式
+- [http://127.0.0.1:3001/docs](http://127.0.0.1:3001/docs)
 
-当前学生端测试 token：
+## 前端如何启动
+
+### 方式一：使用脚本启动
+
+在新的 PowerShell 窗口执行：
+
+```powershell
+cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
+.\start-frontend.ps1
+```
+
+### 方式二：手动启动
+
+```powershell
+cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+### 判断前端是否启动成功
+
+前端启动成功后，终端会输出本地访问地址，通常是：
+
+- [http://127.0.0.1:5173/](http://127.0.0.1:5173/)
+
+## 首次启动后可访问的页面
+
+- 门户页：[http://127.0.0.1:5173/](http://127.0.0.1:5173/)
+- 学生首页：[http://127.0.0.1:5173/student/home?token=student_demo_token_001](http://127.0.0.1:5173/student/home?token=student_demo_token_001)
+- 教师登录页：[http://127.0.0.1:5173/teacher/login](http://127.0.0.1:5173/teacher/login)
+- 后端 Swagger：[http://127.0.0.1:3001/docs](http://127.0.0.1:3001/docs)
+
+测试 Token：
 
 ```text
-student_demo_token_001
+教师端：test_token_001
+学生端：student_demo_token_001
 ```
 
-直接打开：
+## 常见问题
 
-```text
-http://localhost:5173/student/home?token=student_demo_token_001
+### 1. PowerShell 不允许执行 `.ps1`
+
+如果看到类似“因为在此系统上禁止运行脚本”的提示，先执行：
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-即可进入学生首页。
+然后输入 `Y` 确认。
 
-## 当前已验证通过的链路
+### 2. 提示 `No module named 'backend'`
 
-### 教师端
+说明你不是在项目根目录启动的。先执行：
 
-- `POST /api/v1/platform/syncUser`
-- `POST /api/v1/platform/syncCourse`
-- `POST /api/v1/lesson/parse`
-- `POST /api/v1/lesson/generateScript`
-- `POST /api/v1/lesson/saveScript`
-- `POST /api/v1/lesson/generateAudio`
-- `POST /api/v1/lesson/publish`
-- `POST /api/v1/lesson/status`
+```powershell
+cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
+```
 
-### 学生端
+再重新运行启动命令。
 
-- `POST /auth/verify`
-- `POST /api/v1/getStudentLessonList`
-- `POST /api/v1/lesson/play`
-- `POST /api/v1/lesson/section/detail`
-- `POST /api/v1/progress/page/read`
+### 3. 页面提示数据库认证失败
+
+优先检查：
+
+- `A12_DB_USER`
+- `A12_DB_PASSWORD`
+- `A12_DB_NAME`
+
+### 4. 页面提示数据库连接失败
+
+优先检查：
+
+- MySQL 是否启动
+- 端口是否为 `3306`
+- 主机是否为 `127.0.0.1`
+
+### 5. 学生问答没有返回内容
+
+优先检查：
+
+- 后端是否已经启动在 `3001`
+- 浏览器地址是否带有有效 `token`
+- `A12_DASHSCOPE_API_KEY` 是否已配置
+- 页面是否已强制刷新到最新前端代码
 
 ## 构建
-
-前端构建命令：
 
 ```powershell
 npm run build
 ```
-
-## 相关文件
-
-- [根 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/README.md)
-- [学生端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/student-ai-course/backend/student_plugin/README.md)
-- [教师端后端 README](/D:/服务外包（学习通）/xuexitong/fuck_learning/teacher-ai-course/backend/teacher_plugin/README.md)

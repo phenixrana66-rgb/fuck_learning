@@ -1,6 +1,6 @@
 ﻿import axios from 'axios'
-import { ElMessage } from 'element-plus'
 import { buildSignedPayload } from '@/utils/sign'
+import { showErrorMessage } from '@/utils/message'
 import { getPlatformToken } from '@/utils/platform'
 
 const studentService = axios.create({
@@ -38,7 +38,7 @@ studentService.interceptors.response.use(
     }
 
     const message = res.msg || '学生端接口请求失败'
-    ElMessage.error(message)
+    showErrorMessage(message)
     return Promise.reject(res)
   },
   (error) => {
@@ -52,7 +52,7 @@ studentService.interceptors.response.use(
 
     if (isLocalBackendUnavailable) {
       const message = '统一后端未启动，请先运行 backend FastAPI（127.0.0.1:3001），再执行 npm run dev:web'
-      ElMessage.error(message)
+      showErrorMessage(message)
       return Promise.reject({
         code: 503,
         msg: message,
@@ -69,7 +69,7 @@ studentService.interceptors.response.use(
     if (status === 404) message = '学生端接口不存在'
     if (status === 500) message = '学生端服务异常'
 
-    ElMessage.error(message)
+    showErrorMessage(message)
     return Promise.reject({
       code: status || -1,
       msg: message,
