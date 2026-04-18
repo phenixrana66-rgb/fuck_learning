@@ -16,6 +16,7 @@ from backend.app.student_runtime.db_learning_service import (
     get_db_progress_state,
     get_recent_chapter_visits,
     get_section_detail,
+    get_student_lessons_from_db,
     get_student_profile_from_db,
     interact_with_section_context,
     mark_page_read,
@@ -60,6 +61,23 @@ async def require_signature(request: Request):
     return payload
 
 
+def _merge_lessons(primary_lessons, db_lessons):
+    merged = {}
+    for lesson in primary_lessons or []:
+        lesson_id = lesson.get("lessonId")
+        if lesson_id:
+            merged[lesson_id] = lesson
+    for lesson in db_lessons or []:
+        lesson_id = lesson.get("lessonId")
+        if not lesson_id:
+            continue
+        if lesson_id in merged:
+            merged[lesson_id] = {**merged[lesson_id], **lesson}
+        else:
+            merged[lesson_id] = lesson
+    return list(merged.values())
+
+
 @router.post("/auth/verify")
 async def auth_verify(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
@@ -69,6 +87,8 @@ async def auth_verify(request: Request, db: Session = Depends(get_db)):
         db_student = get_student_profile_from_db(db, payload.get("studentId") or data.get("student", {}).get("studentId"))
         if db_student:
             data["student"] = {**data.get("student", {}), **db_student}
+        student_id = payload.get("studentId") or data.get("student", {}).get("studentId")
+        data["lessons"] = _merge_lessons(data.get("lessons", []), get_student_lessons_from_db(db, student_id))
         return response(200, "success", data, getattr(request.state, "request_id", None))
     except PermissionError:
         raise ApiError(401, "免登 token 无效", status_code=401)
@@ -79,6 +99,7 @@ async def get_student_lesson_list(request: Request, db: Session = Depends(get_db
     payload = await require_signature(request)
     student_id = payload.get("studentId")
     lessons = adapter.get_student_lessons(student_id)
+    lessons = _merge_lessons(lessons, get_student_lessons_from_db(db, student_id))
     try:
         merged = [enhance_player_with_db(db, lesson, student_id) for lesson in lessons]
     except Exception:

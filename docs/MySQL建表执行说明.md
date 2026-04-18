@@ -1,113 +1,116 @@
-# MySQL 建表执行说明
+# MySQL 建表与迁移说明
 
-当前仓库已经统一为：
+## 1. 结构真源
 
-- 学生端 FastAPI
-- 教师端 FastAPI
-- 一套共享 MySQL 主库
-- 一套共享 SQLAlchemy ORM
+当前项目的数据库结构以三层为准：
 
-## 脚本文件
+1. `backend/chaoxing_db/models/*.py`
+   这是 ORM 结构真源，运行时 `Base.metadata.create_all()` 依赖这里。
+2. `docs/mysql建表.sql`
+   这是全量初始化脚本，用于新建库或重建测试库。
+3. `docs/migrations/*.sql`
+   这是增量迁移脚本，只用于已有旧库升级，不用于全量初始化。
 
-- [mysql建表.sql](/D:/服务外包（学习通）/xuexitong/fuck_learning/docs/mysql建表.sql)
-- [init_test_data.sql](/D:/服务外包（学习通）/xuexitong/fuck_learning/docs/init_test_data.sql)
+## 2. 当前规则
 
-## 数据范围
+- 新增表、新增字段、新增外键时，必须同时更新：
+  - `backend/chaoxing_db/models/*.py`
+  - `docs/mysql建表.sql`
+- 如果这次变更需要给已有库升级，还要补一份 `docs/migrations/*.sql`
+- 不要只改 ORM 或只改 SQL 初始化脚本，否则后面会出现“代码有结构、数据库没有结构”的断层
 
-当前脚本覆盖：
+## 3. section 音频这次变更
 
-- 平台、学校、用户、课程、教学班、课程成员
-- 教师端章节树、章节 PPT、LLM 解析、讲稿、音频、章节练习
-- 学生端 lesson、unit、section、page、anchor、knowledge point
-- 页级阅读进度、章节进度、课程总进度、续学记录
-- 练习作答、掌握度留痕、AI 问答、通知、接口日志
+2026-04-16 这轮 section 级音频改造已经进入全量初始化：
 
-## 执行方式
+- `chapter_section_audio_assets`
+- `lesson_sections.section_audio_asset_id`
 
-### 方式一：在系统终端执行
+对应增量升级脚本保留在：
 
-#### PowerShell 推荐写法
+- `docs/migrations/20260416_section_audio_assets.sql`
 
-先进入 MySQL：
+这意味着：
+
+- 新建库：只看 `docs/mysql建表.sql`
+- 已有旧库升级：执行 `docs/migrations/20260416_section_audio_assets.sql`
+
+## 4. 新建库执行方式
+
+推荐顺序：
+
+1. 执行 `docs/mysql建表.sql`
+2. 需要测试数据时，再执行 `docs/init_test_data.sql`
+
+### 4.1 在 MySQL 控制台执行
+
+```sql
+SOURCE E:/CodeWarehouse/A12chaoxin/code/docs/mysql建表.sql;
+SOURCE E:/CodeWarehouse/A12chaoxin/code/docs/init_test_data.sql;
+```
+
+### 4.2 先进入 MySQL，再执行
 
 ```powershell
 mysql -u root -p
 ```
 
-再执行：
+然后：
 
 ```sql
-SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/mysql建表.sql;
-SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/init_test_data.sql;
+SOURCE E:/CodeWarehouse/A12chaoxin/code/docs/mysql建表.sql;
+SOURCE E:/CodeWarehouse/A12chaoxin/code/docs/init_test_data.sql;
 ```
 
-如果希望继续在 PowerShell 中直接执行命令，可以改为：
+### 4.3 在 PowerShell 中直接执行
 
 ```powershell
-cmd /c "mysql -u root -p < docs\mysql建表.sql"
-cmd /c "mysql -u root -p < docs\init_test_data.sql"
+cmd /c "mysql -u root -p < E:\CodeWarehouse\A12chaoxin\code\docs\mysql建表.sql"
+cmd /c "mysql -u root -p < E:\CodeWarehouse\A12chaoxin\code\docs\init_test_data.sql"
 ```
 
-不要直接在 PowerShell 里执行下面这种带 `<` 的命令：
+注意：
 
-```powershell
-mysql -u root -p < docs/mysql建表.sql
-```
+- 不要直接在 PowerShell 里写 `mysql -u root -p < ...`
+- PowerShell 对这种重定向语法处理不稳定，优先用 `cmd /c`
 
-因为 PowerShell 不支持这里的 `<` 重定向写法。
+## 5. 已有库升级方式
 
-### 方式二：在 MySQL 控制台执行
+已有旧库不要重新跑全量建表脚本，优先跑对应迁移脚本。
+
+当前可用迁移：
+
+- `docs/migrations/20260416_section_audio_assets.sql`
+
+执行方式：
 
 ```sql
-SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/mysql建表.sql;
-SOURCE D:/服务外包（学习通）/xuexitong/fuck_learning/docs/init_test_data.sql;
+SOURCE E:/CodeWarehouse/A12chaoxin/code/docs/migrations/20260416_section_audio_assets.sql;
 ```
 
-## 当前测试资源
+## 6. 目录职责
 
-`init_test_data.sql` 已包含教师端测试 PPT 资源登记：
+### `backend/chaoxing_db`
 
-- `第九章 压杆稳定_20260401213017.ppt`
+- 存放 ORM 模型
+- 负责运行时建表元数据
+- 这里定义的是“代码结构口径”
 
-该测试资源会出现在这些链路中：
+### `docs/mysql建表.sql`
 
-- `chapter_ppt_assets`
-- `chapter_parse_tasks`
-- `chapter_parse_results`
-- `chapter_knowledge_nodes`
-- `chapter_scripts`
-- `chapter_audio_assets`
-- `lessons / lesson_units / lesson_sections / lesson_section_pages`
+- 负责全量初始化
+- 适合新环境、测试库、重建库
+- 这里定义的是“全量 SQL 口径”
 
-## 当前学习进度与掌握度口径
+### `docs/migrations`
 
-### 学习进度
+- 负责历史库增量升级
+- 一个文件对应一批结构变更
+- 不替代全量初始化脚本
 
-- 学生只要读到某一页，该页就算完成
-- 章节学习进度 = `round(已读页数 / 总页数 * 100)`
-- 课程总进度 = `round(所有章节学习进度平均值)`
+## 7. 维护建议
 
-### 掌握度
-
-- 章节掌握度只保留两类来源：
-  - 学习进度贡献 `40%`
-  - 章节练习贡献 `60%`
-- 章节掌握度 = `round(章节学习进度 * 0.4 + 章节练习得分率 * 0.6)`
-- AI 问答理解度当前只保留记录和推荐用途，不参与正式掌握度计算
-
-## 共享 ORM
-
-双端共用的 SQLAlchemy ORM 目录：
-
-```powershell
-backend/chaoxing_db
-```
-
-统一 backend 内的学生端与教师端运行时都通过这套模型访问同一套 MySQL 主库。
-
-## 注意事项
-
-- 脚本默认使用 `utf8mb4` 和 `InnoDB`
-- 业务库名为 `chaoxing_ai_course`
-- 建议先执行 `mysql建表.sql`，再执行 `init_test_data.sql`
-- 如果你已经有旧测试库，建议先确认是否需要备份再重跑脚本
+- 后续如果再引入 section 级发布、学生端消费字段扩展，先改 `backend/chaoxing_db/models`
+- 然后同步 `docs/mysql建表.sql`
+- 最后判断是否需要给存量库补迁移脚本
+- 每次迁移完成后，最好同步 `temp/database/01-当前数据库表与字段盘点.md`

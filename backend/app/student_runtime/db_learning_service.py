@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
@@ -14,6 +15,7 @@ UNDERSTANDING_LABELS = {"weak": "未理解", "partial": "部分理解", "complet
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PREVIEW_ROOT = PROJECT_ROOT / "public" / "lesson-previews"
 JsonDict = dict[str, Any]
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}
 
 
 def _round_int(value) -> int:
@@ -90,6 +92,14 @@ def _build_section_chapter_context(db: Session, section: LessonSection) -> dict[
         "scriptContent": script_content,
         "chapterContextText": "\n".join(parts).strip(),
     }
+def _normalize_image_asset_url(url: str | None) -> str:
+    normalized = _normalize_asset_url(url)
+    if not normalized:
+        return ""
+    path = urlsplit(normalized).path.lower()
+    if any(path.endswith(ext) for ext in IMAGE_EXTENSIONS):
+        return normalized
+    return ""
 
 
 def _resolve_user_id(db: Session, student_identifier: str | int | None) -> int | None:
@@ -115,7 +125,7 @@ def _find_lesson(db: Session, lesson_identifier: str | int | None) -> Lesson | N
     lesson_text = str(lesson_identifier).strip()
     if lesson_text.isdigit():
         filters.append(Lesson.id == int(lesson_text))
-    return db.query(Lesson).options(joinedload(Lesson.course), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.pages), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.anchors), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.knowledge_points)).filter(or_(*filters)).first()
+    return db.query(Lesson).options(joinedload(Lesson.course), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.pages), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.anchors), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.knowledge_points), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.section_audio_asset)).filter(or_(*filters)).first()
 
 
 def _find_teacher_name(db: Session, lesson: Lesson) -> str:
@@ -254,21 +264,49 @@ def enhance_player_with_db(db: Session, player: JsonDict, student_id: str | int 
                 chapters.append(db_chapter)
     chapters = [chapter for unit in units for chapter in unit.get("chapters", [])]
     player_copy["units"] = units
+    player_copy["lessonName"] = lesson.lesson_name or player_copy.get("lessonName", "")
+    player_copy["courseName"] = lesson.course.course_name if lesson.course else player_copy.get("courseName", "")
     player_copy["teacherName"] = _find_teacher_name(db, lesson) or player_copy.get("teacherName", "")
+    first_section = next((section for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id)) for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id))), None)
+    if first_section and first_section.section_audio_asset:
+        player_copy["audioUrl"] = _normalize_asset_url(first_section.section_audio_asset.audio_url)
+    if lesson.sections:
+        player_copy["duration"] = sum((section.section_audio_asset.duration_sec or 0) for section in lesson.sections if section.section_audio_asset)
     if chapters:
         player_copy["progressPercent"] = _round_int(sum(int(chapter.get("progressPercent") or 0) for chapter in chapters) / len(chapters))
         player_copy["masteryPercent"] = _round_int(sum(int(chapter.get("masteryPercent") or 0) for chapter in chapters) / len(chapters))
     return player_copy
 
 
+def get_student_lessons_from_db(db: Session, student_id: str | int | None) -> list[JsonDict]:
+    student_db_id = _resolve_user_id(db, student_id)
+    lessons = (
+        db.query(Lesson)
+        .options(
+            joinedload(Lesson.course),
+            joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.pages),
+            joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.anchors),
+            joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.knowledge_points),
+            joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.section_audio_asset),
+        )
+        .filter(Lesson.publish_status == "published")
+        .order_by(Lesson.published_at.desc(), Lesson.id.desc())
+        .all()
+    )
+    progress_map = _get_lesson_progress_map(db, student_db_id)
+    return [_serialize_db_lesson(db, lesson, progress_map.get(lesson.id)) for lesson in lessons]
+
+
 def get_db_progress_state(db: Session, student_id: str | int | None, lesson_identifier: str | int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
-    student_db_id = _resolve_user_id(db, student_id)
-    if not lesson or not student_db_id:
+    if not lesson:
         return None
+    student_db_id = _resolve_user_id(db, student_id)
+    if not student_db_id:
+        return _build_default_progress(lesson)
     lesson_progress = db.query(StudentLessonProgress).filter(StudentLessonProgress.student_id == student_db_id, StudentLessonProgress.lesson_id == lesson.id).first()
     if not lesson_progress:
-        return None
+        return _build_default_progress(lesson)
     anchor = None
     if lesson_progress.current_anchor_id:
         anchor = db.query(LessonSectionAnchor).filter(LessonSectionAnchor.id == lesson_progress.current_anchor_id).first()
@@ -277,6 +315,105 @@ def get_db_progress_state(db: Session, student_id: str | int | None, lesson_iden
         if section:
             anchor = _find_section_anchor(section, lesson_progress.last_page_no)
     return {"sectionId": str(lesson_progress.current_section_id) if lesson_progress.current_section_id else "", "anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else "", "pageNo": lesson_progress.last_page_no or (anchor.page_no if anchor else 1) or 1, "currentTime": (anchor.start_time_sec if anchor else 0) or 0, "progressPercent": _round_int(lesson_progress.total_progress), "understandingLevel": "partial", "weakPoints": []}
+
+
+def _get_lesson_progress_map(db: Session, student_db_id: int | None) -> dict[int, StudentLessonProgress]:
+    if not student_db_id:
+        return {}
+    rows = db.query(StudentLessonProgress).filter(StudentLessonProgress.student_id == student_db_id).all()
+    return {row.lesson_id: row for row in rows}
+
+
+def _build_default_progress(lesson: Lesson) -> JsonDict:
+    first_section = next(
+        (
+            section
+            for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id))
+            for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id))
+        ),
+        None,
+    )
+    anchor = _find_section_anchor(first_section) if first_section else None
+    page_no = anchor.page_no if anchor and anchor.page_no else _first_page_no(first_section)
+    current_time = anchor.start_time_sec if anchor and anchor.start_time_sec else 0
+    return {
+        "sectionId": str(first_section.id) if first_section else "",
+        "anchorId": str(anchor.id) if anchor else "",
+        "anchorTitle": anchor.anchor_title if anchor else (first_section.section_name if first_section else ""),
+        "pageNo": page_no,
+        "currentTime": current_time,
+        "progressPercent": 0,
+        "understandingLevel": "partial",
+        "weakPoints": [],
+    }
+
+
+def _build_ai_guide_content(section: LessonSection, parse_result: ChapterParseResult | None) -> str:
+    candidates = [section.section_summary]
+    for page in sorted(section.pages or [], key=lambda item: (item.sort_no, item.page_no, item.id)):
+        candidates.extend([page.parsed_content, page.page_summary])
+    candidates.append(parse_result.chapter_summary if parse_result else None)
+    for candidate in candidates:
+        text = (candidate or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _serialize_db_lesson(db: Session, lesson: Lesson, lesson_progress: StudentLessonProgress | None) -> JsonDict:
+    units: list[JsonDict] = []
+    first_section = None
+    chapter_progress_values: list[int] = []
+    chapter_mastery_values: list[int] = []
+    for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id)):
+        chapters: list[JsonDict] = []
+        for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id)):
+            if first_section is None:
+                first_section = section
+            chapters.append(_build_db_chapter(section, unit.unit_title, None, _first_page_no(section)))
+        chapter_progress_values.extend(int(chapter.get("progressPercent") or 0) for chapter in chapters)
+        chapter_mastery_values.extend(int(chapter.get("masteryPercent") or 0) for chapter in chapters)
+        units.append({"unitId": f"db-unit-{unit.id}", "unitTitle": unit.unit_title, "chapters": chapters})
+
+    progress_percent = _round_int(lesson_progress.total_progress) if lesson_progress else (
+        _round_int(sum(chapter_progress_values) / len(chapter_progress_values)) if chapter_progress_values else 0
+    )
+    mastery_percent = _round_int(lesson_progress.overall_mastery_percent) if lesson_progress else (
+        _round_int(sum(chapter_mastery_values) / len(chapter_mastery_values)) if chapter_mastery_values else 0
+    )
+    return {
+        "lessonId": lesson.lesson_no,
+        "courseId": lesson.course.course_code if lesson.course else str(lesson.course_id),
+        "courseName": lesson.course.course_name if lesson.course else lesson.lesson_name,
+        "lessonName": lesson.lesson_name,
+        "teacherName": _find_teacher_name(db, lesson),
+        "category": "published",
+        "status": "completed" if progress_percent >= 100 else "inProgress",
+        "progressPercent": progress_percent,
+        "masteryPercent": mastery_percent,
+        "coverImage": "",
+        "currentPage": lesson_progress.last_page_no if lesson_progress and lesson_progress.last_page_no else _first_page_no(first_section),
+        "currentKnowledgePointName": first_section.section_name if first_section else "",
+        "currentChapter": first_section.section_name if first_section else "",
+        "questionCount": 0,
+        "lastStudyAt": _format_last_study_at(lesson_progress.last_operate_time if lesson_progress else lesson.published_at),
+        "units": units,
+        "audioUrl": _normalize_asset_url(first_section.section_audio_asset.audio_url) if first_section and first_section.section_audio_asset else "",
+        "duration": sum((section.section_audio_asset.duration_sec or 0) for unit in lesson.units or [] for section in unit.sections or [] if section.section_audio_asset),
+    }
+
+
+def _first_page_no(section: LessonSection | None) -> int:
+    if not section:
+        return 1
+    first_page = next(iter(sorted(section.pages or [], key=lambda item: (item.sort_no, item.page_no, item.id))), None)
+    return first_page.page_no if first_page else 1
+
+
+def _format_last_study_at(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M")
 
 
 def get_section_detail(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None) -> JsonDict | None:
@@ -290,29 +427,69 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
         section = _find_section(db, lesson.id, section_identifier)
         if not section:
             return None
+
     student_db_id = _resolve_user_id(db, student_id)
     progress = None
     if student_db_id:
-        progress = db.query(StudentSectionProgress).filter(StudentSectionProgress.student_id == student_db_id, StudentSectionProgress.lesson_id == lesson.id, StudentSectionProgress.section_id == section.id).first()
+        progress = db.query(StudentSectionProgress).filter(
+            StudentSectionProgress.student_id == student_db_id,
+            StudentSectionProgress.lesson_id == lesson.id,
+            StudentSectionProgress.section_id == section.id,
+        ).first()
+
     practice_attempt = _find_latest_practice_attempt(db, student_db_id, lesson.id, section.id)
     parse_result = db.query(ChapterParseResult).filter(ChapterParseResult.id == section.parse_result_id).first() if section.parse_result_id else None
+
     page_progress_rows = {}
     if student_db_id:
-        rows = db.query(StudentPageProgress).filter(StudentPageProgress.student_id == student_db_id, StudentPageProgress.section_id == section.id).all()
+        rows = db.query(StudentPageProgress).filter(
+            StudentPageProgress.student_id == student_db_id,
+            StudentPageProgress.section_id == section.id,
+        ).all()
         page_progress_rows = {row.lesson_page_id: row for row in rows}
+
     anchors_by_page = {}
     for anchor in sorted(section.anchors or [], key=lambda item: ((item.page_no or 0), item.sort_no, item.id)):
         if anchor.page_no and anchor.page_no not in anchors_by_page:
             anchors_by_page[anchor.page_no] = anchor
+
     pages = []
     for page in sorted(section.pages or [], key=lambda item: (item.sort_no, item.page_no, item.id)):
-        row = page_progress_rows.get(page.id)
         anchor = anchors_by_page.get(page.page_no)
-        pages.append({"lessonPageId": page.id, "pageNo": page.page_no, "pageTitle": page.page_title or f"第 {page.page_no} 页", "pageSummary": page.page_summary or "", "imageUrl": _normalize_asset_url(page.ppt_page_url), "parsedContent": page.parsed_content or page.page_summary or "", "anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else "", "isRead": bool(row and row.is_completed)})
+        page_progress = page_progress_rows.get(page.id)
+        pages.append(
+            {
+                "lessonPageId": page.id,
+                "pageNo": page.page_no,
+                "pageTitle": page.page_title or f"Page {page.page_no}",
+                "pageSummary": page.page_summary or "",
+                "imageUrl": _normalize_image_asset_url(page.ppt_page_url),
+                "parsedContent": page.parsed_content or page.page_summary or "",
+                "anchorId": str(anchor.id) if anchor else "",
+                "anchorTitle": anchor.anchor_title if anchor else "",
+                "isRead": bool(page_progress and page_progress.is_completed),
+            }
+        )
+
     current_page_no = progress.last_page_no if progress and progress.last_page_no else (pages[0]["pageNo"] if pages else 1)
     teacher_name = _find_teacher_name(db, lesson)
-    return {"lessonId": lesson.lesson_no, "lessonDbId": lesson.id, "courseName": lesson.course.course_name if lesson.course else lesson.lesson_name, "teacherName": teacher_name, "unitTitle": section.unit.unit_title if section.unit else "", "sectionId": str(section.id), "sectionTitle": section.section_name, "progressPercent": _round_int(progress.progress_percent if progress else 0), "masteryPercent": _round_int(progress.mastery_percent if progress else 0), "practicePercent": _round_int(practice_attempt.accuracy_percent if practice_attempt and practice_attempt.accuracy_percent is not None else 0), "currentPageNo": current_page_no, "aiGuideContent": ((parse_result.normalized_content if parse_result else None) or (parse_result.chapter_summary if parse_result else None) or section.section_summary or ""), "knowledgePoints": [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))], "pages": pages}
-
+    return {
+        "lessonId": lesson.lesson_no,
+        "lessonDbId": lesson.id,
+        "courseName": lesson.course.course_name if lesson.course else lesson.lesson_name,
+        "teacherName": teacher_name,
+        "unitTitle": section.unit.unit_title if section.unit else "",
+        "sectionId": str(section.id),
+        "sectionTitle": section.section_name,
+        "audioUrl": _normalize_asset_url(section.section_audio_asset.audio_url) if section.section_audio_asset else "",
+        "progressPercent": _round_int(progress.progress_percent if progress else 0),
+        "masteryPercent": _round_int(progress.mastery_percent if progress else 0),
+        "practicePercent": _round_int(practice_attempt.accuracy_percent if practice_attempt and practice_attempt.accuracy_percent is not None else 0),
+        "currentPageNo": current_page_no,
+        "aiGuideContent": _build_ai_guide_content(section, parse_result),
+        "knowledgePoints": [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))],
+        "pages": pages,
+    }
 
 def get_section_context_for_qa(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)

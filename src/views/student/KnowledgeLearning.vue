@@ -62,7 +62,11 @@
                 @click="setActivePage(page.pageNo)"
               >
                 <div class="thumbnail-media">
-                  <img :src="page.imageUrl" :alt="`第 ${page.pageNo} 页缩略图`" loading="lazy" />
+                  <img v-if="page.imageUrl" :src="page.imageUrl" :alt="`第 ${page.pageNo} 页缩略图`" loading="lazy" />
+                  <div v-else class="thumbnail-fallback">
+                    <strong>{{ page.pageNo }}</strong>
+                    <span>{{ page.pageTitle || `第 ${page.pageNo} 页` }}</span>
+                  </div>
                   <span class="thumbnail-page-badge">{{ page.pageNo }}</span>
                 </div>
               </button>
@@ -71,11 +75,16 @@
             <div ref="viewerShellRef" class="viewer-shell">
               <div class="viewer-stage">
                 <img
-                  v-if="activePage"
+                  v-if="activePage?.imageUrl"
                   class="viewer-slide"
                   :src="activePage.imageUrl"
                   :alt="`第 ${activePage.pageNo} 页幻灯片`"
                 />
+                <div v-else-if="activePage" class="viewer-text-fallback">
+                  <div class="viewer-text-title">{{ activePage.pageTitle || `第 ${activePage.pageNo} 页` }}</div>
+                  <div v-if="activePage.pageSummary" class="viewer-text-summary">{{ activePage.pageSummary }}</div>
+                  <div class="viewer-text-content">{{ activePage.parsedContent || '当前页暂无可展示的预览图，已切换为文本内容。' }}</div>
+                </div>
                 <div v-else class="viewer-empty">暂无课件页</div>
 
                 <div v-if="activePage" class="viewer-toolbar">
@@ -913,6 +922,27 @@ onBeforeRouteLeave(() => {
   display: block;
 }
 
+.thumbnail-fallback {
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  color: #4f6591;
+  background: linear-gradient(180deg, #f9fbff 0%, #edf3ff 100%);
+}
+
+.thumbnail-fallback strong {
+  font-size: 18px;
+}
+
+.thumbnail-fallback span {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .thumbnail-page-badge {
   position: absolute;
   left: 6px;
@@ -965,6 +995,39 @@ onBeforeRouteLeave(() => {
 .viewer-empty {
   color: #7f92ba;
   font-size: 14px;
+}
+
+.viewer-text-fallback {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 28px 30px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f8ff 100%);
+  color: #23406f;
+  text-align: left;
+}
+
+.viewer-text-title {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.viewer-text-summary {
+  margin-top: 12px;
+  color: #5d739d;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.viewer-text-content {
+  margin-top: 18px;
+  color: #38527f;
+  font-size: 15px;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .viewer-toolbar {

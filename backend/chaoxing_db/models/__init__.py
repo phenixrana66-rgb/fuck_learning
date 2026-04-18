@@ -20,6 +20,7 @@ from .teacher_content import (
     ChapterParseResult,
     ChapterParseTask,
     ChapterPptAsset,
+    ChapterSectionAudioAsset,
     ChapterScript,
     ChapterScriptSection,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "ChapterParseResult",
     "ChapterParseTask",
     "ChapterPptAsset",
+    "ChapterSectionAudioAsset",
     "ChapterPractice",
     "ChapterPracticeItem",
     "ChapterScript",

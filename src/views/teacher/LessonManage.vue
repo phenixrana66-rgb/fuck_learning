@@ -108,11 +108,26 @@ const statusData = ref({
   publish: {}
 })
 
-onMounted(() => {
-  if (!currentCourse.value.courseId && courseList.value[0]) {
-    currentCourse.value = courseList.value[0]
-    saveCurrentCourse(currentCourse.value)
-    selectedCourseId.value = currentCourse.value.courseId
+const selectedCourseId = ref(currentCourse.courseId || '')
+
+const statusTable = computed(() => [
+  {
+    name: '课件解析',
+    id: parseResult.parseId || '-',
+    status: parseResult.status || '未开始',
+    desc: parseResult.fileName || '尚未上传课件'
+  },
+  {
+    name: '脚本生成',
+    id: scriptResult.scriptId || '-',
+    status: scriptResult.status || '未开始',
+    desc: scriptResult.teachingStyle || '尚未生成脚本'
+  },
+  {
+    name: '语音合成',
+    id: audioResult.audioId || '-',
+    status: audioResult.status || '未开始',
+    desc: audioResult.voiceType || '尚未生成音频'
   }
   fetchStatus()
 })

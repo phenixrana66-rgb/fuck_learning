@@ -24,10 +24,33 @@ export function lessonParse(data) {
   })
 }
 
+export function getParseStatusAPI(parseId) {
+  return request({
+    url: `/api/v1/lesson/parse/${parseId}`,
+    method: 'get'
+  })
+}
+
 export function generateScript(data) {
   return request({
     url: '/api/v1/lesson/generateScript',
     method: 'post',
+    data,
+    timeout: 0
+  })
+}
+
+export function getScript(scriptId) {
+  return request({
+    url: `/api/v1/scripts/${scriptId}`,
+    method: 'get'
+  })
+}
+
+export function updateScript(scriptId, data) {
+  return request({
+    url: `/api/v1/scripts/${scriptId}`,
+    method: 'put',
     data
   })
 }
@@ -35,6 +58,15 @@ export function generateScript(data) {
 export function generateAudio(data) {
   return request({
     url: '/api/v1/lesson/generateAudio',
+    method: 'post',
+    data,
+    timeout: 0
+  })
+}
+
+export function publishLesson(data) {
+  return request({
+    url: '/api/v1/lesson/publish',
     method: 'post',
     data
   })

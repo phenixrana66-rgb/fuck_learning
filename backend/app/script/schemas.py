@@ -1,4 +1,4 @@
-from typing import Literal
+﻿from typing import Literal
 
 from pydantic import Field
 
@@ -7,8 +7,8 @@ from backend.app.common.schemas import AppBaseModel
 
 class GenerateScriptRequest(AppBaseModel):
     parseId: str
-    teachingStyle: Literal["standard", "detailed", "concise"] = "standard"
-    speechSpeed: Literal["slow", "normal", "fast"] = "normal"
+    teachingStyle: Literal['standard', 'detailed', 'concise'] = 'standard'
+    speechSpeed: Literal['slow', 'normal', 'fast'] = 'normal'
     customOpening: str | None = None
     enc: str
     time: str | None = None
@@ -29,6 +29,14 @@ class ScriptSummary(AppBaseModel):
     scriptStructure: list[ScriptSection] = Field(default_factory=list)
     editUrl: str
     audioGenerateUrl: str
+    generationStatus: str = 'pending'
+    completedSections: int = 0
+    totalSections: int = 0
+    currentSectionId: str | None = None
+    currentSectionName: str | None = None
+    startedAt: str | None = None
+    finishedAt: str | None = None
+    errorMsg: str | None = None
 
 
 class ScriptDetail(AppBaseModel):
@@ -38,6 +46,14 @@ class ScriptDetail(AppBaseModel):
     speechSpeed: str
     scriptStructure: list[ScriptSection] = Field(default_factory=list)
     version: int = 1
+    generationStatus: str = 'pending'
+    completedSections: int = 0
+    totalSections: int = 0
+    currentSectionId: str | None = None
+    currentSectionName: str | None = None
+    startedAt: str | None = None
+    finishedAt: str | None = None
+    errorMsg: str | None = None
 
 
 class UpdateScriptRequest(AppBaseModel):

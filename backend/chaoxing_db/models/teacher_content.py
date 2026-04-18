@@ -147,6 +147,7 @@ class ChapterScriptSection(Base):
     sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
 
     script: Mapped["ChapterScript"] = relationship(back_populates="sections")
+    audio_assets: Mapped[list["ChapterSectionAudioAsset"]] = relationship(back_populates="script_section")
 
 
 class ChapterAudioAsset(Base):
@@ -169,3 +170,30 @@ class ChapterAudioAsset(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     script: Mapped["ChapterScript"] = relationship(back_populates="audio_assets")
+    section_audio_assets: Mapped[list["ChapterSectionAudioAsset"]] = relationship(back_populates="audio_asset")
+
+
+class ChapterSectionAudioAsset(Base):
+    __tablename__ = "chapter_section_audio_assets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    audio_asset_id: Mapped[int] = mapped_column(ForeignKey("chapter_audio_assets.id"), nullable=False)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), nullable=False)
+    chapter_id: Mapped[int] = mapped_column(ForeignKey("course_chapters.id"), nullable=False)
+    script_id: Mapped[int] = mapped_column(ForeignKey("chapter_scripts.id"), nullable=False)
+    script_section_id: Mapped[int] = mapped_column(ForeignKey("chapter_script_sections.id"), nullable=False)
+    voice_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    audio_format: Mapped[str] = mapped_column(String(16), default="mp3", nullable=False)
+    audio_url: Mapped[str] = mapped_column(String(255), nullable=False)
+    duration_sec: Mapped[int | None] = mapped_column(nullable=True)
+    file_size: Mapped[int | None] = mapped_column(nullable=True)
+    bit_rate: Mapped[int | None] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column(
+        Enum("generated", "published", name="section_audio_asset_status"), default="generated", nullable=False
+    )
+    sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    audio_asset: Mapped["ChapterAudioAsset"] = relationship(back_populates="section_audio_assets")
+    script_section: Mapped["ChapterScriptSection"] = relationship(back_populates="audio_assets")
