@@ -11,10 +11,10 @@ signature_enabled = False
 
 # ====================== 数据库配置（二选一） ======================
 db_url = None
-db_host = "127.0.0.1"
+db_host = "10.195.20.215"
 db_port = 3306
-db_user = "your_db_user"
-db_password = "your_db_password"
+db_user = "Zenith"
+db_password = "123456"
 db_name = "chaoxing_ai_course"
 db_echo = False
 
