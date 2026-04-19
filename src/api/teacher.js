@@ -80,14 +80,6 @@ export function saveScript(data) {
   })
 }
 
-export function publishLesson(data) {
-  return request({
-    url: '/api/v1/lesson/publish',
-    method: 'post',
-    data
-  })
-}
-
 export function getLessonStatus(data) {
   return request({
     url: '/api/v1/lesson/status',

@@ -3,11 +3,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import fitz
+
 from backend.app.cir.schemas import CIR
 from backend.app.common.db import configure_database_url, reset_database_url, session_scope
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.schemas import ParseRequest
-from backend.app.courseware.service import clear_parse_tasks, create_parse_task, get_parse_task, run_parse_task
+from backend.app.courseware.service import clear_parse_tasks, create_parse_task, execute_parse_pipeline, get_parse_task, run_parse_task
 from backend.app.parser.schemas import FileInfo, ParseTaskStatus, StructurePreview
 from backend.chaoxing_db.models import ChapterParseResult, ChapterParseTask
 
@@ -116,3 +118,45 @@ class CoursewareServiceTestCase(unittest.TestCase):
             get_parse_task("parse-missing")
 
         self.assertEqual(context.exception.status_code, 404)
+
+    @patch("backend.app.courseware.service.build_cir")
+    def test_execute_parse_pipeline_supports_pdf(self, mock_build_cir) -> None:
+        assert self.temp_dir is not None
+        pdf_path = self._create_text_pdf(
+            "courseware.pdf",
+            [
+                "第一章 绪论\n这是第一页内容。",
+                "第二章 重点\n这是第二页内容。",
+            ],
+        )
+        preview_dir = Path(self.temp_dir.name) / "pdf-previews"
+        cir = CIR(coursewareId="cw-course-001", title="pdf-demo", chapters=[])
+        mock_build_cir.return_value = cir
+
+        file_info, preview, extracted, built_cir = execute_parse_pipeline(
+            course_id="course-001",
+            file_url=pdf_path.as_uri(),
+            file_type="pdf",
+            preview_output_dir=preview_dir,
+            preview_public_base="/courseware-previews/parse-demo",
+        )
+
+        self.assertEqual(file_info.fileName, "courseware.pdf")
+        self.assertEqual(file_info.pageCount, 2)
+        self.assertEqual(extracted.sourceType, "pdf")
+        self.assertEqual(len(extracted.slides), 2)
+        self.assertEqual(extracted.slides[0].previewUrl, "/courseware-previews/parse-demo/page-1.png")
+        self.assertTrue((preview_dir / "page-1.png").exists())
+        self.assertEqual(built_cir.coursewareId, "cw-course-001")
+        self.assertIsNotNone(preview)
+
+    def _create_text_pdf(self, file_name: str, page_texts: list[str]) -> Path:
+        assert self.temp_dir is not None
+        target = Path(self.temp_dir.name) / file_name
+        document = fitz.open()
+        for text in page_texts:
+            page = document.new_page()
+            page.insert_text((72, 72), text, fontsize=14)
+        document.save(target)
+        document.close()
+        return target

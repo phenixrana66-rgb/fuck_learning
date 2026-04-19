@@ -30,7 +30,7 @@ async def request_payload(request: Request) -> dict:
     return payload or {}
 
 
-@router.post("/api/v1/lesson/saveScript")
+@router.post("/lesson/saveScript")
 async def save_script_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     script_id = str(payload.get("scriptId") or "").strip()
@@ -47,7 +47,7 @@ async def save_script_endpoint(request: Request, db: Session = Depends(get_db)) 
         raise ApiError(404, str(exc), status_code=404)
 
 
-@router.post("/api/v1/lesson/status")
+@router.post("/lesson/status")
 async def lesson_status_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     course_id = str(payload.get("courseId") or "").strip()
@@ -61,7 +61,7 @@ async def lesson_status_endpoint(request: Request, db: Session = Depends(get_db)
         raise ApiError(404, str(exc), status_code=404)
 
 
-@router.post("/api/v1/lesson/publish")
+@router.post("/lesson/publish")
 async def publish_lesson_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     course_id = str(payload.get("courseId") or "").strip()

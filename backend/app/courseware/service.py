@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -87,12 +88,16 @@ def execute_parse_pipeline(
     file_type: str,
     is_extract_key_point: bool = True,
     courseware_id: str | None = None,
+    preview_output_dir: Path | None = None,
+    preview_public_base: str | None = None,
 ) -> tuple[FileInfo, StructurePreview, ExtractedPresentation, CIR]:
     parsed: tuple[FileInfo, StructurePreview] | tuple[FileInfo, StructurePreview, ExtractedPresentation] = parse_courseware(
         course_id=course_id,
         file_url=file_url,
         file_type=file_type,
         is_extract_key_point=is_extract_key_point,
+        preview_output_dir=preview_output_dir,
+        preview_public_base=preview_public_base,
     )
     if len(parsed) == 2:
         file_info, preview = parsed
@@ -252,7 +257,7 @@ def _sync_parse_result(
             {
                 "pageNo": slide.slideNumber,
                 "title": slide.title or f"第 {slide.slideNumber} 页",
-                "previewUrl": "",
+                "previewUrl": slide.previewUrl or "",
                 "bodyTexts": slide.bodyTexts,
                 "tableTexts": slide.tableTexts,
                 "notes": slide.notes,

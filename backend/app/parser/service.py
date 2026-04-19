@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from backend.app.common.exceptions import ApiError
 from backend.app.parser.llm_client import generate_outline_with_llm
+from backend.app.parser.pdf_reader import extract_pdf_presentation
 from backend.app.parser.pptx_reader import extract_pptx_presentation
 from backend.app.parser.schemas import ExtractedPresentation, FileInfo, OutlineResult, PreviewChapter, PreviewSubChapter, StructurePreview
 
@@ -9,11 +12,21 @@ def parse_courseware(
     file_url: str,
     file_type: str,
     is_extract_key_point: bool,
+    *,
+    preview_output_dir: Path | None = None,
+    preview_public_base: str | None = None,
 ) -> tuple[FileInfo, StructurePreview, ExtractedPresentation]:
     if file_type == "pdf":
-        raise ApiError(code=400, msg="当前 demo 仅支持 .pptx 文件解析，暂不支持 PDF", status_code=400)
+        file_info, extracted = extract_pdf_presentation(
+            file_url,
+            preview_output_dir=preview_output_dir,
+            preview_public_base=preview_public_base,
+        )
+    elif file_type == "ppt":
+        file_info, extracted = extract_pptx_presentation(file_url)
+    else:
+        raise ApiError(code=400, msg=f"不支持的课件类型：{file_type}", status_code=400)
 
-    file_info, extracted = extract_pptx_presentation(file_url)
     outline = generate_outline_with_llm(course_id, extracted, is_extract_key_point)
     preview = _outline_to_structure_preview(course_id, outline, file_info.pageCount)
     return file_info, preview, extracted
@@ -22,6 +35,9 @@ def parse_courseware(
 def build_file_info(file_url: str, file_type: str) -> FileInfo:
     if file_type == "ppt":
         file_info, _ = extract_pptx_presentation(file_url)
+        return file_info
+    if file_type == "pdf":
+        file_info, _ = extract_pdf_presentation(file_url)
         return file_info
 
     file_name = file_url.split("/")[-1] or f"courseware.{file_type}"

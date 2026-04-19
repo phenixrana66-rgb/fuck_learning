@@ -1,7 +1,7 @@
 <template>
   <TeacherLayout>
     <div class="page-card">
-      <div class="page-title">Audio Generate</div>
+      <div class="page-title">语音生成</div>
 
       <el-form :model="form" label-width="110px" class="teacher-form">
         <el-form-item label="当前课程">
@@ -28,7 +28,7 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="handleGenerateAudio">
-            Generate Audio
+            生成音频
           </el-button>
         </el-form-item>
       </el-form>
@@ -53,7 +53,7 @@
     </div>
 
     <div class="page-card" v-if="form.audioUrl">
-      <div class="sub-title">Audio Preview</div>
+      <div class="sub-title">音频预览</div>
 
       <el-descriptions :column="1" border>
         <el-descriptions-item label="audioId">{{ form.audioId || '-' }}</el-descriptions-item>
@@ -67,7 +67,7 @@
 
       <div class="toolbar" style="margin-top: 16px;">
         <el-button type="success" :loading="publishing" @click="publishLesson">
-          Publish Lesson
+          发布课程
         </el-button>
       </div>
     </div>
@@ -83,12 +83,12 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
-import { generateAudio, getParseStatusAPI, publishLesson as publishLessonAPI } from '@/api/teacher'
+import { generateAudio, getLessonStatus, getParseStatusAPI, publishLesson as publishLessonAPI } from '@/api/teacher'
 import { getAudioResult, getCurrentCourse, getParseResult, getScriptResult, getTeacherProfile, saveAudioResult, saveParseResult } from '@/utils/platform'
 
 const currentCourse = getCurrentCourse()
@@ -99,10 +99,10 @@ const audioResult = getAudioResult()
 const cachedAudioResult = audioResult.scriptId === scriptResult.scriptId ? audioResult : {}
 
 const voiceList = [
-  { label: 'Female Standard', value: 'female_standard', desc: 'Clear and neutral for everyday teaching.' },
-  { label: 'Male Standard', value: 'male_standard', desc: 'Stable voice for technical topics.' },
-  { label: 'Female Warm', value: 'female_warm', desc: 'Softer voice for guided lessons.' },
-  { label: 'Male Deep', value: 'male_deep', desc: 'Lower tone for presentation style delivery.' }
+  { label: '女声标准', value: 'female_standard', desc: '清晰中性，适合日常教学。' },
+  { label: '男声标准', value: 'male_standard', desc: '声音稳定，适合技术类话题。' },
+  { label: '女声温暖', value: 'female_warm', desc: '柔和的声音，适合引导式课程。' },
+  { label: '男声深沉', value: 'male_deep', desc: '低沉的音调，适合演示风格。' }
 ]
 
 const form = ref({

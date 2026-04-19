@@ -1,4 +1,4 @@
-﻿from functools import lru_cache
+from functools import lru_cache
 from os import getenv
 from pathlib import Path
 from runpy import run_path
@@ -21,7 +21,7 @@ class Settings(BaseModel):
     app_name: str = "AI Lesson Backend Service"
     app_version: str = "0.1.0"
     api_prefix: str = "/api/v1"
-    debug: bool = False
+    debug: bool = True
     signature_enabled: bool = False
     db_url: str | None = None
     db_host: str = "127.0.0.1"
@@ -112,6 +112,7 @@ def get_setting(name: str, default=None):
 def _load_local_config_values() -> dict[str, object]:
     if not _LOCAL_CONFIG_PATH.exists():
         return {}
+
     local_namespace = run_path(str(_LOCAL_CONFIG_PATH))
     declared_keys = set(Settings.model_fields)
     loaded_values: dict[str, object] = {}

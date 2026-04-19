@@ -28,6 +28,7 @@ from backend.chaoxing_db.models import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_ROOT = PROJECT_ROOT / "examples"
+PREVIEW_ROOT = PROJECT_ROOT / "public" / "courseware-previews"
 MOCK_REMOTE_PREFIX = "/mock-remote/examples"
 JsonDict = dict[str, Any]
 
@@ -94,12 +95,15 @@ def run_teacher_parse_task(parse_id: str) -> None:
         if not task:
             return
         try:
+            preview_output_dir = PREVIEW_ROOT / parse_id
             file_info, preview, extracted, cir = execute_parse_pipeline(
                 course_id=str(task.chapter.course.course_code),
                 file_url=task.ppt_asset.file_url,
                 file_type=task.ppt_asset.file_type,
                 is_extract_key_point=task.is_extract_key_point,
                 courseware_id=_build_courseware_id(task.chapter.course.course_code),
+                preview_output_dir=preview_output_dir,
+                preview_public_base=f"/courseware-previews/{parse_id}",
             )
             _ensure_parse_result(db, task, file_info, preview, extracted, cir)
         except Exception as exc:  # noqa: BLE001
@@ -222,7 +226,7 @@ def _sync_parse_result(db: Session, task: ChapterParseTask, file_info, preview, 
             {
                 "pageNo": slide.slideNumber,
                 "title": slide.title or f"第 {slide.slideNumber} 页",
-                "previewUrl": "",
+                "previewUrl": slide.previewUrl or "",
                 "bodyTexts": slide.bodyTexts,
                 "tableTexts": slide.tableTexts,
                 "notes": slide.notes,
@@ -277,7 +281,7 @@ def _sync_lesson_section_pages(db: Session, task: ChapterParseTask, parse_result
         row.source_page_no = slide.slideNumber
         row.page_title = slide.title or f"第 {slide.slideNumber} 页"
         row.page_summary = f"查看《{section.section_name}》课件第 {slide.slideNumber} 页内容。"
-        row.ppt_page_url = ""
+        row.ppt_page_url = slide.previewUrl or ""
         row.parsed_content = "\n".join([*slide.bodyTexts, *slide.tableTexts, *([slide.notes] if slide.notes else [])])
         row.sort_no = slide.slideNumber
 
