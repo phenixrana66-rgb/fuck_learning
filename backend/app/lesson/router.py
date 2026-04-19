@@ -11,7 +11,7 @@ router = APIRouter(tags=["lesson"])
 @router.post("/lesson/generateAudio")
 def generate_audio_endpoint(payload: GenerateAudioRequest, request: Request) -> dict:
     verify_signature_placeholder(payload.enc, payload.time)
-    data = generate_audio(payload)
+    data = generate_audio(payload, base_url=str(request.base_url))
     return success_response(request, data, msg="语音合成任务已创建")
 
 

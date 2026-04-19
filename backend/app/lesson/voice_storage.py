@@ -38,5 +38,7 @@ def save_audio_file(audio_bytes: bytes, audio_format: str, filename_prefix: str 
 
 
 def build_voice_public_url(filename: str, base_url: str | None = None) -> str:
-    normalized_base_url = (base_url or "http://localhost/").rstrip("/") + "/"
+    if not base_url:
+        return f"/{VOICE_CACHE_ROUTE}/{quote(filename)}"
+    normalized_base_url = base_url.rstrip("/") + "/"
     return urljoin(normalized_base_url, f"{VOICE_CACHE_ROUTE}/{quote(filename)}")

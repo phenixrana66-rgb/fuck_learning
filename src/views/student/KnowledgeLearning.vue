@@ -42,11 +42,34 @@
             <button
               type="button"
               class="ppt-audio-button"
-              :disabled="!detail.audioUrl || detail.audioStatus !== 'published'"
+              :disabled="!canPlaySectionAudio"
               @click="toggleSectionAudio"
             >
-              {{ isAudioPlaying ? '暂停播放' : '语音播放' }}
+              {{ audioActionLabel }}
             </button>
+          </div>
+
+          <div class="ppt-audio-panel" :class="{ disabled: !canPlaySectionAudio }">
+            <div class="ppt-audio-meta">
+              <span class="ppt-audio-status">{{ audioStatusLabel }}</span>
+              <span v-if="audioError" class="ppt-audio-error">{{ audioError }}</span>
+            </div>
+            <div class="ppt-audio-progress-row">
+              <span class="ppt-audio-time">{{ audioCurrentLabel }}</span>
+              <input
+                class="ppt-audio-slider"
+                type="range"
+                min="0"
+                :max="audioSliderMax"
+                :value="Math.min(audioCurrentTime, audioSliderMax)"
+                :disabled="!canPlaySectionAudio"
+                step="0.1"
+                aria-label="章节音频播放进度"
+                @input="handleAudioSeekInput"
+                @change="handleAudioSeekChange"
+              />
+              <span class="ppt-audio-time">{{ audioDurationLabel }}</span>
+            </div>
           </div>
 
           <div class="ppt-card-body">
@@ -130,9 +153,14 @@
             class="section-audio"
             :src="detail.audioUrl || ''"
             preload="none"
-            @play="isAudioPlaying = true"
-            @pause="isAudioPlaying = false"
-            @ended="isAudioPlaying = false"
+            @loadedmetadata="handleAudioLoadedMetadata"
+            @timeupdate="handleAudioTimeUpdate"
+            @canplay="handleAudioCanPlay"
+            @waiting="handleAudioWaiting"
+            @play="handleAudioPlay"
+            @pause="handleAudioPause"
+            @ended="handleAudioEnded"
+            @error="handleAudioError"
           ></audio>
         </section>
 
@@ -298,6 +326,11 @@ const activeAnswerController = ref(null)
 const voiceDraftPrefix = ref('')
 const assistantStreamingStarted = ref(false)
 const isAudioPlaying = ref(false)
+const audioCurrentTime = ref(0)
+const audioDuration = ref(0)
+const audioPending = ref(false)
+const audioError = ref('')
+const audioSeeking = ref(false)
 const thumbnailRailRef = ref(null)
 const viewerShellRef = ref(null)
 const chatScrollRef = ref(null)
@@ -307,12 +340,26 @@ const thumbnailRefs = ref({})
 const lessonId = computed(() => String(route.params.lessonId || ''))
 const chapterId = computed(() => String(route.query.chapterId || ''))
 const restorePageNo = computed(() => Number(route.query.pageNo || 0))
-const sectionId = computed(() => String(route.params.sectionId || detail.value.sectionId || chapterId.value || ''))
+const sectionId = computed(() => String(route.params.sectionId || detail.value.sectionId || ''))
 const pages = computed(() => detail.value.pages || [])
 const totalPages = computed(() => pages.value.length)
 const activePage = computed(() => pages.value.find((page) => Number(page.pageNo) === Number(activePageNo.value)) || pages.value[0] || null)
 const hasPrevPage = computed(() => activePageNo.value > 1)
 const hasNextPage = computed(() => activePageNo.value < totalPages.value)
+const canPlaySectionAudio = computed(() => Boolean(detail.value.audioUrl) && detail.value.audioStatus === 'published')
+const audioSliderMax = computed(() => Math.max(Number(audioDuration.value || 0), 1))
+const audioCurrentLabel = computed(() => formatAudioTime(audioCurrentTime.value))
+const audioDurationLabel = computed(() => formatAudioTime(audioDuration.value))
+const audioActionLabel = computed(() => (isAudioPlaying.value ? '暂停播放' : '语音播放'))
+const audioStatusLabel = computed(() => {
+  if (!detail.value.audioUrl) return '当前章节暂无讲解音频'
+  if (detail.value.audioStatus && detail.value.audioStatus !== 'published') return '讲解音频待发布'
+  if (audioError.value) return '音频播放异常'
+  if (audioPending.value) return '音频加载中...'
+  if (isAudioPlaying.value) return '正在播放讲解音频'
+  if (audioCurrentTime.value > 0) return '已暂停，可继续播放'
+  return '讲解音频已就绪'
+})
 const quickQuestions = computed(() => {
   const title = detail.value.sectionTitle || '当前章节'
   return [
@@ -343,6 +390,99 @@ function formatRecordingDuration(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
+function formatAudioTime(totalSeconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds || 0)))
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const seconds = safeSeconds % 60
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function resetSectionAudioState() {
+  audioCurrentTime.value = 0
+  audioDuration.value = 0
+  audioPending.value = false
+  audioError.value = ''
+  audioSeeking.value = false
+  isAudioPlaying.value = false
+}
+
+function stopSectionAudio() {
+  const audio = sectionAudioRef.value
+  if (audio) {
+    audio.pause()
+    audio.currentTime = 0
+  }
+  resetSectionAudioState()
+}
+
+function handleAudioLoadedMetadata() {
+  const audio = sectionAudioRef.value
+  if (!audio) return
+  audioDuration.value = Number.isFinite(audio.duration) ? audio.duration : 0
+  audioCurrentTime.value = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
+}
+
+function handleAudioTimeUpdate() {
+  const audio = sectionAudioRef.value
+  if (!audio || audioSeeking.value) return
+  audioCurrentTime.value = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
+  if (Number.isFinite(audio.duration)) {
+    audioDuration.value = audio.duration
+  }
+}
+
+function handleAudioCanPlay() {
+  audioPending.value = false
+  audioError.value = ''
+}
+
+function handleAudioWaiting() {
+  audioPending.value = true
+}
+
+function handleAudioPlay() {
+  isAudioPlaying.value = true
+  audioPending.value = false
+  audioError.value = ''
+}
+
+function handleAudioPause() {
+  isAudioPlaying.value = false
+  audioPending.value = false
+}
+
+function handleAudioEnded() {
+  isAudioPlaying.value = false
+  audioPending.value = false
+  audioCurrentTime.value = audioDuration.value
+}
+
+function handleAudioError() {
+  isAudioPlaying.value = false
+  audioPending.value = false
+  audioError.value = '音频资源加载失败'
+  ElMessage.warning('语音播放失败，请检查音频资源是否已生成。')
+}
+
+function handleAudioSeekInput(event) {
+  audioSeeking.value = true
+  audioCurrentTime.value = Number(event?.target?.value || 0)
+}
+
+function handleAudioSeekChange(event) {
+  const audio = sectionAudioRef.value
+  const nextTime = Number(event?.target?.value || 0)
+  if (audio) {
+    audio.currentTime = nextTime
+  }
+  audioCurrentTime.value = nextTime
+  audioSeeking.value = false
+}
+
 function normalizeFallbackDetail() {
   const lesson = findFrontendTestLesson(lessonId.value)
   const allUnits = lesson?.units || []
@@ -370,7 +510,7 @@ function normalizeFallbackDetail() {
     courseName: lesson?.courseName || '',
     teacherName: lesson?.teacherName || '',
     unitTitle: locatedUnit?.unitTitle || '知识学习',
-    sectionId: sectionId.value || chapter?.chapterId || '',
+    sectionId: sectionId.value || '',
     sectionTitle: chapter?.chapterTitle || '章节学习',
     progressPercent: Number(chapter?.progressPercent || 0),
     masteryPercent: Number(chapter?.masteryPercent || 0),
@@ -412,11 +552,7 @@ function keepThumbnailVisible() {
 }
 
 async function loadSectionDetail() {
-  sectionAudioRef.value?.pause()
-  if (sectionAudioRef.value) {
-    sectionAudioRef.value.currentTime = 0
-  }
-  isAudioPlaying.value = false
+  stopSectionAudio()
   const fallback = normalizeFallbackDetail()
   detail.value = fallback
   activePageNo.value = restorePageNo.value || fallback.currentPageNo || 1
@@ -432,6 +568,11 @@ async function loadSectionDetail() {
     detail.value = {
       ...fallback,
       ...(res.data || {})
+    }
+    if (detail.value.audioUrl) {
+      detail.value.audioStatus = detail.value.audioStatus || 'published'
+    } else {
+      detail.value.audioStatus = 'empty'
     }
     const firstPageNo = Number(detail.value.pages?.[0]?.pageNo || 1)
     const targetPageNo = Number(restorePageNo.value || detail.value.currentPageNo || firstPageNo)
@@ -495,7 +636,7 @@ function fillQuestion(question) {
 }
 
 async function toggleSectionAudio() {
-  if (!detail.value.audioUrl || detail.value.audioStatus !== 'published') {
+  if (!canPlaySectionAudio.value) {
     ElMessage.info('当前章节暂无语音。')
     return
   }
@@ -505,6 +646,7 @@ async function toggleSectionAudio() {
 
   try {
     if (audio.paused) {
+      audioPending.value = true
       await audio.play()
     } else {
       audio.pause()
@@ -596,7 +738,7 @@ function stopStreamingAnswer() {
 }
 
 function goBack() {
-  sectionAudioRef.value?.pause()
+  stopSectionAudio()
   persistRecentVisit()
   router.push({
     name: 'StudentPlayer',
@@ -606,7 +748,7 @@ function goBack() {
 }
 
 function goStudentHome() {
-  sectionAudioRef.value?.pause()
+  stopSectionAudio()
   persistRecentVisit()
   router.push({
     name: 'StudentHome',
@@ -633,7 +775,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
-  sectionAudioRef.value?.pause()
+  stopSectionAudio()
   window.removeEventListener('pagehide', persistRecentVisit)
   persistRecentVisit()
 })
@@ -641,7 +783,7 @@ onBeforeUnmount(() => {
 onBeforeRouteLeave(() => {
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
-  sectionAudioRef.value?.pause()
+  stopSectionAudio()
   persistRecentVisit()
 })
 </script>
@@ -851,6 +993,102 @@ onBeforeRouteLeave(() => {
 .ppt-audio-button:disabled {
   opacity: 0.58;
   cursor: not-allowed;
+}
+
+.ppt-audio-panel {
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border: 1px solid #d9e5fb;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f1f6ff 100%);
+}
+
+.ppt-audio-panel.disabled {
+  opacity: 0.8;
+}
+
+.ppt-audio-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.ppt-audio-status,
+.ppt-audio-error,
+.ppt-audio-time {
+  font-size: 13px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ppt-audio-status {
+  color: #49679d;
+  font-weight: 600;
+}
+
+.ppt-audio-error {
+  color: #c45656;
+}
+
+.ppt-audio-progress-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.ppt-audio-time {
+  color: #7086b0;
+}
+
+.ppt-audio-slider {
+  width: 100%;
+  height: 4px;
+  margin: 0;
+  border-radius: 999px;
+  appearance: none;
+  background: linear-gradient(90deg, #7ba1ff 0%, #9cb9ff 100%);
+  outline: none;
+  cursor: pointer;
+}
+
+.ppt-audio-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7ba1ff 0%, #9cb9ff 100%);
+}
+
+.ppt-audio-slider::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  appearance: none;
+  background: #3d6ce4;
+  box-shadow: 0 6px 14px rgba(61, 108, 228, 0.24);
+}
+
+.ppt-audio-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7ba1ff 0%, #9cb9ff 100%);
+}
+
+.ppt-audio-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #3d6ce4;
+  box-shadow: 0 6px 14px rgba(61, 108, 228, 0.24);
+}
+
+.ppt-audio-slider:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .ppt-card-body {
@@ -1426,6 +1664,27 @@ onBeforeRouteLeave(() => {
 
   .knowledge-summary-stat span {
     font-size: 12px;
+  }
+
+  .ppt-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ppt-audio-button {
+    width: 100%;
+  }
+
+  .ppt-audio-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .ppt-audio-progress-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .ppt-card-body {

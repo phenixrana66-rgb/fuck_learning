@@ -32,6 +32,18 @@ def _normalize_asset_url(url: str | None) -> str:
     return f"/{url.lstrip('/')}"
 
 
+def _normalize_audio_asset_url(url: str | None) -> str:
+    normalized = _normalize_asset_url(url)
+    if not normalized:
+        return ""
+    parsed = urlsplit(normalized)
+    if parsed.scheme in {"http", "https"} and parsed.hostname in {"localhost", "testserver"} and parsed.path:
+        if parsed.query:
+            return f"{parsed.path}?{parsed.query}"
+        return parsed.path
+    return normalized
+
+
 def _clean_text(value: str | None) -> str:
     return (value or "").strip()
 
@@ -133,12 +145,32 @@ def _find_lesson(db: Session, lesson_identifier: str | int | None) -> Lesson | N
     lesson_text = str(lesson_identifier).strip()
     if lesson_text.isdigit():
         filters.append(Lesson.id == int(lesson_text))
-    return db.query(Lesson).options(joinedload(Lesson.course), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.pages), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.anchors), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.knowledge_points), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.section_audio_asset)).filter(or_(*filters)).first()
+    return db.query(Lesson).options(joinedload(Lesson.course), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.pages), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.anchors), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.knowledge_points), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.section_audio_asset), joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.audio_asset)).filter(or_(*filters)).first()
 
 
 def _find_teacher_name(db: Session, lesson: Lesson) -> str:
     teacher = db.query(User).filter(User.id == lesson.teacher_id).first()
     return teacher.user_name if teacher else ""
+
+
+def _resolve_section_audio(section: LessonSection | None) -> tuple[str, str]:
+    if not section:
+        return "", "empty"
+    if section.section_audio_asset and section.section_audio_asset.audio_url:
+        return _normalize_audio_asset_url(section.section_audio_asset.audio_url), section.section_audio_asset.status or "published"
+    if section.audio_asset and section.audio_asset.audio_url:
+        return _normalize_audio_asset_url(section.audio_asset.audio_url), section.audio_asset.status or "published"
+    return "", "empty"
+
+
+def _resolve_section_audio_duration(section: LessonSection | None) -> int:
+    if not section:
+        return 0
+    if section.section_audio_asset and section.section_audio_asset.duration_sec:
+        return int(section.section_audio_asset.duration_sec)
+    if section.audio_asset and section.audio_asset.total_duration_sec:
+        return int(section.audio_asset.total_duration_sec)
+    return 0
 
 
 def get_student_profile_from_db(db: Session, student_identifier: str | int | None) -> JsonDict | None:
@@ -249,39 +281,33 @@ def enhance_player_with_db(db: Session, player: JsonDict, student_id: str | int 
         return player_copy
     student_db_id = _resolve_user_id(db, student_id)
     progress_map = _get_section_progress_map(db, student_db_id, lesson.id)
-    units = cast(list[JsonDict], player_copy.get("units", []))
+    units: list[JsonDict] = []
     max_page_no = 0
-    for unit in units:
-        for chapter in unit.get("chapters", []):
-            max_page_no = max(max_page_no, int(chapter.get("pageNo") or 0))
-    unit_by_title = {cast(str, unit.get("unitTitle", "")): unit for unit in units if isinstance(unit, dict)}
     for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id)):
-        unit_payload = unit_by_title.get(unit.unit_title)
-        if not unit_payload:
-            unit_payload = {"unitId": f"db-unit-{unit.id}", "unitTitle": unit.unit_title, "chapters": []}
-            units.append(unit_payload)
-            unit_by_title[unit.unit_title] = unit_payload
-        chapters = cast(list[JsonDict], unit_payload.setdefault("chapters", []))
-        chapters_by_title = {cast(str, chapter.get("chapterTitle", "")): chapter for chapter in chapters if isinstance(chapter, dict)}
+        unit_payload = {"unitId": f"db-unit-{unit.id}", "unitTitle": unit.unit_title, "chapters": []}
+        chapters = cast(list[JsonDict], unit_payload["chapters"])
         for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id)):
             max_page_no += 1
             progress = progress_map.get(section.id)
             db_chapter = _build_db_chapter(section, unit.unit_title, progress, max_page_no)
-            existing = chapters_by_title.get(section.section_name)
-            if existing:
-                existing.update(db_chapter)
-            else:
-                chapters.append(db_chapter)
+            chapters.append(db_chapter)
+        units.append(unit_payload)
     chapters = [chapter for unit in units for chapter in unit.get("chapters", [])]
     player_copy["units"] = units
     player_copy["lessonName"] = lesson.lesson_name or player_copy.get("lessonName", "")
     player_copy["courseName"] = lesson.course.course_name if lesson.course else player_copy.get("courseName", "")
     player_copy["teacherName"] = _find_teacher_name(db, lesson) or player_copy.get("teacherName", "")
     first_section = next((section for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id)) for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id))), None)
-    if first_section and first_section.section_audio_asset:
-        player_copy["audioUrl"] = _normalize_asset_url(first_section.section_audio_asset.audio_url)
+    audio_url, audio_status = _resolve_section_audio(first_section)
+    if audio_url:
+        player_copy["audioUrl"] = audio_url
+        player_copy["audioStatus"] = audio_status
     if lesson.sections:
-        player_copy["duration"] = sum((section.section_audio_asset.duration_sec or 0) for section in lesson.sections if section.section_audio_asset)
+        player_copy["duration"] = sum(
+            _resolve_section_audio_duration(section)
+            for section in lesson.sections
+            if section.section_audio_asset or section.audio_asset
+        )
     if chapters:
         player_copy["progressPercent"] = _round_int(sum(int(chapter.get("progressPercent") or 0) for chapter in chapters) / len(chapters))
         player_copy["masteryPercent"] = _round_int(sum(int(chapter.get("masteryPercent") or 0) for chapter in chapters) / len(chapters))
@@ -298,6 +324,7 @@ def get_student_lessons_from_db(db: Session, student_id: str | int | None) -> li
             joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.anchors),
             joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.knowledge_points),
             joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.section_audio_asset),
+            joinedload(Lesson.units).joinedload(LessonUnit.sections).joinedload(LessonSection.audio_asset),
         )
         .filter(Lesson.publish_status == "published")
         .order_by(Lesson.published_at.desc(), Lesson.id.desc())
@@ -391,6 +418,7 @@ def _serialize_db_lesson(db: Session, lesson: Lesson, lesson_progress: StudentLe
     mastery_percent = _round_int(lesson_progress.overall_mastery_percent) if lesson_progress else (
         _round_int(sum(chapter_mastery_values) / len(chapter_mastery_values)) if chapter_mastery_values else 0
     )
+    audio_url, audio_status = _resolve_section_audio(first_section)
     return {
         "lessonId": lesson.lesson_no,
         "courseId": lesson.course.course_code if lesson.course else str(lesson.course_id),
@@ -408,8 +436,14 @@ def _serialize_db_lesson(db: Session, lesson: Lesson, lesson_progress: StudentLe
         "questionCount": 0,
         "lastStudyAt": _format_last_study_at(lesson_progress.last_operate_time if lesson_progress else lesson.published_at),
         "units": units,
-        "audioUrl": _normalize_asset_url(first_section.section_audio_asset.audio_url) if first_section and first_section.section_audio_asset else "",
-        "duration": sum((section.section_audio_asset.duration_sec or 0) for unit in lesson.units or [] for section in unit.sections or [] if section.section_audio_asset),
+        "audioUrl": audio_url,
+        "audioStatus": audio_status,
+        "duration": sum(
+            _resolve_section_audio_duration(section)
+            for unit in lesson.units or []
+            for section in unit.sections or []
+            if section.section_audio_asset or section.audio_asset
+        ),
     }
 
 
@@ -483,6 +517,7 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
 
     current_page_no = progress.last_page_no if progress and progress.last_page_no else (pages[0]["pageNo"] if pages else 1)
     teacher_name = _find_teacher_name(db, lesson)
+    audio_url, audio_status = _resolve_section_audio(section)
     return {
         "lessonId": lesson.lesson_no,
         "lessonDbId": lesson.id,
@@ -491,7 +526,8 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
         "unitTitle": section.unit.unit_title if section.unit else "",
         "sectionId": str(section.id),
         "sectionTitle": section.section_name,
-        "audioUrl": _normalize_asset_url(section.section_audio_asset.audio_url) if section.section_audio_asset else "",
+        "audioUrl": audio_url,
+        "audioStatus": audio_status,
         "progressPercent": _round_int(progress.progress_percent if progress else 0),
         "masteryPercent": _round_int(progress.mastery_percent if progress else 0),
         "practicePercent": _round_int(practice_attempt.accuracy_percent if practice_attempt and practice_attempt.accuracy_percent is not None else 0),
