@@ -1,9 +1,5 @@
-<<<<<<< HEAD
 ﻿from functools import lru_cache
 from os import getenv
-=======
-from functools import lru_cache
->>>>>>> f-combine
 from pathlib import Path
 from runpy import run_path
 
@@ -72,7 +68,7 @@ _LOCAL_CONFIG_PATH = _REPO_ROOT / "config.local.py"
 def get_settings() -> Settings:
     defaults = Settings().model_dump()
     file_overrides = _load_local_config_values()
-    merged_defaults = {**defaults.model_dump(), **file_overrides}
+    merged_defaults = {**defaults, **file_overrides}
     return Settings(
         app_name=getenv("A12_APP_NAME", str(merged_defaults["app_name"])),
         app_version=getenv("A12_APP_VERSION", str(merged_defaults["app_version"])),
@@ -105,6 +101,8 @@ def get_settings() -> Settings:
         dashscope_base_url=getenv("A12_DASHSCOPE_BASE_URL", str(merged_defaults["dashscope_base_url"])),
         vector_db_url=getenv("A12_VECTOR_DB_URL", _get_optional_str(merged_defaults["vector_db_url"])),
     )
+
+
 def get_setting(name: str, default=None):
     settings = get_settings()
     resolved_name = _SETTING_ALIASES.get(name, _SETTING_ALIASES.get(name.lower(), name))
@@ -122,3 +120,11 @@ def _load_local_config_values() -> dict[str, object]:
         if resolved_key in declared_keys:
             loaded_values[resolved_key] = value
     return loaded_values
+
+
+def _getenv_bool(name: str, default: bool) -> bool:
+    return getenv(name, str(default)).lower() == "true"
+
+
+def _get_optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
