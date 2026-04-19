@@ -32,6 +32,9 @@ from backend.chaoxing_db.models import (
     UserPlatformBinding,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PREVIEW_ROOT = PROJECT_ROOT / "public" / "courseware-previews"
+
 
 def create_parse_task(payload: ParseRequest, request_id: str | None = None) -> ParseAcceptedData:
     del request_id
@@ -59,11 +62,14 @@ def run_parse_task(parse_id: str, payload: ParseRequest) -> None:
     with session_scope() as db:
         task = _require_parse_task_entity(db, parse_id)
         try:
+            preview_output_dir = PREVIEW_ROOT / parse_id
             file_info, preview, extracted, cir = execute_parse_pipeline(
                 course_id=payload.courseId,
                 file_url=payload.fileUrl,
                 file_type=payload.fileType,
                 is_extract_key_point=payload.isExtractKeyPoint,
+                preview_output_dir=preview_output_dir,
+                preview_public_base=f"/courseware-previews/{parse_id}",
             )
         except ApiError as exc:
             _mark_parse_task_failed(db, task, exc.msg)

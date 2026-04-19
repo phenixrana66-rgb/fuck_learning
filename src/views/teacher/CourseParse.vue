@@ -8,7 +8,7 @@
         :closable="false"
         show-icon
         class="teacher-alert"
-        title="支持 PPT、PPTX、PDF。上传后系统会解析章节结构、页图与知识点。"
+        title="支持 PPTX、PDF。上传后系统会解析章节结构、页图与知识点。"
       />
 
       <div class="toolbar">
@@ -21,7 +21,7 @@
           :on-exceed="handleFileExceed"
           :on-remove="handleFileRemove"
           :disabled="submitting || polling"
-          accept=".pptx"
+          accept=".pptx,.pdf"
         >
           <el-button :loading="submitting">选择文件并解析</el-button>
         </el-upload>
@@ -146,9 +146,9 @@ function handleFileChange(file) {
 }
 
 function handleSelectedFile(file) {
-  const isValid = /\.pptx$/i.test(file.name)
+  const isValid = /\.(pptx|pdf)$/i.test(file.name)
   if (!isValid) {
-    ElMessage.warning('仅支持 PPT、PPTX、PDF 文件。')
+    ElMessage.warning('仅支持 PPTX、PDF 文件。')
     return false
   }
 

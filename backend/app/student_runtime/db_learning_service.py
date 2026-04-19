@@ -48,6 +48,14 @@ def _is_placeholder_page_text(section_name: str | None, text: str | None) -> boo
     return False
 
 
+def _has_real_page_payload(section_name: str | None, page: LessonSectionPage) -> bool:
+    asset_url = _normalize_asset_url(page.ppt_page_url)
+    if asset_url and not asset_url.startswith("/lesson-previews/"):
+        return True
+    text = page.parsed_content or page.page_summary or ""
+    return not _is_placeholder_page_text(section_name, text)
+
+
 def _load_primary_script_content(db: Session, section: LessonSection) -> str:
     if not section.script_id:
         return ""
@@ -177,6 +185,8 @@ def _ensure_real_preview_pages(db: Session, section: LessonSection) -> bool:
             row = LessonSectionPage(lesson_id=section.lesson_id, section_id=section.id, source_ppt_asset_id=section.ppt_asset_id, source_page_no=page_no, page_no=page_no, sort_no=page_no)
             db.add(row)
             changed = True
+        elif _has_real_page_payload(section.section_name, row):
+            continue
         target_url = f"/lesson-previews/{_preview_folder_name(section)}/page-{page_no}.png"
         if row.ppt_page_url != target_url:
             row.ppt_page_url = target_url

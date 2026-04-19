@@ -36,7 +36,7 @@
         <section class="ppt-card">
           <div class="ppt-card-header">
             <div>
-              <div class="ppt-card-title">PPT 学习</div>
+              <div class="ppt-card-title">课件学习</div>
               <div class="ppt-card-subtitle">当前页 {{ activePageNo }} / {{ totalPages }}</div>
             </div>
             <button

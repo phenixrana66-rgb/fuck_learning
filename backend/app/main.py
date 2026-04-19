@@ -16,11 +16,13 @@ from backend.app.teacher_runtime.extra_router import router as teacher_extra_rou
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_ROOT = PROJECT_ROOT / "examples"
+COURSEWARE_PREVIEW_ROOT = PROJECT_ROOT / "public" / "courseware-previews"
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     EXAMPLES_ROOT.mkdir(parents=True, exist_ok=True)
+    COURSEWARE_PREVIEW_ROOT.mkdir(parents=True, exist_ok=True)
 
     app = FastAPI(
         title=settings.app_name,
@@ -31,6 +33,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.mount("/mock-remote/examples", StaticFiles(directory=str(PROJECT_ROOT / "examples")), name="mock-remote-examples")
     app.mount("/cache/voice", StaticFiles(directory=str(get_voice_cache_dir())), name="lesson-audio-cache")
+    app.mount("/courseware-previews", StaticFiles(directory=str(COURSEWARE_PREVIEW_ROOT)), name="courseware-previews")
 
     app.include_router(teacher_extra_router, prefix=settings.api_prefix)
     app.include_router(compat_router, prefix=settings.api_prefix)

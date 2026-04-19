@@ -8,9 +8,10 @@ import fitz
 from backend.app.cir.schemas import CIR
 from backend.app.common.db import configure_database_url, reset_database_url, session_scope
 from backend.app.common.exceptions import ApiError
+from backend.app.courseware import service as courseware_service
 from backend.app.courseware.schemas import ParseRequest
 from backend.app.courseware.service import clear_parse_tasks, create_parse_task, execute_parse_pipeline, get_parse_task, run_parse_task
-from backend.app.parser.schemas import FileInfo, ParseTaskStatus, StructurePreview
+from backend.app.parser.schemas import ExtractedPresentation, FileInfo, ParseTaskStatus, StructurePreview
 from backend.chaoxing_db.models import ChapterParseResult, ChapterParseTask
 
 
@@ -112,6 +113,26 @@ class CoursewareServiceTestCase(unittest.TestCase):
         self.assertEqual(stored_task_status, ParseTaskStatus.FAILED.value)
         self.assertEqual(queried.taskStatus, ParseTaskStatus.FAILED)
         self.assertEqual(queried.errorMessage, "当前 demo 仅支持 .pptx 文件解析")
+
+    @patch("backend.app.courseware.service.execute_parse_pipeline")
+    def test_run_parse_task_passes_preview_output_to_legacy_pipeline(self, mock_execute_parse_pipeline) -> None:
+        payload = self.payload
+        assert payload is not None
+        payload.fileType = "pdf"
+        payload.fileUrl = "file:///tmp/demo.pdf"
+        file_info = FileInfo(fileName="demo.pdf", fileSize=1024, pageCount=2)
+        preview = StructurePreview(chapters=[])
+        extracted = ExtractedPresentation(sourceType="pdf", slides=[])
+        cir = CIR(coursewareId="cw-course-001", title="demo", chapters=[])
+        mock_execute_parse_pipeline.return_value = (file_info, preview, extracted, cir)
+
+        accepted = create_parse_task(payload, request_id="req-001")
+
+        run_parse_task(accepted.parseId, payload)
+
+        kwargs = mock_execute_parse_pipeline.call_args.kwargs
+        self.assertEqual(kwargs["preview_output_dir"], courseware_service.PREVIEW_ROOT / accepted.parseId)
+        self.assertEqual(kwargs["preview_public_base"], f"/courseware-previews/{accepted.parseId}")
 
     def test_get_parse_task_raises_for_missing_task(self) -> None:
         with self.assertRaises(ApiError) as context:

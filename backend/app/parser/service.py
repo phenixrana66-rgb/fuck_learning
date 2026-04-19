@@ -22,7 +22,7 @@ def parse_courseware(
             preview_output_dir=preview_output_dir,
             preview_public_base=preview_public_base,
         )
-    elif file_type == "ppt":
+    elif file_type in {"ppt", "pptx"}:
         file_info, extracted = extract_pptx_presentation(file_url)
     else:
         raise ApiError(code=400, msg=f"不支持的课件类型：{file_type}", status_code=400)
@@ -33,7 +33,7 @@ def parse_courseware(
 
 
 def build_file_info(file_url: str, file_type: str) -> FileInfo:
-    if file_type == "ppt":
+    if file_type in {"ppt", "pptx"}:
         file_info, _ = extract_pptx_presentation(file_url)
         return file_info
     if file_type == "pdf":
