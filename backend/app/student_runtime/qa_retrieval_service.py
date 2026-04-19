@@ -11,12 +11,13 @@ from backend.app.student_runtime.db_learning_service import (
     get_page_context_for_qa,
     get_section_context_for_qa,
     get_section_knowledge_points_for_qa,
+    get_section_pages_context_for_qa,
 )
 from backend.app.student_runtime.qa_embedding_service import embed_text
 from backend.chaoxing_db.models import QAFaqItem, QAFaqVariant
 
 
-PLACEHOLDER_PAGE_PATTERN = re.compile(r"本页为《.+》课件第\s*\d+\s*页。?")
+PLACEHOLDER_PAGE_PATTERN = re.compile(r".*第\s*\d+\s*页.*")
 
 
 def classify_question_intent(question: str) -> str:
@@ -147,26 +148,49 @@ def search_section_context(
         return []
 
     chunks: list[dict[str, Any]] = []
-    chapter_context_text = (section_context.get("chapterContextText") or "").strip()
-    if chapter_context_text:
+    page_context = get_page_context_for_qa(db, lesson_id, section_id, page_no)
+    section_pages = get_section_pages_context_for_qa(db, lesson_id, section_id)
+    seen_chunk_ids: set[str] = set()
+
+    def append_chunk(chunk_id: str, source_type: str, chunk_text: str, page_number: int | None = None) -> None:
+        text = (chunk_text or "").strip()
+        if not text or chunk_id in seen_chunk_ids:
+            return
+        seen_chunk_ids.add(chunk_id)
         chunks.append(
             {
-                "chunkId": f"chapter_context:{section_context['sectionDbId']}",
-                "sourceType": "chapter_context",
-                "chunkText": chapter_context_text,
-                "pageNo": None,
+                "chunkId": chunk_id,
+                "sourceType": source_type,
+                "chunkText": text,
+                "pageNo": page_number,
             }
         )
 
-    page_context = get_page_context_for_qa(db, lesson_id, section_id, page_no)
     if page_context and page_context.get("parsedContent") and page_context.get("hasMeaningfulContent"):
-        chunks.append(
-            {
-                "chunkId": f"page_content:{page_context['pageDbId']}",
-                "sourceType": "page_content",
-                "chunkText": page_context["parsedContent"],
-                "pageNo": page_context.get("pageNo"),
-            }
+        append_chunk(
+            f"page_content:{page_context['pageDbId']}",
+            "page_content",
+            page_context["parsedContent"],
+            page_context.get("pageNo"),
+        )
+
+    chapter_context_text = (section_context.get("chapterContextText") or "").strip()
+    if chapter_context_text:
+        append_chunk(
+            f"chapter_context:{section_context['sectionDbId']}",
+            "chapter_context",
+            chapter_context_text,
+        )
+
+    ppt_outline_text = _build_ppt_outline_context(
+        section_pages,
+        current_page_no=page_context.get("pageNo") if page_context else page_no,
+    )
+    if ppt_outline_text:
+        append_chunk(
+            f"ppt_outline:{section_context['sectionDbId']}",
+            "ppt_outline",
+            ppt_outline_text,
         )
 
     try:
@@ -186,7 +210,7 @@ def search_section_context(
                         QAVectorChunk.source_type.in_(["section_summary", "page_content", "knowledge_point"]),
                     )
                 )
-                if page_no:
+                if page_no is not None:
                     query = query.order_by(
                         case((QAVectorChunk.page_no == page_no, 0), else_=1),
                         QAVectorChunk.embedding.cosine_distance(query_embedding),
@@ -200,7 +224,7 @@ def search_section_context(
                         "page_no": row.page_no,
                         "chunk_text": row.chunk_text,
                     }
-                    for row in query.limit(max(top_k * 2, 8)).all()
+                    for row in query.limit(max(top_k * 4, 16)).all()
                 ]
         except Exception:
             rows = []
@@ -212,34 +236,16 @@ def search_section_context(
             if row["source_type"] == "page_content" and PLACEHOLDER_PAGE_PATTERN.fullmatch(chunk_text):
                 continue
             chunk_id = f"{row['source_type']}:{row['source_id']}"
-            if any(existing["chunkId"] == chunk_id for existing in chunks):
-                continue
-            chunks.append(
-                {
-                    "chunkId": chunk_id,
-                    "sourceType": row["source_type"],
-                    "chunkText": chunk_text,
-                    "pageNo": row["page_no"],
-                }
-            )
-            if len(chunks) >= max(top_k + 1, 6):
+            append_chunk(chunk_id, row["source_type"], chunk_text, row["page_no"])
+            if len(chunks) >= max(top_k + 3, 8):
                 break
 
-    if len(chunks) < max(top_k, 4):
+    if len(chunks) < max(top_k + 2, 6):
         for point in get_section_knowledge_points_for_qa(db, lesson_id, section_id):
             chunk_id = f"knowledge_point:{point['id']}"
             chunk_text = _join_point_text(point["pointName"], point["pointSummary"])
-            if not chunk_text or any(existing["chunkId"] == chunk_id for existing in chunks):
-                continue
-            chunks.append(
-                {
-                    "chunkId": chunk_id,
-                    "sourceType": "knowledge_point",
-                    "chunkText": chunk_text,
-                    "pageNo": None,
-                }
-            )
-            if len(chunks) >= max(top_k + 1, 6):
+            append_chunk(chunk_id, "knowledge_point", chunk_text)
+            if len(chunks) >= max(top_k + 3, 8):
                 break
     return chunks
 
@@ -268,5 +274,33 @@ def _join_point_text(point_name: str, point_summary: str) -> str:
     point_name = (point_name or "").strip()
     point_summary = (point_summary or "").strip()
     if point_name and point_summary:
-        return f"{point_name}：{point_summary}"
+        return f"{point_name}: {point_summary}"
     return point_name or point_summary
+
+
+def _build_ppt_outline_context(pages: list[dict[str, Any]], current_page_no: int | None) -> str:
+    meaningful_pages = [page for page in pages if page.get("hasMeaningfulContent")]
+    if not meaningful_pages:
+        return ""
+
+    lines = ["整份 PPT 参考上下文（当前页优先，其余页用于补充和交叉验证）："]
+    total_chars = len(lines[0])
+    for page in meaningful_pages:
+        page_number = page.get("pageNo")
+        page_label = f"第 {page_number} 页" if page_number is not None else "未标注页码"
+        emphasis = " [当前页重点]" if current_page_no is not None and page_number == current_page_no else ""
+        title = (page.get("pageTitle") or "").strip()
+        raw_text = (page.get("parsedContent") or page.get("pageSummary") or "").strip()
+        snippet = re.sub(r"\s+", " ", raw_text)
+        if len(snippet) > 160:
+            snippet = snippet[:160].rstrip() + "..."
+        line = f"{page_label}{emphasis}"
+        if title:
+            line += f" | {title}"
+        if snippet:
+            line += f" | {snippet}"
+        if total_chars + len(line) > 2600:
+            break
+        lines.append(line)
+        total_chars += len(line)
+    return "\n".join(lines)
