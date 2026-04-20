@@ -272,9 +272,53 @@ def _find_section_anchor(section: LessonSection, page_no: int | None = None) -> 
     return eligible[-1] if eligible else anchors[0]
 
 
-def _build_db_chapter(section: LessonSection, unit_title: str, progress: StudentSectionProgress | None, fallback_page_no: int) -> JsonDict:
+def _build_ppt_asset_name_map(db: Session, lesson: Lesson) -> dict[int, str]:
+    asset_ids = sorted({
+        int(section.ppt_asset_id)
+        for unit in lesson.units or []
+        for section in unit.sections or []
+        if section.ppt_asset_id
+    })
+    if not asset_ids:
+        return {}
+    rows = (
+        db.query(ChapterPptAsset.id, ChapterPptAsset.file_name)
+        .filter(ChapterPptAsset.id.in_(asset_ids))
+        .all()
+    )
+    return {
+        int(asset_id): _clean_text(file_name)
+        for asset_id, file_name in rows
+        if asset_id
+    }
+
+
+def _resolve_section_slide_name(section: LessonSection, asset_name_map: dict[int, str]) -> str:
+    if not section.ppt_asset_id:
+        return ""
+    return _clean_text(asset_name_map.get(int(section.ppt_asset_id), ""))
+
+
+def _build_db_chapter(
+    section: LessonSection,
+    unit_title: str,
+    progress: StudentSectionProgress | None,
+    fallback_page_no: int,
+    slide_name: str,
+) -> JsonDict:
     knowledge_points = [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))]
-    return {"chapterId": f"db-section-{section.id}", "sectionId": str(section.id), "chapterTitle": section.section_name, "progressPercent": _round_int(progress.progress_percent if progress else 0), "masteryPercent": _round_int(progress.mastery_percent if progress else 0), "pageNo": fallback_page_no, "summary": section.section_summary or f"围绕“{section.section_name}”展开课件学习、知识导读与章节练习。", "knowledgePoints": knowledge_points[:3] or [section.section_name, unit_title, "核心概念"]}
+    return {
+        "chapterId": f"db-section-{section.id}",
+        "sectionId": str(section.id),
+        "chapterTitle": section.section_name,
+        "slideName": slide_name or "",
+        "pptAssetId": section.ppt_asset_id,
+        "progressPercent": _round_int(progress.progress_percent if progress else 0),
+        "masteryPercent": _round_int(progress.mastery_percent if progress else 0),
+        "pageNo": fallback_page_no,
+        "summary": section.section_summary or f"围绕“{section.section_name}”展开课件学习、知识导读与章节练习。",
+        "knowledgePoints": knowledge_points[:3] or [section.section_name, unit_title, "核心概念"],
+    }
 
 
 def enhance_player_with_db(db: Session, player: JsonDict, student_id: str | int | None) -> JsonDict:
@@ -286,6 +330,7 @@ def enhance_player_with_db(db: Session, player: JsonDict, student_id: str | int 
         return player_copy
     student_db_id = _resolve_user_id(db, student_id)
     progress_map = _get_section_progress_map(db, student_db_id, lesson.id)
+    asset_name_map = _build_ppt_asset_name_map(db, lesson)
     units: list[JsonDict] = []
     max_page_no = 0
     for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id)):
@@ -294,7 +339,13 @@ def enhance_player_with_db(db: Session, player: JsonDict, student_id: str | int 
         for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id)):
             max_page_no += 1
             progress = progress_map.get(section.id)
-            db_chapter = _build_db_chapter(section, unit.unit_title, progress, max_page_no)
+            db_chapter = _build_db_chapter(
+                section,
+                unit.unit_title,
+                progress,
+                max_page_no,
+                _resolve_section_slide_name(section, asset_name_map),
+            )
             chapters.append(db_chapter)
         units.append(unit_payload)
     chapters = [chapter for unit in units for chapter in unit.get("chapters", [])]
@@ -407,12 +458,21 @@ def _serialize_db_lesson(db: Session, lesson: Lesson, lesson_progress: StudentLe
     first_section = None
     chapter_progress_values: list[int] = []
     chapter_mastery_values: list[int] = []
+    asset_name_map = _build_ppt_asset_name_map(db, lesson)
     for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id)):
         chapters: list[JsonDict] = []
         for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id)):
             if first_section is None:
                 first_section = section
-            chapters.append(_build_db_chapter(section, unit.unit_title, None, _first_page_no(section)))
+            chapters.append(
+                _build_db_chapter(
+                    section,
+                    unit.unit_title,
+                    None,
+                    _first_page_no(section),
+                    _resolve_section_slide_name(section, asset_name_map),
+                )
+            )
         chapter_progress_values.extend(int(chapter.get("progressPercent") or 0) for chapter in chapters)
         chapter_mastery_values.extend(int(chapter.get("masteryPercent") or 0) for chapter in chapters)
         units.append({"unitId": f"db-unit-{unit.id}", "unitTitle": unit.unit_title, "chapters": chapters})
