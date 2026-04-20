@@ -34,7 +34,6 @@
           </div>
           <div class="knowledge-chapter-header-meta">
             {{ completedSectionCount }}/{{ chapterSections.length || 0 }} 已完成
-            <template v-if="sectionPages.length > 1"> · {{ currentSectionPage + 1 }}/{{ sectionPages.length }} 页</template>
           </div>
         </div>
 
@@ -42,72 +41,43 @@
           当前章节暂无可展示的课程卡片。
         </div>
 
-        <div v-else class="knowledge-chapter-pages">
-          <section
-            v-for="(pageSections, pageIndex) in sectionPages"
-            :key="`chapter-page-${pageIndex}`"
-            :ref="(element) => setPageSectionRef(pageIndex, element)"
-            class="knowledge-chapter-page-panel"
+        <div v-else class="knowledge-chapter-grid">
+          <article
+            v-for="section in chapterSections"
+            :key="section.chapterId"
+            class="knowledge-course-card"
+            :class="{ active: String(section.sectionId || '') === currentLearningSectionId }"
           >
-            <div class="knowledge-chapter-grid">
-              <article
-                v-for="section in pageSections"
-                :key="section.chapterId"
-                class="knowledge-course-card"
-                :class="{ active: String(section.sectionId || '') === activeSectionId }"
-                @click="setActiveSection(section)"
-              >
-                <div class="knowledge-course-card-head">
-                  <div>
-                    <div class="knowledge-course-status" :class="getSectionStatusClass(section)">{{ getSectionStatusLabel(section) }}</div>
-                    <h3>{{ section.chapterTitle }}</h3>
-                  </div>
-                  <div class="knowledge-course-mastery-badge">
-                    <span>掌握度</span>
-                    <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
-                  </div>
-                </div>
-
-                <div class="knowledge-course-card-footer">
-                  <div class="knowledge-course-progress-block">
-                    <div class="knowledge-course-progress-text">
-                      <span>学习进度</span>
-                      <strong>{{ Number(section.progressPercent || 0) }}%</strong>
-                    </div>
-                    <el-progress :percentage="Number(section.progressPercent || 0)" :stroke-width="8" :show-text="false" />
-                  </div>
-
-                  <div class="knowledge-course-footer-row">
-                    <button type="button" class="knowledge-course-action-button" @click.stop="goToSlideLearning(section)">
-                      <span class="knowledge-course-action-button-core">
-                        <span class="knowledge-course-action-button-text">进入学习</span>
-                        <span class="knowledge-course-action-button-glow" aria-hidden="true"></span>
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </article>
+            <div class="knowledge-course-card-head">
+              <div>
+                <div class="knowledge-course-status" :class="getSectionStatusClass(section)">{{ getSectionStatusLabel(section) }}</div>
+                <h3>{{ section.chapterTitle }}</h3>
+              </div>
+              <div class="knowledge-course-mastery-badge">
+                <span>掌握度</span>
+                <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
+              </div>
             </div>
-          </section>
-        </div>
 
-        <div v-if="sectionPages.length > 1" class="knowledge-chapter-pagination">
-          <button
-            type="button"
-            class="knowledge-chapter-page-button"
-            :disabled="currentSectionPage <= 0"
-            @click="scrollToSectionPage(currentSectionPage - 1)"
-          >
-            上一页
-          </button>
-          <button
-            type="button"
-            class="knowledge-chapter-page-button"
-            :disabled="currentSectionPage >= sectionPages.length - 1"
-            @click="scrollToSectionPage(currentSectionPage + 1)"
-          >
-            下一页
-          </button>
+            <div class="knowledge-course-card-footer">
+              <div class="knowledge-course-progress-block">
+                <div class="knowledge-course-progress-text">
+                  <span>学习进度</span>
+                  <strong>{{ Number(section.progressPercent || 0) }}%</strong>
+                </div>
+                <el-progress :percentage="Number(section.progressPercent || 0)" :stroke-width="8" :show-text="false" />
+              </div>
+
+              <div class="knowledge-course-footer-row">
+                <button type="button" class="knowledge-course-action-button" @click.stop="goToSlideLearning(section)">
+                  <span class="knowledge-course-action-button-core">
+                    <span class="knowledge-course-action-button-text">进入学习</span>
+                    <span class="knowledge-course-action-button-glow" aria-hidden="true"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </article>
         </div>
       </section>
     </main>
@@ -138,12 +108,7 @@ const studentProfile = ref({
   ...getStudentProfile()
 })
 const lesson = ref({ units: [] })
-const activeSectionId = ref('')
-const currentSectionPage = ref(0)
 const loading = ref(false)
-const viewportWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth)
-const pageSectionRefs = ref({})
-let wheelPagingLock = false
 
 const lessonId = computed(() => String(route.params.lessonId || ''))
 const unitId = computed(() => String(route.params.unitId || ''))
@@ -168,17 +133,12 @@ const chapterSections = computed(() => getSectionsForAggregatedChapter(
   currentAggregatedChapter.value.chapterId || chapterId.value || ''
 ))
 const completedSectionCount = computed(() => chapterSections.value.filter((section) => Number(section.progressPercent || 0) >= 100).length)
-const cardsPerPage = computed(() => {
-  if (viewportWidth.value <= 640) return 3
-  if (viewportWidth.value <= 960) return 4
-  return 6
-})
-const sectionPages = computed(() => {
-  const pages = []
-  for (let index = 0; index < chapterSections.value.length; index += cardsPerPage.value) {
-    pages.push(chapterSections.value.slice(index, index + cardsPerPage.value))
-  }
-  return pages
+const currentLearningSectionId = computed(() => {
+  const currentSection = chapterSections.value.find((section) => {
+    const progress = Number(section?.progressPercent || 0)
+    return progress > 0 && progress < 100
+  })
+  return String(currentSection?.sectionId || '')
 })
 
 function syncLessonCache(nextLesson) {
@@ -218,29 +178,11 @@ async function loadLesson() {
   }
 }
 
-function setActiveSection(section) {
-  activeSectionId.value = String(section?.sectionId || '')
-}
-
-function setPageSectionRef(index, element) {
-  if (!element) {
-    delete pageSectionRefs.value[index]
-    return
-  }
-  pageSectionRefs.value[index] = element
-}
-
-function updateViewportWidth() {
-  viewportWidth.value = typeof window === 'undefined' ? 1440 : window.innerWidth
-}
-
 function captureChapterViewState() {
   const lessonViewState = getStudentViewState(lessonId.value)
   const chapterState = { ...(lessonViewState.chapterDetail || {}) }
   chapterState[currentAggregatedChapter.value.chapterId || chapterId.value || 'default'] = {
-    currentSectionPage: currentSectionPage.value,
-    scrollTop: pageMainRef.value?.scrollTop || 0,
-    activeSectionId: activeSectionId.value
+    scrollTop: pageMainRef.value?.scrollTop || 0
   }
   saveStudentViewState(lessonId.value, { chapterDetail: chapterState })
 }
@@ -248,86 +190,21 @@ function captureChapterViewState() {
 async function restoreChapterViewState() {
   const lessonViewState = getStudentViewState(lessonId.value)
   const stored = lessonViewState.chapterDetail?.[currentAggregatedChapter.value.chapterId || chapterId.value || 'default'] || {}
-  const targetPage = Math.min(
-    Math.max(Number(stored.currentSectionPage || 0), 0),
-    Math.max(sectionPages.value.length - 1, 0)
-  )
-  currentSectionPage.value = targetPage
-  if (stored.activeSectionId && chapterSections.value.some((section) => String(section.sectionId || '') === String(stored.activeSectionId))) {
-    activeSectionId.value = String(stored.activeSectionId)
-  }
   await nextTick()
   if (pageMainRef.value && Number.isFinite(Number(stored.scrollTop))) {
     pageMainRef.value.scrollTop = Number(stored.scrollTop || 0)
-    return
   }
-  scrollToSectionPage(targetPage, 'auto')
-}
-
-function handleChapterScroll() {
-  const container = pageMainRef.value
-  if (!container || !sectionPages.value.length) return
-
-  let nearestPage = 0
-  let nearestDistance = Number.POSITIVE_INFINITY
-  sectionPages.value.forEach((_, index) => {
-    const element = pageSectionRefs.value[index]
-    if (!element) return
-    const distance = Math.abs(element.offsetTop - container.scrollTop)
-    if (distance < nearestDistance) {
-      nearestDistance = distance
-      nearestPage = index
-    }
-  })
-
-  currentSectionPage.value = nearestPage
-  captureChapterViewState()
-}
-
-function scrollToSectionPage(pageIndex, behavior = 'smooth') {
-  const safePageIndex = Math.min(Math.max(Number(pageIndex || 0), 0), Math.max(sectionPages.value.length - 1, 0))
-  currentSectionPage.value = safePageIndex
-  const element = pageSectionRefs.value[safePageIndex]
-  if (!element) return
-  const top = Math.max(0, element.offsetTop - 12)
-  pageMainRef.value?.scrollTo({ top, behavior })
-  const firstSection = sectionPages.value[safePageIndex]?.[0]
-  if (firstSection?.sectionId) {
-    activeSectionId.value = String(firstSection.sectionId)
-  }
-}
-
-function handleChapterWheel(event) {
-  if (sectionPages.value.length <= 1 || wheelPagingLock || !pageMainRef.value) return
-  if (Math.abs(Number(event.deltaY || 0)) < 16) return
-  event.preventDefault()
-  wheelPagingLock = true
-  const direction = event.deltaY > 0 ? 1 : -1
-  scrollToSectionPage(currentSectionPage.value + direction)
-  window.setTimeout(() => {
-    wheelPagingLock = false
-  }, 360)
-}
-
-function attachChapterPageListeners() {
-  pageMainRef.value?.addEventListener('scroll', handleChapterScroll, { passive: true })
-  pageMainRef.value?.addEventListener('wheel', handleChapterWheel, { passive: false })
-}
-
-function detachChapterPageListeners() {
-  pageMainRef.value?.removeEventListener('scroll', handleChapterScroll)
-  pageMainRef.value?.removeEventListener('wheel', handleChapterWheel)
 }
 
 function getSectionStatusLabel(section) {
-  if (String(section?.sectionId || '') === activeSectionId.value) return '当前学习'
+  if (String(section?.sectionId || '') === currentLearningSectionId.value) return '当前学习'
   if (Number(section?.progressPercent || 0) >= 100) return '已完成'
   if (Number(section?.progressPercent || 0) > 0) return '进行中'
   return '待学习'
 }
 
 function getSectionStatusClass(section) {
-  if (String(section?.sectionId || '') === activeSectionId.value) return 'is-active'
+  if (String(section?.sectionId || '') === currentLearningSectionId.value) return 'is-active'
   if (Number(section?.progressPercent || 0) >= 100) return 'is-done'
   if (Number(section?.progressPercent || 0) > 0) return 'is-progress'
   return 'is-pending'
@@ -378,26 +255,9 @@ function goStudentHome() {
 
 watch(chapterSections, (sections) => {
   if (!sections.length) {
-    activeSectionId.value = ''
-    currentSectionPage.value = 0
-    return
-  }
-  if (!sections.some((section) => String(section.sectionId || '') === activeSectionId.value)) {
-    activeSectionId.value = String(sections[0].sectionId || '')
-  }
-}, { immediate: true })
-
-watch(sectionPages, async (pages) => {
-  if (!pages.length) {
-    currentSectionPage.value = 0
-    return
-  }
-  if (currentSectionPage.value > pages.length - 1) {
-    currentSectionPage.value = pages.length - 1
-  }
-  await nextTick()
-  if (!pageSectionRefs.value[currentSectionPage.value]) {
-    scrollToSectionPage(0, 'auto')
+    if (pageMainRef.value) {
+      pageMainRef.value.scrollTop = 0
+    }
   }
 }, { immediate: true })
 
@@ -412,30 +272,22 @@ watch(
 
 onMounted(async () => {
   await loadLesson()
-  updateViewportWidth()
   await restoreChapterViewState()
-  window.addEventListener('resize', updateViewportWidth)
-  attachChapterPageListeners()
 })
 
 onActivated(async () => {
   if (!lesson.value.units?.length && !loading.value) {
     await loadLesson()
   }
-  updateViewportWidth()
   await restoreChapterViewState()
-  attachChapterPageListeners()
 })
 
 onDeactivated(() => {
   captureChapterViewState()
-  detachChapterPageListeners()
 })
 
 onBeforeUnmount(() => {
   captureChapterViewState()
-  window.removeEventListener('resize', updateViewportWidth)
-  detachChapterPageListeners()
 })
 </script>
 
@@ -519,7 +371,6 @@ onBeforeUnmount(() => {
   padding: 112px 28px 28px;
   overflow-y: auto;
   overflow-x: hidden;
-  scroll-snap-type: y proximity;
 }
 
 .knowledge-chapter-shell {
@@ -586,20 +437,8 @@ onBeforeUnmount(() => {
   padding: 24px;
 }
 
-.knowledge-chapter-pages {
-  margin-top: 24px;
-  display: grid;
-  gap: 18px;
-}
-
-.knowledge-chapter-page-panel {
-  min-height: calc(100vh - 232px);
-  display: flex;
-  align-items: flex-start;
-  scroll-snap-align: start;
-}
-
 .knowledge-chapter-grid {
+  margin-top: 24px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
@@ -726,37 +565,6 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.knowledge-chapter-pagination {
-  margin-top: 8px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.knowledge-chapter-page-button {
-  min-width: 96px;
-  height: 40px;
-  border: 1px solid #d8e4f6;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffffff, #f4f8ff);
-  color: #36598f;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, opacity 0.18s ease;
-}
-
-.knowledge-chapter-page-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: #c2d7f3;
-  background: #f7faff;
-}
-
-.knowledge-chapter-page-button:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
-}
-
 .knowledge-course-progress-block :deep(.el-progress-bar__outer) {
   background: #e8effa;
 }
@@ -870,10 +678,6 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .knowledge-chapter-page-panel {
-    min-height: calc(100vh - 248px);
-  }
-
   .knowledge-chapter-header,
   .knowledge-course-footer-row {
     flex-direction: column;
@@ -902,14 +706,6 @@ onBeforeUnmount(() => {
 
   .knowledge-chapter-grid {
     grid-template-columns: 1fr;
-  }
-
-  .knowledge-chapter-pagination {
-    justify-content: stretch;
-  }
-
-  .knowledge-chapter-page-button {
-    flex: 1 1 0;
   }
 }
 </style>
