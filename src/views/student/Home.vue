@@ -1,5 +1,5 @@
 ﻿<template>
-  <div class="student-home">
+  <div class="student-home app-scrollable">
     <section class="student-home-hero">
       <div class="student-home-hero-main">
         <div class="student-home-identity">
@@ -538,7 +538,9 @@ async function bootstrapStudent() {
       lessonList.value = fallbackLessons
       loadError.value = ''
     }
-    ElMessage.error(error?.msg || '课程数据加载失败，已切换到本地演示数据')
+    if (!error?.handled) {
+      ElMessage.error(error?.msg || '课程数据加载失败，已切换到本地演示数据')
+    }
   } finally {
     loading.value = false
   }
@@ -569,7 +571,9 @@ async function loadNotifications() {
     notifications.value = res.data?.notifications || []
   } catch (error) {
     notifications.value = []
-    ElMessage.error(error?.msg || '通知加载失败')
+    if (!error?.handled) {
+      ElMessage.error(error?.msg || '通知加载失败')
+    }
   } finally {
     loadingNotifications.value = false
   }
@@ -623,7 +627,9 @@ async function openNotification(item) {
       notification.id === item.id ? { ...notification, read: true } : notification
     ))
   } catch (error) {
-    ElMessage.error(error?.msg || '通知详情加载失败')
+    if (!error?.handled) {
+      ElMessage.error(error?.msg || '通知详情加载失败')
+    }
   }
 }
 
@@ -693,8 +699,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .student-home {
+  height: 100vh;
   min-height: 100vh;
   background: linear-gradient(180deg, #eff2fb 0%, #f7f8fc 100%);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .student-home-hero {

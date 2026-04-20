@@ -1,0 +1,75 @@
+﻿<!DOCTYPE html>
+
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="keywords" content="超星尔雅通识教育"/>
+    <meta name="description" content=""/>
+    <meta name="renderer" content="webkit">
+    <meta name="force-rendering" content="webkit"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1"/>
+    <meta name="viewport"
+          content="viewport-fit=cover,width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=0">
+    <title>超星尔雅通识教育</title>
+
+
+</head>
+<body class="grid-bottom-spacer">
+
+<div id="htContainer" style="height:100%" >
+</div>
+
+<script src="//static.wisweb.com/entry/assets/lib/jquery.min.js"></script>
+<script src="//static.wisweb.com/entry/assets/lib/layui/layui.js?v=251106"></script>
+<script src="//static.wisweb.com/entry/assets/lib/vue.js?v=26032402"></script>
+
+                <script src="//static.wisweb.com/entry/assets/lib/jquery.md5.js?v=5"></script>
+                <script src="//static.wisweb.com/entry/assets/lib/subscribe/externalSub.js?v=5"></script>
+
+<script type="text/javascript">
+    var pageId = 217511;
+    var rqIp = '122.96.73.134';
+    var https_noteyd = 'https://noteyd.chaoxing.com';
+    var https_pc = 'https://pc.chaoxing.com';
+    var https_i = 'https://i.chaoxing.com';
+    var https_passport2 = 'https://passport2.chaoxing.com';
+    var https_photo = 'https://photo.chaoxing.com';
+    var http_captcha = 'https://captcha.chaoxing.com';
+    var websiteId = 131631;
+    var jsonId = 220769;
+    var leftNavId = 'null';
+    var fromViewIndex = true;
+    var p_wfwfid = 125761;
+    var p_tipsData = '';
+    var isLogin = false;
+    var isBeginnerGuide = 0;
+    var sfid = '';
+    var sversion = 'cf327944b3a04ad633cad1c683edbaa66791';
+    var isCDN = 1;
+    var pagePubId = '62d78dce84953111ed0a177785e2a6d4252c';
+    var globalType = 'zh_CN';
+    var wxMiniUrl = '';
+    $(function(){
+        if (isLogin === false && isBeginnerGuide == 1){
+            updateLocalStorage();
+        }
+        $("#htContainer").load('/entry/page/ck/nest_normal');
+    });
+    function updateLocalStorage() {
+        var count = window.localStorage.getItem("visitCount");
+        if (count === null) {
+            window.localStorage.setItem("visitCount", "1");
+        }else{
+            var number = Number(count) + 1;
+            window.localStorage.setItem("visitCount", number.toString());
+        }
+    }
+</script>
+<script>
+    var mhlg = null
+</script>
+
+
+</body>
+</html>

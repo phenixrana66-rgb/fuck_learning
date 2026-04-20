@@ -13,10 +13,12 @@ body,
   margin: 0;
   padding: 0;
   width: 100%;
+  height: 100%;
   min-height: 100%;
   font-family: var(--app-sans-font);
   background: #f3f6fb;
   color: #303133;
+  overflow: hidden;
 }
 
 body,
@@ -47,6 +49,41 @@ select {
 
 body {
   font-size: 14px;
+}
+
+.app-scrollable {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.app-scrollable::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app-scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scrollable::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.app-scrollable::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.app-scrollable.scrollbar-active {
+  scrollbar-color: rgba(197, 197, 197, 0.92) transparent;
+}
+
+.app-scrollable.scrollbar-active::-webkit-scrollbar-thumb {
+  background: rgba(197, 197, 197, 0.92);
 }
 
 a {

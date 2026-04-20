@@ -11,6 +11,8 @@ const studentService = axios.create({
   }
 })
 
+let missingEndpointToastShown = false
+
 studentService.interceptors.request.use(
   (config) => {
     const token = getPlatformToken()
@@ -39,7 +41,10 @@ studentService.interceptors.response.use(
 
     const message = res.msg || '学生端接口请求失败'
     showErrorMessage(message)
-    return Promise.reject(res)
+    return Promise.reject({
+      ...res,
+      handled: true
+    })
   },
   (error) => {
     const status = error?.response?.status
@@ -57,7 +62,8 @@ studentService.interceptors.response.use(
         code: 503,
         msg: message,
         data: null,
-        requestId: ''
+        requestId: '',
+        handled: true
       })
     }
 
@@ -69,12 +75,21 @@ studentService.interceptors.response.use(
     if (status === 404) message = '学生端接口不存在'
     if (status === 500) message = '学生端服务异常'
 
-    showErrorMessage(message)
+    if (status === 404) {
+      if (!missingEndpointToastShown) {
+        showErrorMessage(message)
+        missingEndpointToastShown = true
+      }
+    } else {
+      showErrorMessage(message)
+    }
+
     return Promise.reject({
       code: status || -1,
       msg: message,
       data: null,
-      requestId: ''
+      requestId: '',
+      handled: true
     })
   }
 )
