@@ -1,5 +1,5 @@
 <template>
-  <div class="teacher-login-page">
+  <div class="teacher-login-page app-scrollable">
     <div class="teacher-login-shell">
       <div class="teacher-login-hero">
         <div class="teacher-login-brand">
@@ -141,9 +141,13 @@ function selectCourse(course) {
 
 <style scoped>
 .teacher-login-page {
+  height: 100vh;
   min-height: 100vh;
   padding: 36px 20px;
   background: linear-gradient(180deg, #f7faff 0%, #edf4fd 100%);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .teacher-login-shell {

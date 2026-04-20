@@ -20,8 +20,8 @@
       </div>
     </header>
 
-    <div class="teacher-main">
-      <aside class="teacher-sidebar">
+    <div class="teacher-main app-scrollable">
+      <aside class="teacher-sidebar app-scrollable">
         <div class="teacher-course-card">
           <div class="teacher-course-label">当前课程</div>
           <div class="teacher-course-title">{{ courseName }}</div>
@@ -103,7 +103,9 @@ function go(path) {
 .teacher-layout {
   --teacher-header-height: 78px;
   --teacher-sidebar-width: 292px;
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   background: linear-gradient(180deg, #f7faff 0%, #eef4fd 100%);
 }
 
@@ -184,8 +186,12 @@ function go(path) {
 }
 
 .teacher-main {
+  height: 100vh;
   min-height: 100vh;
   padding-top: var(--teacher-header-height);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .teacher-sidebar {
