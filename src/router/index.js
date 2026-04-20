@@ -18,9 +18,14 @@ const routes = [
     component: () => import('@/views/student/Player.vue')
   },
   {
-    path: '/student/knowledge-learning/:lessonId/:sectionId?',
+    path: '/student/knowledge-learning/:lessonId/:unitId/:chapterId',
     name: 'StudentKnowledgeLearning',
     component: () => import('@/views/student/KnowledgeLearning.vue')
+  },
+  {
+    path: '/student/slide-learning/:lessonId/:sectionId',
+    name: 'StudentSlideLearning',
+    component: () => import('@/views/student/SlideLearning.vue')
   },
   {
     path: '/teacher/login',

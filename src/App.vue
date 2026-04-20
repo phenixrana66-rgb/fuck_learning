@@ -14,7 +14,10 @@ function resolveRouteCacheKey(route) {
     return `StudentPlayer:${route.params.lessonId || ''}`
   }
   if (route.name === 'StudentKnowledgeLearning') {
-    return `StudentKnowledgeLearning:${route.params.lessonId || ''}:${route.params.sectionId || ''}`
+    return `StudentKnowledgeLearning:${route.params.lessonId || ''}:${route.params.unitId || ''}:${route.params.chapterId || ''}`
+  }
+  if (route.name === 'StudentSlideLearning') {
+    return `StudentSlideLearning:${route.params.lessonId || ''}:${route.params.sectionId || ''}`
   }
   return String(route.name || route.path || '')
 }

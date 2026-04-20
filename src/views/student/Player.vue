@@ -67,7 +67,7 @@
 
       <section v-if="activeView === 'knowledge'" class="student-knowledge-page">
         <section
-          v-for="unit in lesson.units || []"
+          v-for="unit in aggregatedUnitChapters"
           :key="unit.unitId"
           class="student-unit-section"
         >
@@ -84,31 +84,31 @@
               v-for="chapter in unit.chapters"
               :key="chapter.chapterId"
               class="student-chapter-card"
-              :class="{ active: chapter.chapterId === activeChapter.chapterId }"
-              @click="setActiveChapter(chapter)"
+              :class="{ active: chapter.chapterId === activeKnowledgeChapter.chapterId }"
+              @click="setActiveKnowledgeChapter(chapter)"
             >
               <div class="student-chapter-card-head">
                 <div>
-                  <div class="student-chapter-status" :class="getChapterStatusClass(chapter)">{{ getChapterStatusLabel(chapter) }}</div>
+                  <div class="student-chapter-status" :class="getAggregatedChapterStatusClass(chapter)">{{ getAggregatedChapterStatusLabel(chapter) }}</div>
                   <h3>{{ chapter.chapterTitle }}</h3>
                 </div>
                 <div class="student-chapter-mastery-badge">
                   <span>掌握度</span>
-                  <strong>{{ chapter.masteryPercent }}%</strong>
+                  <strong>{{ Number(chapter.masteryPercent || 0) }}%</strong>
                 </div>
               </div>
               <div class="student-chapter-card-footer">
                 <div class="student-chapter-progress-block">
                   <div class="student-chapter-progress-text">
                     <span>学习进度</span>
-                    <strong>{{ chapter.progressPercent }}%</strong>
+                    <strong>{{ Number(chapter.progressPercent || 0) }}%</strong>
                   </div>
-                  <el-progress :percentage="chapter.progressPercent" :stroke-width="8" :show-text="false" />
+                  <el-progress :percentage="Number(chapter.progressPercent || 0)" :stroke-width="8" :show-text="false" />
                 </div>
                 <div class="student-chapter-footer-row">
                   <button type="button" class="student-knowledge-action-button" @click.stop="goToKnowledgeLearning(chapter)">
                     <span class="student-knowledge-action-button-core">
-                      <span class="student-knowledge-action-button-text">进入学习</span>
+                      <span class="student-knowledge-action-button-text">进入章节</span>
                       <span class="student-knowledge-action-button-glow" aria-hidden="true"></span>
                     </span>
                   </button>
@@ -151,6 +151,41 @@
                 <span>当前章节</span>
                 <strong>{{ recommendedResumeChapter.chapterTitle || '待学习章节' }}</strong>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="student-progress-panel student-course-mastery-panel">
+          <div class="student-progress-panel-head">
+            <div>
+              <div class="student-progress-panel-title">课程掌握度</div>
+            </div>
+          </div>
+
+          <div class="student-course-mastery-card">
+            <div v-if="allChapters.length" class="student-course-mastery-list">
+              <div
+                v-for="chapter in allChapters"
+                :key="chapter.chapterId"
+                class="student-course-mastery-item"
+              >
+                <div class="student-course-mastery-item-title">{{ chapter.chapterTitle }}</div>
+                <div class="student-course-mastery-item-shell">
+                  <div class="student-course-mastery-item-head">
+                    <span class="student-course-mastery-item-label">章节掌握度</span>
+                    <strong class="student-course-mastery-item-value">{{ Number(chapter.masteryPercent || 0) }}%</strong>
+                  </div>
+                  <el-progress
+                    :percentage="Number(chapter.masteryPercent || 0)"
+                    :stroke-width="10"
+                    :show-text="false"
+                    class="student-course-mastery-bar"
+                  />
+                </div>
+              </div>
+            </div>
+            <div v-else class="student-course-mastery-empty">
+              暂无章节掌握度数据
             </div>
           </div>
         </section>
@@ -365,6 +400,7 @@ import {
   saveStudentQaSessions,
   saveStudentViewState
 } from '@/utils/platform'
+import { buildAggregatedKnowledgeUnits, findAggregatedChapterForSection } from '@/utils/studentKnowledge'
 
 const route = useRoute()
 const router = useRouter()
@@ -393,6 +429,7 @@ const assistantStreamingStarted = ref(false)
 const resumeLoading = ref(false)
 const adjustLoading = ref('')
 const activeChapterId = ref('')
+const activeKnowledgeChapterId = ref('')
 const chatList = ref([])
 const qaSessions = ref([])
 const activeSessionId = ref('')
@@ -415,6 +452,21 @@ const primaryNavItems = [
 const lessonId = computed(() => route.params.lessonId)
 const allChapters = computed(() => (lesson.value.units || []).flatMap((unit) => unit.chapters || []))
 const activeChapter = computed(() => allChapters.value.find((chapter) => chapter.chapterId === activeChapterId.value) || allChapters.value[0] || {})
+const aggregatedUnitChapters = computed(() => buildAggregatedKnowledgeUnits(lesson.value.units || []))
+const allAggregatedChapters = computed(() => aggregatedUnitChapters.value.flatMap((unit) => unit.chapters || []))
+const currentLearningAggregatedChapter = computed(() => {
+  const locatedByProgress = findAggregatedChapterForSection(lesson.value.units || [], progressState.value.sectionId || '')
+  if (locatedByProgress) return locatedByProgress
+  const locatedByActiveSection = findAggregatedChapterForSection(lesson.value.units || [], activeChapter.value.sectionId || '')
+  if (locatedByActiveSection) return locatedByActiveSection
+  return allAggregatedChapters.value[0] || {}
+})
+const activeKnowledgeChapter = computed(() => {
+  return allAggregatedChapters.value.find((chapter) => chapter.chapterId === activeKnowledgeChapterId.value)
+    || currentLearningAggregatedChapter.value
+    || allAggregatedChapters.value[0]
+    || {}
+})
 const firstRealtimeChapter = computed(() => allChapters.value.find((chapter) => chapter.sectionId) || {})
 const aiContextChapter = computed(() => {
   if (activeChapter.value?.sectionId) return activeChapter.value
@@ -711,6 +763,7 @@ function capturePlayerViewState() {
     player: {
       activeView: activeView.value,
       activeChapterId: activeChapterId.value,
+      activeKnowledgeChapterId: activeKnowledgeChapterId.value,
       scrollTop: pageMainRef.value?.scrollTop || 0
     }
   })
@@ -728,6 +781,9 @@ async function restorePlayerViewState() {
   if (viewState.activeChapterId) {
     activeChapterId.value = viewState.activeChapterId
   }
+  if (viewState.activeKnowledgeChapterId) {
+    activeKnowledgeChapterId.value = viewState.activeKnowledgeChapterId
+  }
   await nextTick()
   if (pageMainRef.value && Number.isFinite(Number(viewState.scrollTop))) {
     pageMainRef.value.scrollTop = Number(viewState.scrollTop || 0)
@@ -738,19 +794,22 @@ function setActiveChapter(chapter) {
   activeChapterId.value = chapter.chapterId
 }
 
+function setActiveKnowledgeChapter(chapter) {
+  activeKnowledgeChapterId.value = chapter?.chapterId || ''
+}
+
 function goToKnowledgeLearning(chapter) {
   if (!chapter?.chapterId) return
+  activeKnowledgeChapterId.value = chapter.chapterId
   capturePlayerViewState()
   router.push({
     name: 'StudentKnowledgeLearning',
     params: {
       lessonId: lessonId.value,
-      sectionId: chapter.sectionId || ''
+      unitId: chapter.unitId || '',
+      chapterId: chapter.chapterId
     },
-    query: {
-      chapterId: chapter.chapterId,
-      ...(chapter.pageNo ? { pageNo: String(chapter.pageNo) } : {})
-    }
+    query: route.query.token ? { token: route.query.token } : {}
   })
 }
 
@@ -827,9 +886,27 @@ function getChapterStatusClass(chapter) {
   return 'is-pending'
 }
 
+function getAggregatedChapterStatusLabel(chapter) {
+  if (chapter.chapterId === currentLearningAggregatedChapter.value.chapterId) return '当前学习'
+  if (Number(chapter.progressPercent || 0) >= 100) return '已完成'
+  if (Number(chapter.progressPercent || 0) > 0) return '进行中'
+  return '待学习'
+}
+
+function getAggregatedChapterStatusClass(chapter) {
+  if (chapter.chapterId === currentLearningAggregatedChapter.value.chapterId) return 'is-active'
+  if (Number(chapter.progressPercent || 0) >= 100) return 'is-done'
+  if (Number(chapter.progressPercent || 0) > 0) return 'is-progress'
+  return 'is-pending'
+}
+
 function applyChapterPosition(chapter) {
   if (!chapter?.chapterId) return
   activeChapterId.value = chapter.chapterId
+  const locatedAggregatedChapter = findAggregatedChapterForSection(lesson.value.units || [], chapter.sectionId || '')
+  if (locatedAggregatedChapter?.chapterId) {
+    activeKnowledgeChapterId.value = locatedAggregatedChapter.chapterId
+  }
   lesson.value.currentPage = chapter.pageNo
   lesson.value.currentKnowledgePointName = chapter.chapterTitle
   progressState.value = {
@@ -839,21 +916,38 @@ function applyChapterPosition(chapter) {
   }
 }
 
+function goToSlideLearning(chapter, pageNoOverride) {
+  if (!chapter?.sectionId) return
+  const aggregatedChapter = findAggregatedChapterForSection(lesson.value.units || [], chapter.sectionId || '')
+  capturePlayerViewState()
+  return router.push({
+    name: 'StudentSlideLearning',
+    params: {
+      lessonId: lessonId.value,
+      sectionId: chapter.sectionId
+    },
+    query: {
+      ...(route.query.token ? { token: route.query.token } : {}),
+      ...(chapter.chapterId ? { chapterId: chapter.chapterId } : {}),
+      ...(aggregatedChapter?.unitId ? { unitId: aggregatedChapter.unitId } : {}),
+      ...(aggregatedChapter?.chapterId ? { knowledgeChapterId: aggregatedChapter.chapterId } : {}),
+      pageNo: String(pageNoOverride || chapter.pageNo || 1)
+    }
+  })
+}
+
 function goToRecommendedChapter() {
   const targetChapter = recommendedResumeChapter.value
   if (!targetChapter?.chapterId) return
   applyChapterPosition(targetChapter)
-  goToKnowledgeLearning({
-    ...targetChapter,
-    pageNo: latestResumePoint.value.pageNo || targetChapter.pageNo
-  })
+  goToSlideLearning(targetChapter, latestResumePoint.value.pageNo || targetChapter.pageNo)
 }
 
 function goToChapterById(chapterId) {
   const chapter = allChapters.value.find((item) => item.chapterId === chapterId)
   if (!chapter) return
   applyChapterPosition(chapter)
-  goToKnowledgeLearning(chapter)
+  goToSlideLearning(chapter)
 }
 
 async function resumeLearning() {
@@ -878,35 +972,13 @@ async function resumeLearning() {
       anchorTitle: payload.anchorTitle || targetChapter?.chapterTitle || progressState.value.anchorTitle
     }
     if (targetChapter?.chapterId) {
-      await router.push({
-        name: 'StudentKnowledgeLearning',
-        params: {
-          lessonId: lessonId.value,
-          sectionId: targetChapter.sectionId || ''
-        },
-        query: {
-          ...(route.query.token ? { token: route.query.token } : {}),
-          chapterId: targetChapter.chapterId,
-          pageNo: String(payload.pageNo || targetChapter.pageNo || progressState.value.pageNo || 1)
-        }
-      })
+      await goToSlideLearning(targetChapter, payload.pageNo || targetChapter.pageNo || progressState.value.pageNo || 1)
     }
   } catch {
     const fallbackChapter = recommendedResumeChapter.value
     applyChapterPosition(fallbackChapter)
     if (fallbackChapter?.chapterId) {
-      await router.push({
-        name: 'StudentKnowledgeLearning',
-        params: {
-          lessonId: lessonId.value,
-          sectionId: fallbackChapter.sectionId || ''
-        },
-        query: {
-          ...(route.query.token ? { token: route.query.token } : {}),
-          chapterId: fallbackChapter.chapterId,
-          pageNo: String(latestResumePoint.value.pageNo || fallbackChapter.pageNo || 1)
-        }
-      })
+      await goToSlideLearning(fallbackChapter, latestResumePoint.value.pageNo || fallbackChapter.pageNo || 1)
     }
   } finally {
     resumeLoading.value = false
@@ -1016,6 +1088,10 @@ async function loadLesson() {
     || allChapters.value.find((chapter) => chapter.pageNo === progressState.value.pageNo)
     || allChapters.value[0]
   activeChapterId.value = targetChapter?.chapterId || ''
+  activeKnowledgeChapterId.value = findAggregatedChapterForSection(lesson.value.units || [], targetChapter?.sectionId || '')?.chapterId
+    || activeKnowledgeChapterId.value
+    || allAggregatedChapters.value[0]?.chapterId
+    || ''
 
   try {
     const sessionRes = await fetchStudentQaSessions({
@@ -1205,9 +1281,23 @@ watch(activeView, async () => {
   updateNavIndicator()
 })
 
-watch([activeView, activeChapterId], () => {
+watch([activeView, activeChapterId, activeKnowledgeChapterId], () => {
   capturePlayerViewState()
 })
+
+watch(
+  [allAggregatedChapters, currentLearningAggregatedChapter],
+  ([chapters, currentChapter]) => {
+    if (!Array.isArray(chapters) || !chapters.length) {
+      activeKnowledgeChapterId.value = ''
+      return
+    }
+    const hasActive = chapters.some((chapter) => chapter.chapterId === activeKnowledgeChapterId.value)
+    if (hasActive) return
+    activeKnowledgeChapterId.value = currentChapter?.chapterId || chapters[0]?.chapterId || ''
+  },
+  { immediate: true }
+)
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
@@ -2063,6 +2153,76 @@ onDeactivated(() => {
   color: #7284a6;
   font-size: 13px;
   line-height: 1.8;
+}
+
+.student-course-mastery-panel {
+  margin-top: 18px;
+}
+
+.student-course-mastery-card {
+  padding: 22px 24px 24px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #fbfdff, #f5f8ff);
+  border: 1px solid #e2eaf7;
+}
+
+.student-course-mastery-list {
+  display: grid;
+  gap: 16px;
+}
+
+.student-course-mastery-item {
+  display: grid;
+  gap: 10px;
+}
+
+.student-course-mastery-item-title {
+  color: #17315d;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.student-course-mastery-item-shell {
+  padding: 16px 18px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(220, 231, 247, 0.96);
+  display: grid;
+  gap: 12px;
+}
+
+.student-course-mastery-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.student-course-mastery-item-label {
+  color: #7284a6;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.student-course-mastery-item-value {
+  color: #17315d;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.student-course-mastery-empty {
+  color: #7284a6;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.student-course-mastery-bar :deep(.el-progress-bar__outer) {
+  background: #e8effa;
+}
+
+.student-course-mastery-bar :deep(.el-progress-bar__inner) {
+  background: linear-gradient(135deg, rgb(70, 150, 255), rgb(70, 150, 255));
 }
 
 .student-progress-resume-card,
