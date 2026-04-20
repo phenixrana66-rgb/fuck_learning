@@ -96,16 +96,16 @@ async def list_script_audios_endpoint(script_id: str, request: Request, db: Sess
         raise ApiError(404, str(exc), status_code=404)
 
 
-@router.post("/lesson/publish")
-async def publish_lesson_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
-    payload = await request_payload(request)
-    course_id = str(payload.get("courseId") or "").strip()
-    chapter_id = payload.get("chapterId")
-    if not course_id:
-        raise ApiError(400, "courseId is required", status_code=400)
+# @router.post("/lesson/publish")
+# async def publish_lesson_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
+#     payload = await request_payload(request)
+#     course_id = str(payload.get("courseId") or "").strip()
+#     chapter_id = payload.get("chapterId")
+#     if not course_id:
+#         raise ApiError(400, "courseId is required", status_code=400)
 
-    try:
-        data = publish_course_lesson(db, course_id, chapter_id)
-        return teacher_response(request, data)
-    except ValueError as exc:
-        raise ApiError(400, str(exc), status_code=400)
+#     try:
+#         data = publish_course_lesson(db, course_id, chapter_id)
+#         return teacher_response(request, data)
+#     except ValueError as exc:
+#         raise ApiError(400, str(exc), status_code=400)
