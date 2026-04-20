@@ -37,7 +37,7 @@
       </div>
     </header>
 
-    <main class="student-player-main">
+    <main ref="pageMainRef" class="student-player-main">
       <section v-if="activeView !== 'ai'" class="student-course-overview">
         <div class="student-course-overview-main">
           <h1>{{ lesson.courseName || lesson.lessonName }}</h1>
@@ -113,18 +113,16 @@
           <div class="student-progress-hero-main">
             <div class="student-progress-chip">进度续接与节奏调整</div>
             <h2>从上次学习位置继续，按当前状态调整学习节奏。</h2>
-            <p>{{ progressHintText }}</p>
             <div class="student-progress-hero-actions">
               <button type="button" class="student-secondary-action" @click="resumeLearning">
                 {{ resumeLoading ? '正在续学...' : '继续学习' }}
               </button>
-              <button type="button" class="student-ghost-action" @click="goToRecommendedChapter">进入推荐章节</button>
             </div>
           </div>
 
           <div class="student-progress-stats">
             <div class="student-progress-stat-card">
-              <span>续学章节</span>
+              <span>当前章节</span>
               <strong>{{ recommendedResumeChapter.chapterTitle || '待学习章节' }}</strong>
             </div>
             <div class="student-progress-stat-card">
@@ -139,98 +137,6 @@
               <span>最近问答</span>
               <strong>{{ qaHistoryCount }} 条</strong>
             </div>
-          </div>
-        </section>
-
-        <section class="student-progress-grid">
-          <article class="student-progress-panel">
-            <div class="student-progress-panel-head">
-              <div>
-                <div class="student-progress-panel-title">续学定位</div>
-                <div class="student-progress-panel-subtitle">优先回到最近学习位置，也支持根据问答推荐锚点续学。</div>
-              </div>
-            </div>
-            <div class="student-progress-resume-card">
-              <div class="student-progress-resume-label">推荐续学章节</div>
-              <strong>{{ recommendedResumeChapter.chapterTitle || '待学习章节' }}</strong>
-              <p>当前锚点：{{ latestResumePoint.anchorTitle || progressState.anchorTitle || '待学习章节' }}</p>
-              <div class="student-progress-resume-meta">
-                <span>页码 {{ latestResumePoint.pageNo || progressState.pageNo || 1 }}</span>
-                <span>当前单元 {{ currentUnit.unitTitle || '未定位' }}</span>
-              </div>
-              <div class="student-progress-resume-actions">
-                <button type="button" class="student-secondary-action" @click="resumeLearning">
-                  {{ resumeLoading ? '正在恢复...' : '恢复到该位置' }}
-                </button>
-                <button type="button" class="student-ghost-action" @click="goToRecommendedChapter">进入章节</button>
-              </div>
-            </div>
-          </article>
-
-          <article class="student-progress-panel">
-            <div class="student-progress-panel-head">
-              <div>
-                <div class="student-progress-panel-title">节奏调整</div>
-                <div class="student-progress-panel-subtitle">根据当前进度和理解状态，选择更稳或更快的学习节奏。</div>
-              </div>
-            </div>
-            <div class="student-progress-rhythm-card">
-              <div class="student-progress-rhythm-copy">{{ rhythmSuggestion }}</div>
-              <div class="student-progress-rhythm-actions">
-                <button
-                  type="button"
-                  class="student-ghost-action"
-                  :disabled="adjustLoading === 'slow'"
-                  @click="adjustLearningRhythm('slow')"
-                >
-                  {{ adjustLoading === 'slow' ? '调整中...' : '放慢节奏' }}
-                </button>
-                <button
-                  type="button"
-                  class="student-secondary-action"
-                  :disabled="adjustLoading === 'fast'"
-                  @click="adjustLearningRhythm('fast')"
-                >
-                  {{ adjustLoading === 'fast' ? '调整中...' : '加快节奏' }}
-                </button>
-              </div>
-              <div class="student-progress-rhythm-note">{{ progressFallbackNote }}</div>
-            </div>
-          </article>
-        </section>
-
-        <section class="student-progress-panel">
-          <div class="student-progress-panel-head">
-            <div>
-              <div class="student-progress-panel-title">章节完成度</div>
-              <div class="student-progress-panel-subtitle">快速判断本课程当前应该继续推进还是先回看薄弱章节。</div>
-            </div>
-          </div>
-
-          <div class="student-progress-chapter-list">
-            <article
-              v-for="chapter in chapterProgressList"
-              :key="chapter.chapterId"
-              class="student-progress-chapter-item"
-              :class="{ active: chapter.chapterId === recommendedResumeChapter.chapterId }"
-            >
-              <div class="student-progress-chapter-main">
-                <div class="student-progress-chapter-title">{{ chapter.chapterTitle }}</div>
-                <div class="student-progress-chapter-meta">
-                  <span>{{ chapter.unitTitle }}</span>
-                  <span>掌握度 {{ chapter.masteryPercent }}%</span>
-                </div>
-              </div>
-              <div class="student-progress-chapter-bar">
-                <div class="student-progress-chapter-bar-fill" :style="{ width: `${chapter.progressPercent}%` }"></div>
-              </div>
-              <div class="student-progress-chapter-side">
-                <strong>{{ chapter.progressPercent }}%</strong>
-                <button type="button" class="student-progress-inline-link" @click="goToChapterById(chapter.chapterId)">
-                  去学习
-                </button>
-              </div>
-            </article>
           </div>
         </section>
       </section>
@@ -417,7 +323,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -439,17 +345,20 @@ import {
   getPlatformToken,
   getStudentLessonListCache,
   getStudentProfile,
+  getStudentViewState,
   getStudentQaHistory,
   getStudentQaSessions,
   saveStudentLessonList,
   saveStudentProfile,
   saveStudentQaHistory,
-  saveStudentQaSessions
+  saveStudentQaSessions,
+  saveStudentViewState
 } from '@/utils/platform'
 
 const route = useRoute()
 const router = useRouter()
 const topbarNavRef = ref(null)
+const pageMainRef = ref(null)
 const lesson = ref({ units: [], aiTools: [] })
 const fallbackProfile = {
   studentId: 'S2026001',
@@ -481,6 +390,8 @@ const primaryNavRefs = ref({})
 const navIndicator = ref({ width: 0, left: 0, opacity: 0 })
 const progressFallbackNote = ref('若服务端节奏接口暂不可用，系统会自动回退为本地建议。')
 const rhythmSuggestion = ref('建议先完成当前章节，再根据掌握度决定是否进入下一章。')
+const hasLoadedLesson = ref(false)
+const hasActivatedOnce = ref(false)
 
 const primaryNavItems = [
   { label: '学习进度', value: 'progress' },
@@ -522,9 +433,6 @@ function formatRecordingDuration(totalSeconds) {
   const seconds = safeSeconds % 60
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
-const currentUnit = computed(() => (
-  (lesson.value.units || []).find((unit) => (unit.chapters || []).some((chapter) => chapter.chapterId === activeChapter.value.chapterId)) || {}
-))
 const overallProgress = computed(() => {
   if (!allChapters.value.length) return 0
   return Math.round(allChapters.value.reduce((sum, chapter) => sum + Number(chapter.progressPercent || 0), 0) / allChapters.value.length)
@@ -568,18 +476,6 @@ const recommendedResumeChapter = computed(() => {
 const qaHistoryCount = computed(() => qaSessions.value.reduce((count, session) => (
   count + (session.messages || []).filter((item) => item.role === 'assistant').length
 ), 0))
-const progressHintText = computed(() => {
-  const chapterTitle = recommendedResumeChapter.value.chapterTitle || '当前章节'
-  return `系统已定位到 ${chapterTitle}，可继续学习，也可先调整到更适合你的节奏。`
-})
-const chapterProgressList = computed(() => {
-  return (lesson.value.units || []).flatMap((unit) => (
-    (unit.chapters || []).map((chapter) => ({
-      ...chapter,
-      unitTitle: unit.unitTitle
-    }))
-  ))
-})
 const navIndicatorStyle = computed(() => ({
   width: `${navIndicator.value.width}px`,
   transform: `translateX(${navIndicator.value.left}px)`,
@@ -795,12 +691,41 @@ function syncLessonCache() {
   saveStudentLessonList(updated)
 }
 
+function capturePlayerViewState() {
+  saveStudentViewState(lessonId.value, {
+    player: {
+      activeView: activeView.value,
+      activeChapterId: activeChapterId.value,
+      scrollTop: pageMainRef.value?.scrollTop || 0
+    }
+  })
+}
+
+function handlePlayerScroll() {
+  capturePlayerViewState()
+}
+
+async function restorePlayerViewState() {
+  const viewState = getStudentViewState(lessonId.value)?.player || {}
+  if (viewState.activeView && primaryNavItems.some((item) => item.value === viewState.activeView)) {
+    activeView.value = viewState.activeView
+  }
+  if (viewState.activeChapterId) {
+    activeChapterId.value = viewState.activeChapterId
+  }
+  await nextTick()
+  if (pageMainRef.value && Number.isFinite(Number(viewState.scrollTop))) {
+    pageMainRef.value.scrollTop = Number(viewState.scrollTop || 0)
+  }
+}
+
 function setActiveChapter(chapter) {
   activeChapterId.value = chapter.chapterId
 }
 
 function goToKnowledgeLearning(chapter) {
   if (!chapter?.chapterId) return
+  capturePlayerViewState()
   router.push({
     name: 'StudentKnowledgeLearning',
     params: {
@@ -808,7 +733,8 @@ function goToKnowledgeLearning(chapter) {
       sectionId: chapter.sectionId || ''
     },
     query: {
-      chapterId: chapter.chapterId
+      chapterId: chapter.chapterId,
+      ...(chapter.pageNo ? { pageNo: String(chapter.pageNo) } : {})
     }
   })
 }
@@ -833,10 +759,16 @@ function updateNavIndicator() {
 
 function switchView(value) {
   activeView.value = value
-  window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  nextTick(() => {
+    if (pageMainRef.value) {
+      pageMainRef.value.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    }
+    capturePlayerViewState()
+  })
 }
 
 function goStudentHome() {
+  capturePlayerViewState()
   router.push({
     name: 'StudentHome',
     query: route.query.token ? { token: route.query.token } : {}
@@ -870,15 +802,20 @@ function applyChapterPosition(chapter) {
 }
 
 function goToRecommendedChapter() {
-  applyChapterPosition(recommendedResumeChapter.value)
-  activeView.value = 'knowledge'
+  const targetChapter = recommendedResumeChapter.value
+  if (!targetChapter?.chapterId) return
+  applyChapterPosition(targetChapter)
+  goToKnowledgeLearning({
+    ...targetChapter,
+    pageNo: latestResumePoint.value.pageNo || targetChapter.pageNo
+  })
 }
 
 function goToChapterById(chapterId) {
   const chapter = allChapters.value.find((item) => item.chapterId === chapterId)
   if (!chapter) return
   applyChapterPosition(chapter)
-  activeView.value = 'knowledge'
+  goToKnowledgeLearning(chapter)
 }
 
 async function resumeLearning() {
@@ -902,13 +839,39 @@ async function resumeLearning() {
       pageNo: payload.pageNo || targetChapter?.pageNo || progressState.value.pageNo,
       anchorTitle: payload.anchorTitle || targetChapter?.chapterTitle || progressState.value.anchorTitle
     }
-    ElMessage.success('已恢复到最近学习位置')
+    if (targetChapter?.chapterId) {
+      await router.push({
+        name: 'StudentKnowledgeLearning',
+        params: {
+          lessonId: lessonId.value,
+          sectionId: targetChapter.sectionId || ''
+        },
+        query: {
+          ...(route.query.token ? { token: route.query.token } : {}),
+          chapterId: targetChapter.chapterId,
+          pageNo: String(payload.pageNo || targetChapter.pageNo || progressState.value.pageNo || 1)
+        }
+      })
+    }
   } catch {
-    applyChapterPosition(recommendedResumeChapter.value)
-    ElMessage.info('已根据本地缓存定位到推荐续学章节')
+    const fallbackChapter = recommendedResumeChapter.value
+    applyChapterPosition(fallbackChapter)
+    if (fallbackChapter?.chapterId) {
+      await router.push({
+        name: 'StudentKnowledgeLearning',
+        params: {
+          lessonId: lessonId.value,
+          sectionId: fallbackChapter.sectionId || ''
+        },
+        query: {
+          ...(route.query.token ? { token: route.query.token } : {}),
+          chapterId: fallbackChapter.chapterId,
+          pageNo: String(latestResumePoint.value.pageNo || fallbackChapter.pageNo || 1)
+        }
+      })
+    }
   } finally {
     resumeLoading.value = false
-    activeView.value = 'knowledge'
   }
 }
 
@@ -971,9 +934,19 @@ async function bootstrapStudent() {
 }
 
 async function loadLesson() {
-  await bootstrapStudent()
-
   const cachedLesson = getStudentLessonListCache().find((item) => item.lessonId === lessonId.value) || findFrontendTestLesson(lessonId.value)
+  if (cachedLesson) {
+    lesson.value = buildFallbackPlayer(cachedLesson)
+    if (!progressState.value.anchorId) {
+      progressState.value = getDefaultProgressState(lesson.value)
+    }
+    const cachedTargetChapter = allChapters.value.find((chapter) => String(chapter.sectionId || '') === String(progressState.value.sectionId || ''))
+      || allChapters.value.find((chapter) => chapter.pageNo === progressState.value.pageNo)
+      || allChapters.value[0]
+    activeChapterId.value = cachedTargetChapter?.chapterId || ''
+  }
+
+  await bootstrapStudent()
 
   try {
     const progressRes = await getStudentProgress({
@@ -1038,6 +1011,8 @@ async function loadLesson() {
   }
   activeSessionId.value = ''
   chatList.value = []
+  hasLoadedLesson.value = true
+  await restorePlayerViewState()
 
   await nextTick()
 }
@@ -1166,9 +1141,23 @@ onMounted(async () => {
     await nextTick()
     updateNavIndicator()
     window.addEventListener('resize', updateNavIndicator)
+    pageMainRef.value?.addEventListener('scroll', handlePlayerScroll, { passive: true })
+    hasActivatedOnce.value = true
   } catch (error) {
     ElMessage.error(error?.msg || '课程详情加载失败')
   }
+})
+
+onActivated(async () => {
+  if (!hasActivatedOnce.value) return
+  if (!hasLoadedLesson.value) {
+    await loadLesson()
+  } else {
+    await restorePlayerViewState()
+  }
+  await nextTick()
+  updateNavIndicator()
+  pageMainRef.value?.addEventListener('scroll', handlePlayerScroll, { passive: true })
 })
 
 watch(activeView, async () => {
@@ -1176,10 +1165,21 @@ watch(activeView, async () => {
   updateNavIndicator()
 })
 
+watch([activeView, activeChapterId], () => {
+  capturePlayerViewState()
+})
+
 onBeforeUnmount(() => {
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
   window.removeEventListener('resize', updateNavIndicator)
+  pageMainRef.value?.removeEventListener('scroll', handlePlayerScroll)
+  capturePlayerViewState()
+})
+
+onDeactivated(() => {
+  pageMainRef.value?.removeEventListener('scroll', handlePlayerScroll)
+  capturePlayerViewState()
 })
 </script>
 
@@ -1609,7 +1609,7 @@ onBeforeUnmount(() => {
 
 .student-progress-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 520px;
   gap: 22px;
   background:
     radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.86), transparent 28%),
@@ -1646,18 +1646,19 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 18px;
+  margin-top: 22px;
 }
 
 .student-progress-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
 .student-progress-stat-card {
-  padding: 18px 16px;
-  border-radius: 22px;
+  min-height: 132px;
+  padding: 22px 20px;
+  border-radius: 24px;
   background: rgba(255, 255, 255, 0.66);
   border: 1px solid rgba(208, 222, 245, 0.96);
 }
@@ -1670,16 +1671,10 @@ onBeforeUnmount(() => {
 
 .student-progress-stat-card strong {
   display: block;
-  margin-top: 10px;
+  margin-top: 12px;
   color: #17315d;
-  font-size: 18px;
+  font-size: 26px;
   line-height: 1.5;
-}
-
-.student-progress-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 22px;
 }
 
 .student-progress-panel-head {

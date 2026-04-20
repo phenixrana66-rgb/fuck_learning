@@ -243,3 +243,19 @@ export function getStudentRecentChapterVisits() {
   const list = JSON.parse(localStorage.getItem('studentRecentChapterVisits') || '[]')
   return Array.isArray(list) ? list : []
 }
+
+export function saveStudentViewState(lessonId, state) {
+  if (!lessonId) return
+  const cache = JSON.parse(localStorage.getItem('studentViewStateCache') || '{}')
+  cache[lessonId] = {
+    ...(cache[lessonId] || {}),
+    ...(state || {})
+  }
+  localStorage.setItem('studentViewStateCache', JSON.stringify(cache))
+}
+
+export function getStudentViewState(lessonId) {
+  if (!lessonId) return {}
+  const cache = JSON.parse(localStorage.getItem('studentViewStateCache') || '{}')
+  return cache[lessonId] || {}
+}

@@ -588,6 +588,35 @@ def get_page_context_for_qa(db: Session, lesson_identifier: str | int | None, se
     }
 
 
+def get_section_pages_context_for_qa(
+    db: Session,
+    lesson_identifier: str | int | None,
+    section_identifier: str | int | None,
+) -> list[JsonDict]:
+    lesson = _find_lesson(db, lesson_identifier)
+    if not lesson:
+        return []
+    section = _find_section(db, lesson.id, section_identifier)
+    if not section:
+        return []
+
+    pages = sorted(section.pages or [], key=lambda item: (item.sort_no, item.page_no, item.id))
+    return [
+        {
+            "pageDbId": page.id,
+            "pageNo": page.page_no,
+            "pageTitle": page.page_title or "",
+            "pageSummary": page.page_summary or "",
+            "parsedContent": page.parsed_content or page.page_summary or "",
+            "hasMeaningfulContent": not _is_placeholder_page_text(
+                section.section_name,
+                page.parsed_content or page.page_summary or "",
+            ),
+        }
+        for page in pages
+    ]
+
+
 def get_section_knowledge_points_for_qa(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None) -> list[JsonDict]:
     lesson = _find_lesson(db, lesson_identifier)
     if not lesson:

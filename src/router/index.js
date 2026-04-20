@@ -57,7 +57,13 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior() {
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition
+    }
+    if (String(to.name || '').startsWith('Student') || String(from.name || '').startsWith('Student')) {
+      return false
+    }
     return {
       left: 0,
       top: 0

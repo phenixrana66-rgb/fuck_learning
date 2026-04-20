@@ -16,7 +16,7 @@
     </header>
 
     <main class="knowledge-workspace">
-      <section class="knowledge-left">
+      <section ref="knowledgeLeftRef" class="knowledge-left">
         <section class="knowledge-summary-card">
           <div class="knowledge-summary-main">
             <h1>{{ detail.sectionTitle || '章节学习' }}</h1>
@@ -277,7 +277,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
@@ -288,10 +288,11 @@ import {
   saveStudentRecentChapter
 } from '@/api/student'
 import { findFrontendTestLesson } from '@/mock/studentLessons'
-import { getStudentProfile } from '@/utils/platform'
+import { getStudentProfile, getStudentViewState, saveStudentViewState } from '@/utils/platform'
 
 const router = useRouter()
 const route = useRoute()
+const knowledgeLeftRef = ref(null)
 
 const fallbackProfile = {
   studentId: 'S2026001',
@@ -336,6 +337,8 @@ const viewerShellRef = ref(null)
 const chatScrollRef = ref(null)
 const sectionAudioRef = ref(null)
 const thumbnailRefs = ref({})
+const hasLoadedDetail = ref(false)
+const hasActivatedOnce = ref(false)
 
 const lessonId = computed(() => String(route.params.lessonId || ''))
 const chapterId = computed(() => String(route.query.chapterId || ''))
@@ -524,6 +527,32 @@ function normalizeFallbackDetail() {
   }
 }
 
+function captureKnowledgeViewState() {
+  const lessonViewState = getStudentViewState(lessonId.value)
+  const knowledgeState = { ...(lessonViewState.knowledge || {}) }
+  knowledgeState[sectionId.value || chapterId.value || 'default'] = {
+    activePageNo: activePageNo.value,
+    scrollTop: knowledgeLeftRef.value?.scrollTop || 0
+  }
+  saveStudentViewState(lessonId.value, { knowledge: knowledgeState })
+}
+
+function handleKnowledgeScroll() {
+  captureKnowledgeViewState()
+}
+
+async function restoreKnowledgeViewState() {
+  const lessonViewState = getStudentViewState(lessonId.value)
+  const stored = lessonViewState.knowledge?.[sectionId.value || chapterId.value || 'default'] || {}
+  if (stored.activePageNo && !restorePageNo.value) {
+    activePageNo.value = Number(stored.activePageNo)
+  }
+  await nextTick()
+  if (knowledgeLeftRef.value && Number.isFinite(Number(stored.scrollTop))) {
+    knowledgeLeftRef.value.scrollTop = Number(stored.scrollTop || 0)
+  }
+}
+
 function setThumbnailRef(pageNo, element) {
   if (!element) {
     delete thumbnailRefs.value[pageNo]
@@ -581,8 +610,10 @@ async function loadSectionDetail() {
   } catch (error) {
     ElMessage.warning(error?.msg || '知识学习内容加载失败，已切换为本地演示数据')
   } finally {
+    hasLoadedDetail.value = true
     await nextTick()
     keepThumbnailVisible()
+    await restoreKnowledgeViewState()
   }
 }
 
@@ -659,6 +690,7 @@ async function toggleSectionAudio() {
 
 function persistRecentVisit() {
   if (!lessonId.value || !chapterId.value || !sectionId.value) return
+  captureKnowledgeViewState()
   saveStudentRecentChapter({
     studentId: studentProfile.value.studentId,
     lessonId: lessonId.value,
@@ -740,6 +772,10 @@ function stopStreamingAnswer() {
 function goBack() {
   stopSectionAudio()
   persistRecentVisit()
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
   router.push({
     name: 'StudentPlayer',
     params: { lessonId: lessonId.value },
@@ -762,22 +798,52 @@ watch(activePageNo, async () => {
   if (activePage.value) {
     syncPageRead(activePage.value)
   }
+  captureKnowledgeViewState()
 })
 
 onMounted(async () => {
   window.addEventListener('pagehide', persistRecentVisit)
+  knowledgeLeftRef.value?.addEventListener('scroll', handleKnowledgeScroll, { passive: true })
   await loadSectionDetail()
   if (activePage.value) {
     syncPageRead(activePage.value)
   }
+  hasActivatedOnce.value = true
 })
+
+onActivated(async () => {
+  if (!hasActivatedOnce.value) return
+  if (!hasLoadedDetail.value) {
+    await loadSectionDetail()
+  } else {
+    await restoreKnowledgeViewState()
+    await nextTick()
+    keepThumbnailVisible()
+  }
+  knowledgeLeftRef.value?.addEventListener('scroll', handleKnowledgeScroll, { passive: true })
+})
+
+watch(
+  () => [route.params.lessonId, route.params.sectionId, route.query.pageNo],
+  async ([nextLessonId, nextSectionId, nextPageNo], [prevLessonId, prevSectionId, prevPageNo] = []) => {
+    if (nextLessonId === prevLessonId && nextSectionId === prevSectionId && nextPageNo === prevPageNo) return
+    hasLoadedDetail.value = false
+    await loadSectionDetail()
+  }
+)
 
 onBeforeUnmount(() => {
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
   stopSectionAudio()
   window.removeEventListener('pagehide', persistRecentVisit)
+  knowledgeLeftRef.value?.removeEventListener('scroll', handleKnowledgeScroll)
   persistRecentVisit()
+})
+
+onDeactivated(() => {
+  knowledgeLeftRef.value?.removeEventListener('scroll', handleKnowledgeScroll)
+  captureKnowledgeViewState()
 })
 
 onBeforeRouteLeave(() => {
