@@ -104,6 +104,7 @@ class LessonServiceTestCase(unittest.TestCase):
                     scriptId=script_summary.scriptId,
                     audioId=audio['audioId'],
                     publisherId='teacher-demo',
+                    chapterName='发布章节名',
                     enc='demo-signature',
                 )
             )
@@ -129,6 +130,8 @@ class LessonServiceTestCase(unittest.TestCase):
             )
             published_lesson = db.query(Lesson).filter(Lesson.lesson_no == publish['lessonId']).first()
             published_sections = db.query(LessonSection).filter(LessonSection.lesson_id == published_lesson.id).all() if published_lesson else []
+            script_entity = db.query(ChapterScript).filter(ChapterScript.script_no == script_summary.scriptId).first()
+            chapter_name = script_entity.chapter.chapter_name if script_entity and script_entity.chapter else None
 
         generated_filename = audio['audioUrl'].rsplit('/', 1)[-1]
         generated_file = voice_cache_dir / generated_filename
@@ -148,6 +151,7 @@ class LessonServiceTestCase(unittest.TestCase):
         self.assertEqual(publish['publishStatus'], 'published')
         self.assertIsNotNone(published_lesson)
         self.assertEqual(len(published_sections), len(section_ids))
+        self.assertEqual(chapter_name, '发布章节名')
         self.assertEqual(play['nodeSequence'], ['node-01-01', 'node-01-02'])
         self.assertEqual(play['scriptRefs'][0]['scriptId'], script_summary.scriptId)
         self.assertEqual(play['audioRefs'][0]['audioId'], audio['audioId'])

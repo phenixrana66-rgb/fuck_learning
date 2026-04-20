@@ -43,13 +43,14 @@ def upload_parse(
     course_id: str,
     file_name: str,
     file_content: str | None,
+    chapter_name: str | None = None,
     base_url: str | None = None,
 ) -> JsonDict:
     settings = get_settings()
     course = _resolve_course(db, course_id)
     if not course:
         raise ValueError("courseId 不能为空或课程不存在")
-    chapter = _pick_chapter(db, course.id, file_name)
+    chapter = _resolve_or_create_chapter(db, course.id, file_name, chapter_name)
     parse_no = f"P{uuid4().hex[:12].upper()}"
     asset_path = _save_uploaded_file(parse_no, file_name, file_content)
     file_url = _build_mock_remote_url(base_url, asset_path)
@@ -86,6 +87,8 @@ def upload_parse(
         "status": "processing",
         "knowledgeTree": [],
         "coursewareId": _build_courseware_id(course.course_code),
+        "chapterId": str(chapter.id),
+        "chapterName": chapter.chapter_name,
     }
 
 
@@ -130,6 +133,8 @@ def get_parse_status(db: Session, parse_id: str) -> JsonDict:
             "status": "success",
             "knowledgeTree": _build_tree(db, task.id),
             "coursewareId": courseware_id,
+            "chapterId": str(task.chapter.id) if task.chapter else "",
+            "chapterName": task.chapter.chapter_name if task.chapter else "",
         }
     if task.task_status == "failed":
         return {
@@ -138,12 +143,16 @@ def get_parse_status(db: Session, parse_id: str) -> JsonDict:
             "knowledgeTree": [],
             "msg": task.error_msg or "解析失败",
             "coursewareId": courseware_id,
+            "chapterId": str(task.chapter.id) if task.chapter else "",
+            "chapterName": task.chapter.chapter_name if task.chapter else "",
         }
     return {
         "parseId": task.parse_no,
         "status": "processing",
         "knowledgeTree": [],
         "coursewareId": courseware_id,
+        "chapterId": str(task.chapter.id) if task.chapter else "",
+        "chapterName": task.chapter.chapter_name if task.chapter else "",
     }
 
 
@@ -154,20 +163,36 @@ def _resolve_course(db: Session, external_course_id: str) -> Course | None:
     return db.query(Course).filter(Course.course_code == external_course_id).first()
 
 
-def _pick_chapter(db: Session, course_id: int, file_name: str) -> CourseChapter:
+def _resolve_or_create_chapter(db: Session, course_id: int, file_name: str, chapter_name: str | None = None) -> CourseChapter:
+    target_name = str(chapter_name or "").strip() or Path(file_name or "").stem.strip()
+    if not target_name:
+        target_name = "未命名章节"
+
     chapters = (
         db.query(CourseChapter)
         .filter(CourseChapter.course_id == course_id, CourseChapter.chapter_type != "unit")
         .order_by(CourseChapter.sort_no.asc(), CourseChapter.id.asc())
         .all()
     )
-    normalized = file_name.replace(" ", "")
+
+    normalized_target = target_name.replace(" ", "")
     for chapter in chapters:
-        if chapter.chapter_name.replace(" ", "") in normalized:
+        if chapter.chapter_name.replace(" ", "") == normalized_target:
             return chapter
-    if chapters:
-        return chapters[0]
-    raise ValueError("当前课程未配置章节")
+
+    next_sort_no = max((chapter.sort_no or 0 for chapter in chapters), default=0) + 1
+    chapter = CourseChapter(
+        course_id=course_id,
+        chapter_code=f"chapter-{uuid4().hex[:12]}",
+        chapter_name=target_name,
+        chapter_type="chapter",
+        chapter_level=1,
+        sort_no=next_sort_no,
+        status="draft",
+    )
+    db.add(chapter)
+    db.flush()
+    return chapter
 
 
 def _decode_file_content(file_content: str) -> bytes:

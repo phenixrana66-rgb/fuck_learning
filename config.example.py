@@ -30,7 +30,7 @@ vector_db_url = "postgresql+psycopg://postgres:你的密码@127.0.0.1:5433/chaox
 APPID = "从火山引擎控制台获取"
 ACCESS_TOKEN = "从火山引擎控制台获取" 
 
-# 语音合成配置(火山引擎)
+# 语音合成配置(火山引擎) 
 TTS_URL = "https://openspeech.bytedance.com/api/v1/tts"
 TTS_CLUSTER = "volcano_tts"
 TTS_VOICE_TYPE = "zh_male_M392_conversation_wvae_bigtts"

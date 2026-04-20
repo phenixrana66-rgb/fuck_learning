@@ -8,8 +8,12 @@
           <el-input :model-value="currentCourse.courseName || '-'" readonly />
         </el-form-item>
 
-        <el-form-item label="当前章节">
-          <el-input :model-value="chapterInfo.chapterName || '-'" readonly />
+        <el-form-item label="发布章节名">
+          <el-input
+            v-model="chapterInfo.chapterName"
+            placeholder="请输入发布时使用的章节名"
+            @input="handleChapterNameInput"
+          />
         </el-form-item>
 
         <el-form-item label="解析版本">
@@ -386,6 +390,8 @@ async function loadAudiosForScript(scriptId, preferredAudioId = '') {
     const preferred = audioHistory.value.find((item) => item.audioId === preferredAudioId)
     if (preferred) {
       useExistingAudio(preferred, { silent: true })
+    } else if (audioHistory.value.length) {
+      useExistingAudio(audioHistory.value[0], { silent: true })
     }
   } catch (error) {
     errorCode.value = error.code || 500
@@ -502,6 +508,11 @@ async function publishLesson() {
     return
   }
 
+  if (!String(chapterInfo.value.chapterName || '').trim()) {
+    ElMessage.warning('请输入发布章节名。')
+    return
+  }
+
   const coursewareId = await resolveCoursewareId()
   if (!coursewareId) {
     ElMessage.warning('缺少 coursewareId，请先确认解析版本是否可用。')
@@ -515,7 +526,8 @@ async function publishLesson() {
       coursewareId,
       scriptId: form.value.scriptId,
       audioId: form.value.audioId,
-      publisherId: teacherInfo.teacherId || teacherInfo.userId || ''
+      publisherId: teacherInfo.teacherId || teacherInfo.userId || '',
+      chapterName: chapterInfo.value.chapterName
     })
 
     const data = res.data || {}
@@ -546,6 +558,13 @@ async function publishLesson() {
   } finally {
     publishing.value = false
   }
+}
+
+function handleChapterNameInput() {
+  patchTeacherWorkspaceContext(currentCourse.courseId, {
+    chapterId: chapterInfo.value.chapterId,
+    chapterName: chapterInfo.value.chapterName
+  })
 }
 
 async function resolveCoursewareId() {

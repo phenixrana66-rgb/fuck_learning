@@ -62,7 +62,15 @@ class TeacherServiceTestCase(unittest.TestCase):
         with session_scope() as db:
             teacher = db.query(User).filter(User.user_no == "teacher-001").first()
             assert teacher is not None
-            accepted = upload_parse(db, teacher, "course-001", "demo.pptx", file_content, "http://testserver/")
+            accepted = upload_parse(
+                db,
+                teacher,
+                "course-001",
+                "demo.pptx",
+                file_content,
+                chapter_name="压杆稳定",
+                base_url="http://testserver/",
+            )
 
         parse_id = accepted["parseId"]
         uploaded_file = EXAMPLES_ROOT / f"{parse_id}-demo.pptx"
@@ -105,6 +113,27 @@ class TeacherServiceTestCase(unittest.TestCase):
         self.assertEqual(page_payloads[0][0], "/courseware-previews/parse-demo/page-1.png")
         self.assertEqual(page_payloads[0][1], "第一页正文")
         self.assertEqual(page_payloads[1][0], "/courseware-previews/parse-demo/page-2.png")
+
+    def test_upload_parse_uses_custom_chapter_name_and_creates_missing_chapter(self) -> None:
+        file_content = base64.b64encode(b"fake pptx content").decode()
+        with session_scope() as db:
+            teacher = db.query(User).filter(User.user_no == "teacher-001").first()
+            assert teacher is not None
+            accepted = upload_parse(
+                db,
+                teacher,
+                "course-001",
+                "01总论.pptx",
+                file_content,
+                chapter_name="课程导学",
+                base_url="http://testserver/",
+            )
+            task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == accepted["parseId"]).first()
+            self.assertIsNotNone(task)
+            self.assertEqual(accepted["chapterName"], "课程导学")
+            self.assertIsNotNone(task.chapter)
+            self.assertEqual(task.chapter.chapter_name, "课程导学")
+            self.assertEqual(task.chapter.chapter_code.startswith("chapter-"), True)
 
     def _seed_course_and_lesson(self) -> None:
         with session_scope() as db:

@@ -178,6 +178,7 @@ class CompatRouterTestCase(unittest.TestCase):
                 'courseId': 'course-001',
                 'fileName': 'demo.pptx',
                 'fileContent': 'ZGVtbw==',
+                'chapterName': '第一章',
                 'token': 'teacher-token',
             },
         )
@@ -192,6 +193,7 @@ class CompatRouterTestCase(unittest.TestCase):
             'course-001',
             'demo.pptx',
             'ZGVtbw==',
+            '第一章',
             'http://testserver/',
         )
         mock_thread.assert_called_once_with(
@@ -200,6 +202,38 @@ class CompatRouterTestCase(unittest.TestCase):
             daemon=True,
         )
         thread_instance.start.assert_called_once()
+
+    @patch('backend.app.compat.router.create_course_for_teacher')
+    @patch('backend.app.compat.router.require_teacher')
+    def test_create_course_uses_teacher_platform_service(self, mock_require_teacher, mock_create_course_for_teacher) -> None:
+        mock_require_teacher.return_value = object()
+        mock_create_course_for_teacher.return_value = {
+            'courseId': 'CNEW001',
+            'courseName': '新建课程',
+            'classId': '',
+            'schoolId': 'school-001',
+        }
+
+        response = self.client.post(
+            '/api/v1/platform/createCourse',
+            json={
+                'courseId': 'CNEW001',
+                'courseName': '新建课程',
+                'token': 'teacher-token',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['data']['courseId'], 'CNEW001')
+        self.assertEqual(payload['data']['courseName'], '新建课程')
+        mock_require_teacher.assert_called_once()
+        mock_create_course_for_teacher.assert_called_once_with(
+            unittest.mock.ANY,
+            mock_require_teacher.return_value,
+            '新建课程',
+            'CNEW001',
+        )
 
     @patch('backend.app.compat.router.publish_lesson')
     def test_publish_lesson_uses_main_service(self, mock_publish_lesson) -> None:

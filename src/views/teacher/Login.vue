@@ -44,6 +44,18 @@
               <div class="info-value">{{ teacherInfo.schoolName || '-' }}</div>
             </div>
           </div>
+
+          <div v-if="teacherInfo.teacherId || teacherInfo.userId" class="teacher-create-course">
+            <div class="sub-title">创建课程</div>
+            <div class="toolbar teacher-create-course-toolbar">
+              <el-input v-model="createCourseForm.courseName" placeholder="请输入课程名称" clearable />
+              <el-input v-model="createCourseForm.courseId" placeholder="课程 ID，可选，不填自动生成" clearable />
+              <el-button type="success" :loading="creatingCourse" @click="handleCreateCourse">
+                创建课程并进入
+              </el-button>
+            </div>
+            <div class="teacher-create-course-tip">新建课程会自动加入当前教师的可管理课程列表，后续可直接上传课件解析。</div>
+          </div>
         </div>
 
         <div v-if="courseList.length" class="page-card teacher-course-table-card">
@@ -68,9 +80,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
-import { syncCourse, syncUser } from '@/api/teacher'
+import { createCourse, syncCourse, syncUser } from '@/api/teacher'
 import {
   getPlatformToken,
   savePlatformToken,
@@ -87,6 +100,11 @@ const errorCode = ref('')
 const errorMsg = ref('')
 const teacherInfo = ref({})
 const courseList = ref([])
+const creatingCourse = ref(false)
+const createCourseForm = ref({
+  courseName: '',
+  courseId: ''
+})
 
 onMounted(() => {
   token.value = getPlatformToken() || 'test_token_001'
@@ -136,6 +154,47 @@ async function handleSync() {
 function selectCourse(course) {
   saveCurrentCourse(course)
   router.push('/teacher/lesson-manage')
+}
+
+async function handleCreateCourse() {
+  if (!token.value) {
+    errorCode.value = 400
+    errorMsg.value = '请先完成平台鉴权。'
+    return
+  }
+
+  if (!createCourseForm.value.courseName.trim()) {
+    errorCode.value = 400
+    errorMsg.value = '请输入课程名称。'
+    return
+  }
+
+  creatingCourse.value = true
+  errorCode.value = ''
+  errorMsg.value = ''
+
+  try {
+    const res = await createCourse({
+      token: token.value,
+      courseName: createCourseForm.value.courseName.trim(),
+      courseId: createCourseForm.value.courseId.trim()
+    })
+    const created = res.data || {}
+    courseList.value = [created, ...courseList.value.filter((item) => item.courseId !== created.courseId)]
+    saveCourseList(courseList.value)
+    saveCurrentCourse(created)
+    createCourseForm.value = {
+      courseName: '',
+      courseId: ''
+    }
+    ElMessage.success(`课程已创建：${created.courseName || created.courseId}`)
+    router.push('/teacher/lesson-manage')
+  } catch (error) {
+    errorCode.value = error.code || 500
+    errorMsg.value = error.msg || '创建课程失败。'
+  } finally {
+    creatingCourse.value = false
+  }
 }
 </script>
 
@@ -246,6 +305,28 @@ function selectCourse(course) {
 
 .teacher-login-info {
   margin-top: 20px;
+}
+
+.teacher-create-course {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #e7eef9;
+}
+
+.teacher-create-course-toolbar {
+  flex-wrap: wrap;
+}
+
+.teacher-create-course-toolbar :deep(.el-input) {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.teacher-create-course-tip {
+  margin-top: 10px;
+  color: #7388ab;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 @media (max-width: 1100px) {

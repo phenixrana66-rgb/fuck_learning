@@ -17,7 +17,7 @@ from backend.app.lesson.service import play_lesson, publish_lesson
 from backend.app.platform.schemas import SyncCourseRequest, SyncUserRequest
 from backend.app.platform.service import sync_course as sync_main_course
 from backend.app.platform.service import sync_user as sync_main_user
-from backend.app.platform.teacher_service import require_teacher, sync_courses, sync_user
+from backend.app.platform.teacher_service import create_course_for_teacher, require_teacher, sync_courses, sync_user
 from backend.app.script.schemas import GenerateScriptRequest, UpdateScriptRequest
 from backend.app.script.service import generate_script as generate_main_script
 from backend.app.script.service import get_script, update_script
@@ -113,6 +113,7 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
             payload.get("courseId"),
             payload.get("fileName"),
             payload.get("fileContent"),
+            payload.get("chapterName"),
             str(request.base_url),
         )
         Thread(target=run_teacher_parse_task, args=(data["parseId"],), daemon=True).start()
@@ -121,6 +122,21 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
         raise ApiError(400, str(exc), status_code=400)
     except LookupError as exc:
         raise ApiError(404, str(exc), status_code=404)
+
+
+@router.post("/platform/createCourse")
+async def create_course_endpoint(request: Request, db: Session = Depends(get_db)) -> dict:
+    payload = await request_payload(request)
+    try:
+        teacher = require_teacher(db, _extract_token(request, payload))
+    except PermissionError:
+        raise ApiError(401, "token invalid", status_code=401)
+
+    try:
+        data = create_course_for_teacher(db, teacher, payload.get("courseName"), payload.get("courseId"))
+        return teacher_response(request, data)
+    except ValueError as exc:
+        raise ApiError(400, str(exc), status_code=400)
 
     # typed_payload = ParseRequest.model_validate(payload)
     # verify_signature_placeholder(typed_payload.enc, typed_payload.time)

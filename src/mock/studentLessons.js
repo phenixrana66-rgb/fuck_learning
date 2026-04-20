@@ -116,6 +116,8 @@ function buildUnits(lessonId, unitSpecs) {
       const chapter = {
         chapterId: `${lessonId}-U${unitIndex + 1}-C${chapterIndex + 1}`,
         chapterTitle,
+        slideName: chapterTitle,
+        pptAssetId: null,
         progressPercent: 0,
         masteryPercent: 0,
         pageNo,

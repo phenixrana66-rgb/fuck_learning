@@ -213,6 +213,9 @@ def publish_lesson(payload: PublishRequest) -> dict:
             raise ApiError(code=409, msg="audio has no matching script sections", status_code=409)
 
         chapter = script_entity.chapter
+        normalized_chapter_name = (payload.chapterName or "").strip()
+        if chapter is not None and normalized_chapter_name:
+            chapter.chapter_name = normalized_chapter_name
         unit_chapter = chapter.parent if chapter and chapter.parent is not None else chapter
         next_publish_version = _next_publish_version(db, script_entity.course_id)
         lesson = (

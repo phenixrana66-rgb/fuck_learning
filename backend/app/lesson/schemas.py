@@ -34,6 +34,7 @@ class PublishRequest(AppBaseModel):
     scriptId: str
     audioId: str
     publisherId: str | None = None
+    chapterName: str | None = None
     enc: str
     time: str | None = None
 

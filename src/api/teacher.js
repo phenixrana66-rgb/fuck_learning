@@ -16,6 +16,14 @@ export function syncCourse(data) {
   })
 }
 
+export function createCourse(data) {
+  return request({
+    url: '/api/v1/platform/createCourse',
+    method: 'post',
+    data
+  })
+}
+
 export function lessonParse(data) {
   return request({
     url: '/api/v1/lesson/parse',

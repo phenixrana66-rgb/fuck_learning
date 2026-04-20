@@ -46,7 +46,7 @@
           </el-tag>
         </el-form-item>
         <el-form-item label="目标章节">
-          <el-input :model-value="parseForm.chapterName || '-'" readonly />
+          <el-input v-model="parseForm.chapterName" placeholder="请输入章节名称，默认使用 PPT 文件名" />
         </el-form-item>
       </el-form>
 
@@ -136,6 +136,7 @@ function handleFileRemove() {
   clearTimeout(pollTimer)
   parseForm.value.fileName = ''
   parseForm.value.fileBase64 = ''
+  parseForm.value.chapterName = ''
   resetParseState()
 }
 
@@ -154,6 +155,7 @@ function handleSelectedFile(file) {
 
   resetParseState()
   parseForm.value.fileName = file.name
+  parseForm.value.chapterName = deriveChapterName(file.name)
   const reader = new FileReader()
   reader.readAsDataURL(file)
   reader.onload = async () => {
@@ -188,6 +190,7 @@ async function submitParse() {
       classId: currentCourse.classId,
       schoolId: currentCourse.schoolId,
       fileName: parseForm.value.fileName,
+      chapterName: parseForm.value.chapterName,
       fileContent: parseForm.value.fileBase64,
     })
 
@@ -195,7 +198,7 @@ async function submitParse() {
     parseForm.value.parseId = data.parseId || ''
     parseForm.value.status = data.status || 'processing'
     parseForm.value.chapterId = data.chapterId || ''
-    parseForm.value.chapterName = data.chapterName || ''
+    parseForm.value.chapterName = data.chapterName || parseForm.value.chapterName
     chapterSummary.value = data.chapterSummary || ''
     knowledgeTree.value = data.knowledgeTree || []
 
@@ -276,5 +279,11 @@ function statusTagType(status) {
 
 function goScriptPage() {
   router.push('/teacher/script-generate')
+}
+
+function deriveChapterName(fileName) {
+  const normalized = String(fileName || '').trim()
+  if (!normalized) return ''
+  return normalized.replace(/\.[^.]+$/, '')
 }
 </script>

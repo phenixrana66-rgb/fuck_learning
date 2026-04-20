@@ -633,7 +633,7 @@ function openLesson(lesson) {
 
 function openRecentChapter(item) {
   router.push({
-    name: 'StudentKnowledgeLearning',
+    name: 'StudentSlideLearning',
     params: {
       lessonId: item.lessonId,
       sectionId: item.sectionId || ''

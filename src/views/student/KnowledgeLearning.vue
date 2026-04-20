@@ -1,298 +1,100 @@
-﻿<template>
-  <div class="knowledge-page">
-    <header class="knowledge-topbar">
+<template>
+  <div class="knowledge-chapter-page">
+    <header class="knowledge-chapter-topbar">
+      <button
+        type="button"
+        class="knowledge-chapter-back-button"
+        aria-label="返回智课讲授"
+        @click="goBack"
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+
       <div
-        class="knowledge-brand"
+        class="knowledge-chapter-brand"
         role="button"
         tabindex="0"
         @click="goStudentHome"
         @keydown.enter.prevent="goStudentHome"
         @keydown.space.prevent="goStudentHome"
       >
-        <img class="knowledge-brand-mark" src="/chaoxing-erya-logo.svg" alt="超星尔雅" />
-        <div class="knowledge-brand-name">尔雅</div>
+        <img class="knowledge-chapter-brand-mark" src="/chaoxing-erya-logo.svg" alt="超星尔雅" />
+        <div class="knowledge-chapter-brand-name">尔雅</div>
       </div>
-      <el-button class="knowledge-back-button" plain @click="goBack">返回课程详情</el-button>
     </header>
 
-    <main class="knowledge-workspace">
-      <section ref="knowledgeLeftRef" class="knowledge-left app-scrollable">
-        <section class="knowledge-summary-card">
-          <div class="knowledge-summary-main">
-            <h1>{{ detail.sectionTitle || '章节学习' }}</h1>
+    <main ref="pageMainRef" class="knowledge-chapter-main app-scrollable">
+      <section class="knowledge-chapter-shell">
+        <div class="knowledge-chapter-header">
+          <div class="knowledge-chapter-header-main">
+            <div class="knowledge-chapter-badge">章节详情</div>
+            <h1>{{ currentAggregatedChapter.chapterTitle || '章节学习' }}</h1>
           </div>
-          <div class="knowledge-summary-stats">
-            <div class="knowledge-summary-stat">
-              <span>学习进度</span>
-              <strong>{{ detail.progressPercent || 0 }}%</strong>
-            </div>
-            <div class="knowledge-summary-stat">
-              <span>章节掌握度</span>
-              <strong>{{ detail.masteryPercent || 0 }}%</strong>
-            </div>
-          </div>
-        </section>
+          <div class="knowledge-chapter-header-meta">{{ completedSectionCount }}/{{ chapterSections.length || 0 }} 已完成</div>
+        </div>
 
-        <section class="ppt-card">
-          <div class="ppt-card-header">
-            <div>
-              <div class="ppt-card-title">课件学习</div>
-              <div class="ppt-card-subtitle">当前页 {{ activePageNo }} / {{ totalPages }}</div>
-            </div>
-            <button
-              type="button"
-              class="ppt-audio-button"
-              :disabled="!canPlaySectionAudio"
-              @click="toggleSectionAudio"
-            >
-              {{ audioActionLabel }}
-            </button>
-          </div>
+        <div v-if="!chapterSections.length" class="knowledge-chapter-empty">
+          当前章节暂无可展示的课程卡片。
+        </div>
 
-          <div class="ppt-audio-panel" :class="{ disabled: !canPlaySectionAudio }">
-            <div class="ppt-audio-meta">
-              <span class="ppt-audio-status">{{ audioStatusLabel }}</span>
-              <span v-if="audioError" class="ppt-audio-error">{{ audioError }}</span>
-            </div>
-            <div class="ppt-audio-progress-row">
-              <span class="ppt-audio-time">{{ audioCurrentLabel }}</span>
-              <input
-                class="ppt-audio-slider"
-                type="range"
-                min="0"
-                :max="audioSliderMax"
-                :value="Math.min(audioCurrentTime, audioSliderMax)"
-                :disabled="!canPlaySectionAudio"
-                step="0.1"
-                aria-label="章节音频播放进度"
-                @input="handleAudioSeekInput"
-                @change="handleAudioSeekChange"
-              />
-              <span class="ppt-audio-time">{{ audioDurationLabel }}</span>
-            </div>
-          </div>
-
-          <div class="ppt-card-body">
-            <aside ref="thumbnailRailRef" class="thumbnail-rail app-scrollable">
-              <button
-                v-for="page in pages"
-                :key="page.lessonPageId || page.pageNo"
-                :ref="(element) => setThumbnailRef(page.pageNo, element)"
-                type="button"
-                class="thumbnail-card"
-                :class="{ active: page.pageNo === activePageNo }"
-                @mousedown.prevent
-                @click="setActivePage(page.pageNo)"
-              >
-                <div class="thumbnail-media">
-                  <img v-if="page.imageUrl" :src="page.imageUrl" :alt="`第 ${page.pageNo} 页缩略图`" loading="lazy" />
-                  <div v-else class="thumbnail-fallback">
-                    <strong>{{ page.pageNo }}</strong>
-                    <span>{{ page.pageTitle || `第 ${page.pageNo} 页` }}</span>
-                  </div>
-                  <span class="thumbnail-page-badge">{{ page.pageNo }}</span>
-                </div>
-              </button>
-            </aside>
-
-            <div ref="viewerShellRef" class="viewer-shell">
-              <div class="viewer-stage">
-                <img
-                  v-if="activePage?.imageUrl"
-                  class="viewer-slide"
-                  :src="activePage.imageUrl"
-                  :alt="`第 ${activePage.pageNo} 页幻灯片`"
-                />
-                <div v-else-if="activePage" class="viewer-text-fallback app-scrollable">
-                  <div class="viewer-text-title">{{ activePage.pageTitle || `第 ${activePage.pageNo} 页` }}</div>
-                  <div v-if="activePage.pageSummary" class="viewer-text-summary">{{ activePage.pageSummary }}</div>
-                  <div class="viewer-text-content">{{ activePage.parsedContent || '当前页暂无可展示的预览图，已切换为文本内容。' }}</div>
-                </div>
-                <div v-else class="viewer-empty">暂无课件页</div>
-
-                <div v-if="activePage" class="viewer-toolbar">
-                  <button
-                    type="button"
-                    class="viewer-tool-button"
-                    :disabled="!hasPrevPage"
-                    @mousedown.prevent
-                    @click="goPrevPage"
-                  >
-                    <svg viewBox="0 0 20 20" aria-hidden="true">
-                      <path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                  </button>
-                  <div class="viewer-page-indicator">{{ activePageNo }} / {{ totalPages }}</div>
-                  <button
-                    type="button"
-                    class="viewer-tool-button"
-                    :disabled="!hasNextPage"
-                    @mousedown.prevent
-                    @click="goNextPage"
-                  >
-                    <svg viewBox="0 0 20 20" aria-hidden="true">
-                      <path d="M7.5 4.5L13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="viewer-tool-button"
-                    @mousedown.prevent
-                    @click="toggleViewerFullscreen"
-                  >
-                    <svg viewBox="0 0 20 20" aria-hidden="true">
-                      <path d="M4.5 7V4.5H7M13 4.5h2.5V7M15.5 13v2.5H13M7 15.5H4.5V13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-                    </svg>
-                  </button>
-                </div>
+        <div v-else class="knowledge-chapter-grid">
+          <article
+            v-for="section in chapterSections"
+            :key="section.chapterId"
+            class="knowledge-course-card"
+            :class="{ active: String(section.sectionId || '') === activeSectionId }"
+            @click="setActiveSection(section)"
+          >
+            <div class="knowledge-course-card-head">
+              <div>
+                <div class="knowledge-course-status" :class="getSectionStatusClass(section)">{{ getSectionStatusLabel(section) }}</div>
+                <h3>{{ section.chapterTitle }}</h3>
+              </div>
+              <div class="knowledge-course-mastery-badge">
+                <span>掌握度</span>
+                <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
               </div>
             </div>
-          </div>
-          <audio
-            ref="sectionAudioRef"
-            class="section-audio"
-            :src="detail.audioUrl || ''"
-            preload="none"
-            @loadedmetadata="handleAudioLoadedMetadata"
-            @timeupdate="handleAudioTimeUpdate"
-            @canplay="handleAudioCanPlay"
-            @waiting="handleAudioWaiting"
-            @play="handleAudioPlay"
-            @pause="handleAudioPause"
-            @ended="handleAudioEnded"
-            @error="handleAudioError"
-          ></audio>
-        </section>
 
-        <section class="guide-card">
-          <div class="guide-card-head">
-            <h2>教师讲稿</h2>
-          </div>
-          <div class="guide-card-body">
-            {{ detail.scriptContent || '当前章节暂无教师讲稿。' }}
-          </div>
-        </section>
-      </section>
-
-      <aside class="knowledge-right">
-        <section class="ai-card" :class="{ 'has-chat': chatList.length > 0 }" @click="pauseSectionAudioIfPlaying">
-          <div class="ai-card-head">
-            <h2>AI 学伴</h2>
-          </div>
-
-          <template v-if="chatList.length === 0">
-            <div class="ai-quick-questions">
-              <button
-                v-for="item in quickQuestions"
-                :key="item"
-                type="button"
-                class="ai-chip"
-                @click="fillQuestion(item)"
-              >
-                {{ item }}
-              </button>
-            </div>
-            <div class="ai-welcome-spacer"></div>
-          </template>
-
-          <div v-else ref="chatScrollRef" class="ai-chat-list app-scrollable">
-            <article
-              v-for="message in chatList"
-              :key="message.id"
-              class="ai-message"
-              :class="message.role"
-            >
-              <div class="ai-message-role">{{ message.role === 'user' ? '我' : 'AI 学伴' }}</div>
-              <div class="ai-message-bubble">{{ message.content }}</div>
-            </article>
-            <article v-if="asking && !assistantStreamingStarted" class="ai-message assistant pending">
-              <div class="ai-message-role">AI 学伴</div>
-              <div class="ai-message-loading">
-                <span class="ai-inline-loading" aria-hidden="true"></span>
+            <div class="knowledge-course-card-footer">
+              <div class="knowledge-course-progress-block">
+                <div class="knowledge-course-progress-text">
+                  <span>学习进度</span>
+                  <strong>{{ Number(section.progressPercent || 0) }}%</strong>
+                </div>
+                <el-progress :percentage="Number(section.progressPercent || 0)" :stroke-width="8" :show-text="false" />
               </div>
-            </article>
-          </div>
 
-          <form class="ai-input-box" @submit.prevent="submitQuestion">
-            <textarea
-              v-model="questionText"
-              class="ai-textarea app-scrollable"
-              placeholder="输入你的问题"
-              rows="3"
-              @keydown.enter.exact.prevent="submitQuestion"
-            ></textarea>
-            <div class="ai-input-actions">
-              <div v-if="isRecording" class="ai-voice-status">
-                <span class="ai-voice-timer">{{ formatRecordingDuration(recordingSeconds) }}</span>
-                <button
-                  type="button"
-                  class="ai-icon-button voice stop"
-                  aria-label="结束录音"
-                  @click="toggleRecording"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="7" y="7" width="10" height="10" rx="2" />
-                  </svg>
+              <div class="knowledge-course-footer-row">
+                <button type="button" class="knowledge-course-action-button" @click.stop="goToSlideLearning(section)">
+                  <span class="knowledge-course-action-button-core">
+                    <span class="knowledge-course-action-button-text">进入学习</span>
+                    <span class="knowledge-course-action-button-glow" aria-hidden="true"></span>
+                  </span>
                 </button>
               </div>
-              <button
-                v-else
-                type="button"
-                class="ai-icon-button voice"
-                :class="{ loading: voiceLoading }"
-                :disabled="voiceLoading"
-                :aria-label="voiceLoading ? '语音识别中' : '语音输入'"
-                @click="!voiceLoading ? toggleRecording() : undefined"
-              >
-                <span v-if="voiceLoading" class="ai-inline-loading" aria-hidden="true"></span>
-                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3.5a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 12 3.5Z" />
-                  <path d="M7.5 10.5a4.5 4.5 0 0 0 9 0" />
-                  <path d="M12 15v5" />
-                  <path d="M9 20.5h6" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="ai-icon-button send"
-                :class="{ 'is-stop': asking }"
-                :disabled="!asking && !questionText.trim()"
-                :aria-label="asking ? '终止回答' : '发送问题'"
-                @click.prevent="asking ? stopStreamingAnswer() : submitQuestion()"
-              >
-                <svg v-if="!asking" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 4v12" />
-                  <path d="m7 9 5-5 5 5" />
-                </svg>
-                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="7" y="7" width="10" height="10" rx="2" />
-                </svg>
-              </button>
             </div>
-          </form>
-        </section>
-      </aside>
+          </article>
+        </div>
+      </section>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
-import { streamLessonInteraction } from '@/api/studentStream'
-import {
-  getStudentSectionDetail,
-  markStudentPageRead,
-  saveStudentRecentChapter
-} from '@/api/student'
+import { playStudentLesson } from '@/api/student'
 import { findFrontendTestLesson } from '@/mock/studentLessons'
-import { getStudentProfile, getStudentViewState, saveStudentViewState } from '@/utils/platform'
+import { getPlatformToken, getStudentLessonListCache, getStudentProfile, getStudentViewState, saveStudentLessonList, saveStudentViewState } from '@/utils/platform'
+import { buildAggregatedKnowledgeUnits, getSectionsForAggregatedChapter } from '@/utils/studentKnowledge'
 
-const router = useRouter()
 const route = useRoute()
-const knowledgeLeftRef = ref(null)
+const router = useRouter()
+const pageMainRef = ref(null)
 
 const fallbackProfile = {
   studentId: 'S2026001',
@@ -300,672 +102,223 @@ const fallbackProfile = {
   collegeName: ''
 }
 
-const studentProfile = ref({ ...fallbackProfile, ...getStudentProfile() })
-const detail = ref({
-  lessonId: '',
-  lessonDbId: '',
-  courseName: '',
-  teacherName: '',
-  unitTitle: '',
-  sectionId: '',
-  sectionTitle: '',
-  progressPercent: 0,
-  masteryPercent: 0,
-  aiGuideContent: '',
-  scriptContent: '',
-  audioUrl: '',
-  audioStatus: '',
-  knowledgePoints: [],
-  pages: [],
-  currentPageNo: 1
+const studentProfile = ref({
+  ...fallbackProfile,
+  ...getStudentProfile()
 })
-const activePageNo = ref(1)
-const questionText = ref('')
-const asking = ref(false)
-const chatList = ref([])
-const activeAnswerController = ref(null)
-const voiceDraftPrefix = ref('')
-const assistantStreamingStarted = ref(false)
-const isAudioPlaying = ref(false)
-const audioCurrentTime = ref(0)
-const audioDuration = ref(0)
-const audioPending = ref(false)
-const audioError = ref('')
-const audioShouldNotifyError = ref(false)
-const audioSeeking = ref(false)
-const thumbnailRailRef = ref(null)
-const viewerShellRef = ref(null)
-const chatScrollRef = ref(null)
-const sectionAudioRef = ref(null)
-const thumbnailRefs = ref({})
-const hasLoadedDetail = ref(false)
-const hasActivatedOnce = ref(false)
-const isKnowledgeViewActive = ref(false)
-let sectionDetailLoadSeq = 0
+const lesson = ref({ units: [] })
+const activeSectionId = ref('')
+const loading = ref(false)
 
-const routeLessonId = computed(() => String(route.params.lessonId || ''))
-const routeSectionId = computed(() => String(route.params.sectionId || ''))
-const isKnowledgeRoute = computed(() => route.name === 'StudentKnowledgeLearning')
-const lessonId = computed(() => routeLessonId.value || String(detail.value.lessonId || ''))
-const chapterId = computed(() => String(route.query.chapterId || ''))
-const restorePageNo = computed(() => Number(route.query.pageNo || 0))
-const sectionId = computed(() => routeSectionId.value || String(detail.value.sectionId || ''))
-const pages = computed(() => detail.value.pages || [])
-const totalPages = computed(() => pages.value.length)
-const activePage = computed(() => pages.value.find((page) => Number(page.pageNo) === Number(activePageNo.value)) || pages.value[0] || null)
-const hasPrevPage = computed(() => activePageNo.value > 1)
-const hasNextPage = computed(() => activePageNo.value < totalPages.value)
-const canPlaySectionAudio = computed(() => Boolean(detail.value.audioUrl) && detail.value.audioStatus === 'published')
-const audioSliderMax = computed(() => Math.max(Number(audioDuration.value || 0), 1))
-const audioCurrentLabel = computed(() => formatAudioTime(audioCurrentTime.value))
-const audioDurationLabel = computed(() => formatAudioTime(audioDuration.value))
-const audioActionLabel = computed(() => (isAudioPlaying.value ? '暂停播放' : '语音播放'))
-const audioStatusLabel = computed(() => {
-  if (!detail.value.audioUrl) return '当前章节暂无讲解音频'
-  if (detail.value.audioStatus && detail.value.audioStatus !== 'published') return '讲解音频待发布'
-  if (audioError.value) return '音频播放异常'
-  if (audioPending.value) return '音频加载中...'
-  if (isAudioPlaying.value) return '正在播放讲解音频'
-  if (audioCurrentTime.value > 0) return '已暂停，可继续播放'
-  return '讲解音频已就绪'
+const lessonId = computed(() => String(route.params.lessonId || ''))
+const unitId = computed(() => String(route.params.unitId || ''))
+const chapterId = computed(() => String(route.params.chapterId || ''))
+const currentToken = computed(() => String(route.query.token || getPlatformToken() || ''))
+const aggregatedUnits = computed(() => buildAggregatedKnowledgeUnits(lesson.value.units || []))
+const currentAggregatedChapter = computed(() => {
+  const targetUnit = aggregatedUnits.value.find((unit) => String(unit.unitId || '') === unitId.value)
+  if (targetUnit) {
+    const matchedChapter = (targetUnit.chapters || []).find((chapter) => String(chapter.chapterId || '') === chapterId.value)
+    if (matchedChapter) return matchedChapter
+    return targetUnit.chapters?.[0] || {}
+  }
+  return aggregatedUnits.value.flatMap((unit) => unit.chapters || []).find((chapter) => String(chapter.chapterId || '') === chapterId.value)
+    || aggregatedUnits.value.flatMap((unit) => unit.chapters || [])[0]
+    || {}
 })
-const quickQuestions = computed(() => {
-  const title = detail.value.sectionTitle || '当前章节'
-  return [
-    `帮我概括《${title}》的重点`,
-    `《${title}》里的核心公式之间有什么关系`,
-    `《${title}》在工程里通常怎么应用`
-  ]
-})
-const { isRecording, voiceLoading, recordingSeconds, toggleRecording, cleanupRealtimeAsr } = useRealtimeAsr({
-  getContext: () => ({
-    studentId: studentProfile.value.studentId,
-    lessonId: lessonId.value,
-    sectionId: sectionId.value || detail.value.sectionId || ''
-  }),
-  onTranscript: (text) => {
-    questionText.value = `${voiceDraftPrefix.value}${text}`.trim()
-  },
-  onRecordingStart: () => {
-    const prefix = questionText.value.trim()
-    voiceDraftPrefix.value = prefix ? `${prefix}\n` : ''
-  }
-})
+const chapterSections = computed(() => getSectionsForAggregatedChapter(
+  lesson.value.units || [],
+  unitId.value || currentAggregatedChapter.value.unitId || '',
+  currentAggregatedChapter.value.chapterTitle || ''
+))
+const completedSectionCount = computed(() => chapterSections.value.filter((section) => Number(section.progressPercent || 0) >= 100).length)
 
-function formatRecordingDuration(totalSeconds) {
-  const safeSeconds = Number(totalSeconds || 0)
-  const minutes = Math.floor(safeSeconds / 60)
-  const seconds = safeSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+function syncLessonCache(nextLesson) {
+  if (!nextLesson?.lessonId) return
+  const cache = getStudentLessonListCache()
+  const hasExisting = cache.some((item) => String(item.lessonId) === String(nextLesson.lessonId))
+  const updated = hasExisting
+    ? cache.map((item) => (String(item.lessonId) === String(nextLesson.lessonId) ? { ...item, ...nextLesson } : item))
+    : [...cache, nextLesson]
+  saveStudentLessonList(updated)
 }
 
-function formatAudioTime(totalSeconds) {
-  const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds || 0)))
-  const hours = Math.floor(safeSeconds / 3600)
-  const minutes = Math.floor((safeSeconds % 3600) / 60)
-  const seconds = safeSeconds % 60
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-  }
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+function getFallbackLesson() {
+  return getStudentLessonListCache().find((item) => String(item.lessonId) === lessonId.value)
+    || findFrontendTestLesson(lessonId.value)
+    || { lessonId: lessonId.value, units: [] }
 }
 
-function resetSectionAudioState() {
-  audioCurrentTime.value = 0
-  audioDuration.value = 0
-  audioPending.value = false
-  audioError.value = ''
-  audioShouldNotifyError.value = false
-  audioSeeking.value = false
-  isAudioPlaying.value = false
-}
-
-function stopSectionAudio() {
-  const audio = sectionAudioRef.value
-  if (audio) {
-    audio.pause()
-    audio.currentTime = 0
-  }
-  resetSectionAudioState()
-}
-
-function pauseSectionAudioIfPlaying() {
-  const audio = sectionAudioRef.value
-  if (!audio || audio.paused) return
-  audioShouldNotifyError.value = false
-  audio.pause()
-}
-
-function handleAudioLoadedMetadata() {
-  const audio = sectionAudioRef.value
-  if (!audio) return
-  audioDuration.value = Number.isFinite(audio.duration) ? audio.duration : 0
-  audioCurrentTime.value = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
-}
-
-function handleAudioTimeUpdate() {
-  const audio = sectionAudioRef.value
-  if (!audio || audioSeeking.value) return
-  audioCurrentTime.value = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
-  if (Number.isFinite(audio.duration)) {
-    audioDuration.value = audio.duration
-  }
-}
-
-function handleAudioCanPlay() {
-  audioPending.value = false
-  audioError.value = ''
-}
-
-function handleAudioWaiting() {
-  audioPending.value = true
-}
-
-function handleAudioPlay() {
-  isAudioPlaying.value = true
-  audioPending.value = false
-  audioError.value = ''
-}
-
-function handleAudioPause() {
-  isAudioPlaying.value = false
-  audioPending.value = false
-  audioShouldNotifyError.value = false
-}
-
-function handleAudioEnded() {
-  isAudioPlaying.value = false
-  audioPending.value = false
-  audioCurrentTime.value = audioDuration.value
-  audioShouldNotifyError.value = false
-}
-
-function resolveAudioErrorMessage() {
-  const code = sectionAudioRef.value?.error?.code
-  if (code === 2) {
-    return '讲解音频加载失败，请稍后重试。'
-  }
-  if (code === 3) {
-    return '讲解音频解析失败，请稍后重试。'
-  }
-  if (code === 4) {
-    return '讲解音频地址不可用，请联系老师重新发布。'
-  }
-  return '讲解音频暂时无法播放，请稍后重试。'
-}
-
-function handleAudioError() {
-  const shouldSurfaceError = audioShouldNotifyError.value
-    || Boolean(audioPending.value)
-    || Boolean(isAudioPlaying.value)
-  isAudioPlaying.value = false
-  audioPending.value = false
-  if (!detail.value.audioUrl) {
-    audioError.value = ''
-    audioShouldNotifyError.value = false
-    return
-  }
-  if (!shouldSurfaceError) {
-    audioError.value = ''
-    audioShouldNotifyError.value = false
-    return
-  }
-  const message = resolveAudioErrorMessage()
-  audioError.value = message
-  if (audioShouldNotifyError.value) {
-    ElMessage.warning(message)
-  }
-  audioShouldNotifyError.value = false
-}
-
-function handleAudioSeekInput(event) {
-  audioSeeking.value = true
-  audioCurrentTime.value = Number(event?.target?.value || 0)
-}
-
-function handleAudioSeekChange(event) {
-  const audio = sectionAudioRef.value
-  const nextTime = Number(event?.target?.value || 0)
-  if (audio) {
-    audio.currentTime = nextTime
-  }
-  audioCurrentTime.value = nextTime
-  audioSeeking.value = false
-}
-
-function normalizeFallbackDetail() {
-  const lesson = findFrontendTestLesson(lessonId.value)
-  const allUnits = lesson?.units || []
-  const locatedUnit = allUnits.find((unit) => (unit.chapters || []).some((chapter) => chapter.chapterId === chapterId.value))
-    || allUnits.find((unit) => unit.unitTitle === '压杆稳定')
-    || allUnits[0]
-  const chapter = (locatedUnit?.chapters || []).find((item) => item.chapterId === chapterId.value)
-    || (locatedUnit?.chapters || [])[0]
-
-  const fallbackPages = (chapter?.learningPages || []).map((page) => ({
-    lessonPageId: page.lessonPageId || `${chapter?.chapterId || 'chapter'}-P${page.pageNo}`,
-    pageNo: page.pageNo,
-    pageTitle: page.pageTitle || `第 ${page.pageNo} 页`,
-    pageSummary: page.pageSummary || '',
-    imageUrl: page.imageUrl || page.pptPageUrl || '',
-    parsedContent: page.parsedContent || page.pageSummary || '',
-    anchorId: '',
-    anchorTitle: chapter?.chapterTitle || '',
-    isRead: false
-  }))
-
-  return {
-    lessonId: lesson?.lessonId || lessonId.value,
-    lessonDbId: '',
-    courseName: lesson?.courseName || '',
-    teacherName: lesson?.teacherName || '',
-    unitTitle: locatedUnit?.unitTitle || '知识学习',
-    sectionId: sectionId.value || '',
-    sectionTitle: chapter?.chapterTitle || '章节学习',
-    progressPercent: Number(chapter?.progressPercent || 0),
-    masteryPercent: Number(chapter?.masteryPercent || 0),
-    aiGuideContent: chapter?.guideContent || chapter?.summary || '',
-    scriptContent: chapter?.guideContent || chapter?.summary || '',
-    audioUrl: '',
-    audioStatus: 'empty',
-    knowledgePoints: chapter?.knowledgePoints || [],
-    pages: fallbackPages,
-    currentPageNo: fallbackPages[0]?.pageNo || 1
-  }
-}
-
-function captureKnowledgeViewState() {
-  const lessonViewState = getStudentViewState(lessonId.value)
-  const knowledgeState = { ...(lessonViewState.knowledge || {}) }
-  knowledgeState[sectionId.value || chapterId.value || 'default'] = {
-    activePageNo: activePageNo.value,
-    scrollTop: knowledgeLeftRef.value?.scrollTop || 0
-  }
-  saveStudentViewState(lessonId.value, { knowledge: knowledgeState })
-}
-
-function handleKnowledgeScroll() {
-  captureKnowledgeViewState()
-}
-
-async function restoreKnowledgeViewState() {
-  const lessonViewState = getStudentViewState(lessonId.value)
-  const stored = lessonViewState.knowledge?.[sectionId.value || chapterId.value || 'default'] || {}
-  if (stored.activePageNo && !restorePageNo.value) {
-    activePageNo.value = Number(stored.activePageNo)
-  }
-  await nextTick()
-  if (knowledgeLeftRef.value && Number.isFinite(Number(stored.scrollTop))) {
-    knowledgeLeftRef.value.scrollTop = Number(stored.scrollTop || 0)
-  }
-}
-
-function setThumbnailRef(pageNo, element) {
-  if (!element) {
-    delete thumbnailRefs.value[pageNo]
-    return
-  }
-  thumbnailRefs.value[pageNo] = element
-}
-
-function keepThumbnailVisible() {
-  const container = thumbnailRailRef.value
-  const target = thumbnailRefs.value[activePageNo.value]
-  if (!container || !target) return
-  const top = target.offsetTop
-  const bottom = top + target.offsetHeight
-  const currentTop = container.scrollTop
-  const currentBottom = currentTop + container.clientHeight
-  const gap = 10
-
-  if (top - gap < currentTop) {
-    container.scrollTo({ top: Math.max(0, top - gap), behavior: 'smooth' })
-    return
-  }
-  if (bottom + gap > currentBottom) {
-    container.scrollTo({ top: bottom - container.clientHeight + gap, behavior: 'smooth' })
-  }
-}
-
-function canLoadSectionDetail(targetLessonId = routeLessonId.value, targetSectionId = routeSectionId.value) {
-  return isKnowledgeViewActive.value && isKnowledgeRoute.value && Boolean(targetLessonId) && Boolean(targetSectionId)
-}
-
-async function loadSectionDetail() {
-  const targetLessonId = routeLessonId.value
-  const targetSectionId = routeSectionId.value
-  if (!canLoadSectionDetail(targetLessonId, targetSectionId)) return
-  const loadSeq = ++sectionDetailLoadSeq
-  stopSectionAudio()
-  const fallback = normalizeFallbackDetail()
-  detail.value = fallback
-  activePageNo.value = restorePageNo.value || fallback.currentPageNo || 1
-
+async function loadLesson() {
+  lesson.value = getFallbackLesson()
+  loading.value = true
   try {
-    const res = await getStudentSectionDetail({
-      studentId: studentProfile.value.studentId,
-      lessonId: targetLessonId,
-      sectionId: targetSectionId
+    const res = await playStudentLesson({
+      studentId: studentProfile.value.studentId || fallbackProfile.studentId,
+      lessonId: lessonId.value
     })
-    if (
-      loadSeq !== sectionDetailLoadSeq
-      || !canLoadSectionDetail(targetLessonId, targetSectionId)
-      || targetLessonId !== routeLessonId.value
-      || targetSectionId !== routeSectionId.value
-    ) {
-      return
+    if (res.data) {
+      lesson.value = res.data
+      syncLessonCache(res.data)
     }
-    detail.value = {
-      ...fallback,
-      ...(res.data || {})
-    }
-    if (detail.value.audioUrl) {
-      detail.value.audioStatus = detail.value.audioStatus || 'published'
-    } else {
-      detail.value.audioStatus = 'empty'
-    }
-    const firstPageNo = Number(detail.value.pages?.[0]?.pageNo || 1)
-    const targetPageNo = Number(restorePageNo.value || detail.value.currentPageNo || firstPageNo)
-    const hasTargetPage = (detail.value.pages || []).some((page) => Number(page.pageNo) === targetPageNo)
-    activePageNo.value = hasTargetPage ? targetPageNo : firstPageNo
   } catch (error) {
     if (!error?.handled) {
-      ElMessage.warning(error?.msg || '知识学习内容加载失败，已切换为本地演示数据')
+      ElMessage.warning(error?.msg || '章节详情已回退为本地缓存数据')
     }
   } finally {
-    hasLoadedDetail.value = true
-    await nextTick()
-    keepThumbnailVisible()
-    await restoreKnowledgeViewState()
+    loading.value = false
   }
 }
 
-async function syncPageRead(page) {
-  if (!page || page.isRead || !sectionId.value) return
-  try {
-    const res = await markStudentPageRead({
-      studentId: studentProfile.value.studentId,
+function setActiveSection(section) {
+  activeSectionId.value = String(section?.sectionId || '')
+}
+
+function getSectionStatusLabel(section) {
+  if (String(section?.sectionId || '') === activeSectionId.value) return '当前学习'
+  if (Number(section?.progressPercent || 0) >= 100) return '已完成'
+  if (Number(section?.progressPercent || 0) > 0) return '进行中'
+  return '待学习'
+}
+
+function getSectionStatusClass(section) {
+  if (String(section?.sectionId || '') === activeSectionId.value) return 'is-active'
+  if (Number(section?.progressPercent || 0) >= 100) return 'is-done'
+  if (Number(section?.progressPercent || 0) > 0) return 'is-progress'
+  return 'is-pending'
+}
+
+function goToSlideLearning(section) {
+  if (!section?.sectionId) return
+  router.push({
+    name: 'StudentSlideLearning',
+    params: {
       lessonId: lessonId.value,
-      sectionId: sectionId.value,
-      lessonPageId: page.lessonPageId,
-      pageNo: page.pageNo
-    })
-    page.isRead = true
-    detail.value.progressPercent = res.data.progressPercent
-    detail.value.masteryPercent = res.data.masteryPercent
-  } catch (error) {
-    console.warn(error)
-  }
-}
-
-function setActivePage(pageNo) {
-  if (!pageNo || pageNo === activePageNo.value) return
-  activePageNo.value = Number(pageNo)
-}
-
-function goPrevPage() {
-  if (!hasPrevPage.value) return
-  activePageNo.value -= 1
-}
-
-function goNextPage() {
-  if (!hasNextPage.value) return
-  activePageNo.value += 1
-}
-
-async function toggleViewerFullscreen() {
-  const target = viewerShellRef.value
-  if (!target) return
-  if (document.fullscreenElement === target) {
-    await document.exitFullscreen()
-    return
-  }
-  if (target.requestFullscreen) {
-    await target.requestFullscreen()
-  }
-}
-
-function fillQuestion(question) {
-  questionText.value = question
-}
-
-async function toggleSectionAudio() {
-  if (!canPlaySectionAudio.value) {
-    ElMessage.info('当前章节暂无语音。')
-    return
-  }
-
-  const audio = sectionAudioRef.value
-  if (!audio) return
-
-  try {
-    if (audio.paused) {
-      audioPending.value = true
-      audioError.value = ''
-      audioShouldNotifyError.value = true
-      await audio.play()
-    } else {
-      audioShouldNotifyError.value = false
-      audio.pause()
+      sectionId: section.sectionId
+    },
+    query: {
+      ...(currentToken.value ? { token: currentToken.value } : {}),
+      ...(section.chapterId ? { chapterId: section.chapterId } : {}),
+      ...(unitId.value ? { unitId: unitId.value } : {}),
+      ...(currentAggregatedChapter.value.chapterId ? { knowledgeChapterId: currentAggregatedChapter.value.chapterId } : {}),
+      ...(section.pageNo ? { pageNo: String(section.pageNo) } : {})
     }
-  } catch (error) {
-    audioPending.value = false
-    audioShouldNotifyError.value = false
-    if (error?.name === 'AbortError') return
-    if (!audio.error) {
-      const message = resolveAudioErrorMessage()
-      audioError.value = message
-      ElMessage.warning(message)
-    }
-  }
-}
-
-
-function persistRecentVisit() {
-  if (!lessonId.value || !chapterId.value || !sectionId.value) return
-  captureKnowledgeViewState()
-  saveStudentRecentChapter({
-    studentId: studentProfile.value.studentId,
-    lessonId: lessonId.value,
-    sectionId: sectionId.value,
-    pageNo: activePageNo.value || 1
-  }).catch(() => {
-    console.warn('save recent chapter visit failed')
   })
-}
-
-async function submitQuestion() {
-  const question = questionText.value.trim()
-  if (!question || asking.value) return
-
-  const page = activePage.value
-  const assistantMessage = {
-    id: `assistant-${Date.now()}`,
-    role: 'assistant',
-    content: ''
-  }
-  let assistantInserted = false
-  chatList.value.push({
-    id: `user-${Date.now()}`,
-    role: 'user',
-    content: question
-  })
-  questionText.value = ''
-  asking.value = true
-  assistantStreamingStarted.value = false
-  const controller = new AbortController()
-  activeAnswerController.value = controller
-
-  function ensureAssistantVisible() {
-    if (assistantInserted) return
-    assistantInserted = true
-    chatList.value.push(assistantMessage)
-  }
-
-  try {
-    const donePayload = await streamLessonInteraction({
-      studentId: studentProfile.value.studentId,
-      lessonId: lessonId.value,
-      sectionId: sectionId.value,
-      anchorId: page?.anchorId || '',
-      pageNo: page?.pageNo || activePageNo.value,
-      question
-    }, {
-      signal: controller.signal,
-      onDelta: (delta) => {
-        assistantStreamingStarted.value = true
-        ensureAssistantVisible()
-        assistantMessage.content += delta
-      }
-    })
-    assistantStreamingStarted.value = true
-    ensureAssistantVisible()
-    assistantMessage.content = donePayload?.answer || assistantMessage.content || '当前内容暂无更多解读。'
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      assistantStreamingStarted.value = true
-      ensureAssistantVisible()
-      assistantMessage.content = assistantMessage.content || '已终止本次回答。'
-    } else {
-      ElMessage.error(error?.message || error?.msg || 'AI 问答失败')
-    }
-  } finally {
-    asking.value = false
-    assistantStreamingStarted.value = false
-    activeAnswerController.value = null
-    await nextTick()
-    chatScrollRef.value?.scrollTo({ top: chatScrollRef.value.scrollHeight, behavior: 'smooth' })
-  }
-}
-
-function stopStreamingAnswer() {
-  activeAnswerController.value?.abort()
 }
 
 function goBack() {
-  stopSectionAudio()
-  persistRecentVisit()
-  if (window.history.length > 1) {
-    router.back()
-    return
-  }
+  const playerState = getStudentViewState(lessonId.value)?.player || {}
+  saveStudentViewState(lessonId.value, {
+    player: {
+      ...playerState,
+      activeView: 'knowledge',
+      activeKnowledgeChapterId: currentAggregatedChapter.value.chapterId || playerState.activeKnowledgeChapterId || ''
+    }
+  })
   router.push({
     name: 'StudentPlayer',
     params: { lessonId: lessonId.value },
-    query: route.query.token ? { token: route.query.token } : {}
+    query: currentToken.value ? { token: currentToken.value } : {}
   })
 }
 
 function goStudentHome() {
-  stopSectionAudio()
-  persistRecentVisit()
   router.push({
     name: 'StudentHome',
-    query: route.query.token ? { token: route.query.token } : {}
+    query: currentToken.value ? { token: currentToken.value } : {}
   })
 }
 
-watch(activePageNo, async () => {
-  await nextTick()
-  keepThumbnailVisible()
-  if (activePage.value) {
-    syncPageRead(activePage.value)
+watch(chapterSections, (sections) => {
+  if (!sections.length) {
+    activeSectionId.value = ''
+    return
   }
-  captureKnowledgeViewState()
-})
-
-onMounted(async () => {
-  isKnowledgeViewActive.value = true
-  window.addEventListener('pagehide', persistRecentVisit)
-  knowledgeLeftRef.value?.addEventListener('scroll', handleKnowledgeScroll, { passive: true })
-  await loadSectionDetail()
-  if (activePage.value) {
-    syncPageRead(activePage.value)
+  if (!sections.some((section) => String(section.sectionId || '') === activeSectionId.value)) {
+    activeSectionId.value = String(sections[0].sectionId || '')
   }
-  hasActivatedOnce.value = true
-})
-
-onActivated(async () => {
-  isKnowledgeViewActive.value = true
-  if (!hasActivatedOnce.value) return
-  if (!hasLoadedDetail.value) {
-    await loadSectionDetail()
-  } else {
-    await restoreKnowledgeViewState()
-    await nextTick()
-    keepThumbnailVisible()
-  }
-  knowledgeLeftRef.value?.addEventListener('scroll', handleKnowledgeScroll, { passive: true })
-})
+}, { immediate: true })
 
 watch(
-  () => [route.params.lessonId, route.params.sectionId, route.query.pageNo],
-  async ([nextLessonId, nextSectionId, nextPageNo], [prevLessonId, prevSectionId, prevPageNo] = []) => {
-    if (nextLessonId === prevLessonId && nextSectionId === prevSectionId && nextPageNo === prevPageNo) return
-    if (!isKnowledgeViewActive.value || !isKnowledgeRoute.value || !nextLessonId || !nextSectionId) return
-    hasLoadedDetail.value = false
-    await loadSectionDetail()
+  () => [route.params.lessonId, route.params.unitId, route.params.chapterId],
+  async ([nextLessonId, nextUnitId, nextChapterId], [prevLessonId, prevUnitId, prevChapterId] = []) => {
+    if (nextLessonId === prevLessonId && nextUnitId === prevUnitId && nextChapterId === prevChapterId) return
+    await loadLesson()
   }
 )
 
-onBeforeUnmount(() => {
-  isKnowledgeViewActive.value = false
-  activeAnswerController.value?.abort()
-  cleanupRealtimeAsr()
-  stopSectionAudio()
-  window.removeEventListener('pagehide', persistRecentVisit)
-  knowledgeLeftRef.value?.removeEventListener('scroll', handleKnowledgeScroll)
-  persistRecentVisit()
+onMounted(async () => {
+  await loadLesson()
 })
 
-onDeactivated(() => {
-  isKnowledgeViewActive.value = false
-  knowledgeLeftRef.value?.removeEventListener('scroll', handleKnowledgeScroll)
-  captureKnowledgeViewState()
-})
-
-onBeforeRouteLeave(() => {
-  isKnowledgeViewActive.value = false
-  activeAnswerController.value?.abort()
-  cleanupRealtimeAsr()
-  stopSectionAudio()
-  persistRecentVisit()
+onActivated(async () => {
+  if (!lesson.value.units?.length && !loading.value) {
+    await loadLesson()
+  }
 })
 </script>
 
 <style scoped>
-.knowledge-page {
-  height: 100vh;
-  background: #ffffff;
-  color: #17305e;
-  overflow: hidden;
+.knowledge-chapter-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #eff3fb 0%, #f7f8fc 100%);
 }
 
-.knowledge-topbar {
+.knowledge-chapter-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
   height: 84px;
-  padding: 0 24px;
+  padding: 0 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(255, 255, 255, 0.98);
-  border-bottom: 1px solid #e4ebf8;
-  box-shadow: 0 10px 24px rgba(17, 34, 78, 0.05);
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #edf1f7;
+  backdrop-filter: blur(14px);
 }
 
-.knowledge-brand {
+.knowledge-chapter-back-button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #dbe6f8;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #f6f9ff);
+  color: #315186;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.knowledge-chapter-back-button:hover {
+  transform: translateY(-1px);
+  border-color: #c4d6f2;
+  background: #f6f9ff;
+}
+
+.knowledge-chapter-back-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.knowledge-chapter-brand {
   display: flex;
   align-items: center;
   gap: 14px;
   cursor: pointer;
 }
 
-.knowledge-brand:focus-visible {
+.knowledge-chapter-brand:focus-visible {
   outline: 2px solid rgba(82, 126, 246, 0.45);
   outline-offset: 6px;
   border-radius: 16px;
 }
 
-.knowledge-brand-mark {
+.knowledge-chapter-brand-mark {
   width: 40px;
   height: 40px;
   display: block;
@@ -974,853 +327,351 @@ onBeforeRouteLeave(() => {
   border-radius: 10px;
 }
 
-.knowledge-brand-name {
+.knowledge-chapter-brand-name {
   font-size: 26px;
   font-weight: 700;
   color: #222833;
 }
 
-.knowledge-back-button {
-  border-radius: 14px;
-  padding: 0 16px;
-  height: 38px;
-  font-size: 14px;
+.knowledge-chapter-main {
+  min-height: 100vh;
+  padding: 112px 28px 28px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.knowledge-workspace {
-  height: calc(100vh - 84px);
+.knowledge-chapter-shell {
   max-width: 1332px;
   margin: 0 auto;
-  padding: 6px 14px 14px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.48fr) minmax(320px, 0.8fr);
-  gap: 14px;
-  overflow: hidden;
-  align-items: stretch;
-  background: #ffffff;
-}
-
-.knowledge-left {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
-  overscroll-behavior: contain;
-  background: #ffffff;
-}
-
-.knowledge-summary-card,
-.ppt-card,
-.guide-card,
-.ai-card {
+  padding: 28px 30px 30px;
+  border-radius: 28px;
   background: rgba(255, 255, 255, 0.98);
-  border: 1px solid #dbe5f7;
-  border-radius: 24px;
-  box-shadow: 0 16px 38px rgba(64, 92, 168, 0.08);
+  border: 1px solid #edf2f8;
+  box-shadow: 0 16px 40px rgba(25, 43, 92, 0.05);
 }
 
-.knowledge-summary-card {
-  padding: 10px 16px;
+.knowledge-chapter-header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  background: linear-gradient(135deg, #eff5ff 0%, #dbe9ff 100%);
-}
-
-.knowledge-summary-main h1 {
-  margin: 0;
-  font-size: 23px;
-  line-height: 1.1;
-}
-
-.knowledge-summary-stats {
-  display: flex;
-  gap: 8px;
-}
-
-.knowledge-summary-stat {
-  width: 164px;
-  min-height: 100px;
-  border-radius: 20px;
-  border: 1px solid #cadeff;
-  background: rgba(255, 255, 255, 0.8);
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 4px;
-}
-
-.knowledge-summary-stat span {
-  font-size: 14px;
-  line-height: 1;
-  color: #6f86b1;
-  font-weight: 600;
-  width: 100%;
-  text-align: left;
-}
-
-.knowledge-summary-stat strong {
-  font-size: 34px;
-  color: #21427a;
-  width: 100%;
-  text-align: right;
-}
-
-.ppt-card {
-  flex: 0 0 auto;
-  padding: 8px 10px 10px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: #ffffff;
-}
-
-.ppt-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  gap: 12px;
-}
-
-.ppt-card-title {
-  font-size: 21px;
-  font-weight: 700;
-}
-
-.ppt-card-subtitle {
-  margin-top: 2px;
-  color: #6f86b1;
-  font-size: 14px;
-}
-
-.ppt-audio-button {
-  flex: 0 0 auto;
-  height: 36px;
-  padding: 0 16px;
-  border: 1px solid #cad8f4;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #f7fbff 0%, #edf4ff 100%);
-  color: #33548f;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
-}
-
-.ppt-audio-button:hover:not(:disabled) {
-  border-color: #7e9de0;
-  background: linear-gradient(135deg, #edf4ff 0%, #e5efff 100%);
-}
-
-.ppt-audio-button:disabled {
-  opacity: 0.58;
-  cursor: not-allowed;
-}
-
-.ppt-audio-panel {
-  margin-bottom: 8px;
-  padding: 12px 14px;
-  border: 1px solid #d9e5fb;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #fbfdff 0%, #f1f6ff 100%);
-}
-
-.ppt-audio-panel.disabled {
-  opacity: 0.8;
-}
-
-.ppt-audio-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.ppt-audio-status,
-.ppt-audio-error,
-.ppt-audio-time {
-  font-size: 13px;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.ppt-audio-status {
-  color: #49679d;
-  font-weight: 600;
-}
-
-.ppt-audio-error {
-  color: #c45656;
-}
-
-.ppt-audio-progress-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-}
-
-.ppt-audio-time {
-  color: #7086b0;
-}
-
-.ppt-audio-slider {
-  width: 100%;
-  height: 4px;
-  margin: 0;
-  border-radius: 999px;
-  appearance: none;
-  background: linear-gradient(90deg, #7ba1ff 0%, #9cb9ff 100%);
-  outline: none;
-  cursor: pointer;
-}
-
-.ppt-audio-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #7ba1ff 0%, #9cb9ff 100%);
-}
-
-.ppt-audio-slider::-webkit-slider-thumb {
-  width: 16px;
-  height: 16px;
-  margin-top: -6px;
-  border: 2px solid #ffffff;
-  border-radius: 999px;
-  appearance: none;
-  background: #3d6ce4;
-  box-shadow: 0 6px 14px rgba(61, 108, 228, 0.24);
-}
-
-.ppt-audio-slider::-moz-range-track {
-  height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #7ba1ff 0%, #9cb9ff 100%);
-}
-
-.ppt-audio-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid #ffffff;
-  border-radius: 999px;
-  background: #3d6ce4;
-  box-shadow: 0 6px 14px rgba(61, 108, 228, 0.24);
-}
-
-.ppt-audio-slider:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.ppt-card-body {
-  height: clamp(414px, 50vh, 576px);
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
-  gap: 0;
-  overflow: hidden;
-  align-items: stretch;
-  border: 3px solid #989eb0;
-  border-radius: 22px;
-  background: #eaf2ff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.74);
-}
-
-.thumbnail-rail {
-  height: 100%;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overscroll-behavior: contain;
-  border-right: 2px solid #6f7686;
-  background: #eaf2ff;
-}
-
-.thumbnail-card {
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  padding: 0;
-  display: block;
-  cursor: pointer;
-  transition: 0.2s ease;
-}
-
-.thumbnail-card:hover {
-  transform: translateY(-1px);
-}
-
-.thumbnail-card.active .thumbnail-media {
-  box-shadow: 0 0 0 3px rgba(109, 130, 244, 0.22);
-}
-
-.thumbnail-media {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 11;
-  border-radius: 10px;
-  background: #f7faff;
-  overflow: hidden;
-}
-
-.thumbnail-card img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 10px;
-  display: block;
-}
-
-.thumbnail-fallback {
-  width: 100%;
-  height: 100%;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  color: #4f6591;
-  background: linear-gradient(180deg, #f9fbff 0%, #edf3ff 100%);
-}
-
-.thumbnail-fallback strong {
-  font-size: 18px;
-}
-
-.thumbnail-fallback span {
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.thumbnail-page-badge {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
-  min-width: 22px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 7px;
-  background: rgba(132, 139, 171, 0.92);
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.viewer-shell {
-  min-width: 0;
-  height: 100%;
-  min-height: 0;
-  padding: 8px 8px 8px 12px;
-  overflow: hidden;
-  background: #eaf2ff;
-}
-
-.viewer-stage {
-  height: 100%;
-  width: 100%;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #eaf2ff;
-  overflow: hidden;
-  padding: 14px 14px 56px;
-  box-sizing: border-box;
-}
-
-.viewer-slide {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  object-position: center;
-  display: block;
-}
-
-.viewer-empty {
-  color: #7f92ba;
-  font-size: 14px;
-}
-
-.viewer-text-fallback {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  padding: 28px 30px;
-  border-radius: 24px;
-  background: linear-gradient(180deg, #ffffff 0%, #f5f8ff 100%);
-  color: #23406f;
-  text-align: left;
-}
-
-.viewer-text-title {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.viewer-text-summary {
-  margin-top: 12px;
-  color: #5d739d;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.viewer-text-content {
-  margin-top: 18px;
-  color: #38527f;
-  font-size: 15px;
-  line-height: 1.9;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.viewer-toolbar {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 8px;
-  border-radius: 999px;
-  background: rgba(42, 46, 58, 0.92);
-  box-shadow: none;
-}
-
-.viewer-tool-button {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.viewer-tool-button:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.viewer-tool-button svg {
-  width: 13px;
-  height: 13px;
-}
-
-.viewer-page-indicator {
-  min-width: 80px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.section-audio {
-  display: none;
-}
-
-.guide-card {
-  flex: 0 0 auto;
-  padding: 14px 18px;
-  background: #ffffff;
-}
-
-.guide-card-head h2 {
-  margin: 0 0 10px;
-  font-size: 21px;
-}
-
-.guide-card-body {
-  color: #51698f;
-  line-height: 1.75;
-  font-size: 14px;
-}
-
-.knowledge-right {
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  position: relative;
-}
-
-.ai-card {
-  min-height: 0;
-  height: 100%;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 16px;
-  overflow: hidden;
-  position: sticky;
-  top: 0;
-  background: #ffffff;
-}
-
-.ai-card-head {
-  flex: 0 0 auto;
-  padding-bottom: 10px;
-}
-
-.ai-card-head h2 {
-  margin: 0;
-  font-size: 21px;
-}
-
-.ai-quick-questions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-content: flex-start;
-  margin-top: 20px;
-}
-
-.ai-welcome-spacer {
-  flex: 1 1 auto;
-  min-height: 24px;
-}
-
-.ai-chip {
-  border: 1px solid #d3e0f8;
-  border-radius: 999px;
-  background: #f7faff;
-  color: #3c5ea2;
-  padding: 9px 13px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.ai-chat-list {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  margin-top: 10px;
-  padding-right: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.ai-message {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.ai-message-role {
-  font-size: 12px;
-  color: #7c90b6;
-}
-
-.ai-message.user .ai-message-role {
-  align-self: flex-end;
-  text-align: right;
-}
-
-.ai-message-bubble {
-  max-width: min(100%, 420px);
-  border-radius: 20px;
-  padding: 12px 14px;
-  line-height: 1.7;
-  font-size: 13px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.ai-message.user .ai-message-bubble {
-  align-self: flex-end;
-  background: linear-gradient(135deg, #5880ef 0%, #6f8fff 100%);
-  color: #fff;
-}
-
-.ai-message.assistant .ai-message-bubble {
-  background: #f3f7ff;
-  color: #315186;
-  border: 1px solid #dde7f8;
-}
-
-.ai-input-box {
-  flex: 0 0 15%;
-  min-height: 120px;
-  border-radius: 22px;
-  border: 1px solid #dbe4f4;
-  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
-  padding: 12px;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  margin-top: 0;
-}
-
-.ai-textarea {
-  width: 100%;
-  height: 100%;
-  resize: none;
-  overflow-y: auto;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: #17305e;
-  font-size: 14px;
-  line-height: 1.6;
-  min-height: 0;
-}
-
-.ai-textarea::placeholder {
-  color: #97a7c6;
-  font-size: 14px;
-}
-
-.ai-input-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.ai-voice-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ai-voice-timer {
-  color: #7c8dac;
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.ai-icon-button {
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #d8e2f3;
-  background: rgba(255, 255, 255, 0.96);
-  color: #5f6a80;
-  cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-}
-
-.ai-icon-button svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.ai-icon-button.voice {
-  box-shadow: 0 8px 18px rgba(140, 158, 196, 0.14);
-}
-
-.ai-icon-button.voice.loading {
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.ai-icon-button.voice.stop {
-  color: #11161c;
-}
-
-.ai-icon-button.voice.stop {
-  color: #11161c;
-}
-
-
-.ai-icon-button.send {
-  border-color: #101418;
-  background: #101418;
-  color: #fff;
-}
-
-.ai-icon-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.ai-icon-button.voice:hover:not(:disabled) {
-  background: #f6f9ff;
-  border-color: #c6d6ef;
-}
-
-.ai-icon-button.send:hover:not(:disabled) {
-  background: #1c232d;
-  border-color: #1c232d;
-}
-
-.ai-icon-button.send.is-stop {
-  border-color: #101418;
-  background: #101418;
-}
-
-.ai-icon-button.send.is-stop:hover:not(:disabled) {
-  background: #1c232d;
-  border-color: #1c232d;
-}
-
-.ai-icon-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.ai-inline-loading {
-  width: 18px;
-  height: 18px;
-  display: inline-block;
-  border-radius: 999px;
-  border: 2px solid rgba(157, 169, 193, 0.28);
-  border-top-color: #c7cedd;
-  animation: ai-loading-spin 0.9s linear infinite;
-}
-
-.ai-message.pending {
+  gap: 18px;
   align-items: flex-start;
 }
 
-.ai-message-loading {
-  padding: 8px 0;
+.knowledge-chapter-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #48669d;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-@keyframes ai-loading-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.knowledge-chapter-header-main h1 {
+  margin: 14px 0 0;
+  color: #17315d;
+  font-size: 28px;
+  line-height: 1.4;
 }
 
-
-@media (max-width: 1260px) {
-  .knowledge-workspace {
-    grid-template-columns: 1fr;
-    overflow-y: auto;
-    height: calc(100vh - 84px);
-  }
-
-  .knowledge-left {
-    min-height: 0;
-    overflow: visible;
-    padding-right: 0;
-  }
-
-  .knowledge-right {
-    min-height: 680px;
-  }
-
-  .ai-card {
-    position: static;
-  }
+.knowledge-chapter-header-meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #f4f8ff;
+  border: 1px solid #dde7f7;
+  color: #496da8;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
-@media (max-width: 920px) {
-  .knowledge-page {
-    overflow: auto;
-    height: auto;
-    min-height: 100vh;
+.knowledge-chapter-empty {
+  margin-top: 24px;
+  min-height: 220px;
+  border-radius: 22px;
+  border: 1px dashed #d7e0f0;
+  background: #fbfcff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8490aa;
+  font-size: 15px;
+  text-align: center;
+  padding: 24px;
+}
+
+.knowledge-chapter-grid {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.knowledge-course-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 292px;
+  padding: 22px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #fbfdff, #f4f8ff);
+  border: 1px solid #e2eaf7;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.knowledge-course-card:hover,
+.knowledge-course-card.active {
+  transform: translateY(-2px);
+  border-color: #c9d9f3;
+  background: linear-gradient(180deg, #ffffff, #eef5ff);
+  box-shadow: 0 18px 34px rgba(92, 123, 180, 0.1);
+}
+
+.knowledge-course-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.knowledge-course-card-head h3 {
+  margin: 10px 0 0;
+  color: #172f58;
+  font-size: 20px;
+  line-height: 1.5;
+}
+
+.knowledge-course-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.knowledge-course-status.is-active {
+  background: #ddebff;
+  color: #2f63c7;
+}
+
+.knowledge-course-status.is-done {
+  background: #e9f8ef;
+  color: #2d8a54;
+}
+
+.knowledge-course-status.is-progress {
+  background: #eef3ff;
+  color: #4e73b7;
+}
+
+.knowledge-course-status.is-pending {
+  background: #f3f6fb;
+  color: #8392ad;
+}
+
+.knowledge-course-mastery-badge {
+  flex: 0 0 auto;
+  width: 124px;
+  min-height: 148px;
+  padding: 20px 16px;
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(242, 247, 255, 0.98), rgba(230, 238, 252, 0.92));
+  border: 1px solid rgba(207, 221, 245, 0.98);
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.knowledge-course-mastery-badge span {
+  color: #6980a8;
+  font-size: 13px;
+}
+
+.knowledge-course-mastery-badge strong {
+  margin-top: 10px;
+  color: #18335f;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.knowledge-course-card-footer {
+  display: grid;
+  gap: 14px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.knowledge-course-progress-block {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(228, 236, 247, 0.96);
+}
+
+.knowledge-course-progress-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6d7a98;
+  font-size: 13px;
+}
+
+.knowledge-course-progress-text strong {
+  color: #18325f;
+}
+
+.knowledge-course-footer-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.knowledge-course-progress-block :deep(.el-progress-bar__outer) {
+  background: #e8effa;
+}
+
+.knowledge-course-progress-block :deep(.el-progress-bar__inner) {
+  background: linear-gradient(135deg, rgb(70, 150, 255), rgb(70, 150, 255));
+}
+
+.knowledge-course-action-button {
+  position: relative;
+  min-width: 118px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background:
+    linear-gradient(140deg, rgba(90, 180, 255, 0.22), rgba(90, 180, 255, 0.1)),
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.4), transparent 42%),
+    linear-gradient(135deg, rgb(90, 180, 255), rgb(72, 158, 240) 56%, rgb(57, 136, 224) 100%);
+  box-shadow:
+    0 14px 26px rgba(73, 150, 221, 0.2),
+    inset 0 0 0 1px rgba(190, 232, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, filter 0.24s ease;
+}
+
+.knowledge-course-action-button::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(90, 180, 255, 0.98), rgba(72, 158, 240, 0.98) 62%, rgba(57, 136, 224, 0.98));
+}
+
+.knowledge-course-action-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, transparent 20%, rgba(218, 245, 255, 0.44) 34%, transparent 52%),
+    linear-gradient(90deg, transparent, rgba(176, 231, 255, 0.24), transparent);
+  transform: translateX(-120%);
+  transition: transform 0.55s ease;
+}
+
+.knowledge-course-action-button:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 20px 30px rgba(73, 150, 221, 0.26),
+    inset 0 0 0 1px rgba(201, 238, 255, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  filter: saturate(1.12);
+}
+
+.knowledge-course-action-button:hover::after {
+  transform: translateX(120%);
+}
+
+.knowledge-course-action-button:active {
+  transform: translateY(0) scale(0.988);
+}
+
+.knowledge-course-action-button-core {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.knowledge-course-action-button-text {
+  position: relative;
+  z-index: 2;
+  color: #f4fbff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 16px rgba(217, 244, 255, 0.32);
+}
+
+.knowledge-course-action-button-glow {
+  position: absolute;
+  inset: 8px 10px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(190, 238, 255, 0.1), rgba(234, 248, 255, 0.32), rgba(190, 238, 255, 0.1));
+  filter: blur(9px);
+  opacity: 0.7;
+  transition: opacity 0.22s ease, filter 0.22s ease;
+}
+
+.knowledge-course-action-button:hover .knowledge-course-action-button-glow {
+  opacity: 1;
+  filter: blur(11px);
+}
+
+@media (max-width: 960px) {
+  .knowledge-chapter-topbar {
+    padding: 0 20px;
   }
 
-  .knowledge-topbar {
-    padding: 0 18px;
+  .knowledge-chapter-main {
+    padding: 108px 20px 24px;
   }
 
-  .knowledge-workspace {
-    height: auto;
-    overflow: visible;
-    padding: 14px;
+  .knowledge-chapter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .knowledge-left {
-    overflow: visible;
-  }
-
-  .knowledge-summary-card {
+  .knowledge-chapter-header,
+  .knowledge-course-footer-row {
     flex-direction: column;
-    align-items: stretch;
-  }
-
-  .knowledge-summary-stats {
-    width: 100%;
-  }
-
-  .knowledge-summary-stat {
-    width: 100%;
-  }
-
-  .knowledge-summary-stat span {
-    font-size: 12px;
-  }
-
-  .ppt-card-header {
     align-items: flex-start;
-    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .knowledge-chapter-topbar {
+    height: 76px;
+    padding: 0 16px;
   }
 
-  .ppt-audio-button {
-    width: 100%;
+  .knowledge-chapter-main {
+    padding: 96px 16px 20px;
   }
 
-  .ppt-audio-meta {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+  .knowledge-chapter-shell {
+    padding: 22px 18px 24px;
+    border-radius: 24px;
   }
 
-  .ppt-audio-progress-row {
-    display: grid;
+  .knowledge-chapter-header-main h1 {
+    font-size: 24px;
+  }
+
+  .knowledge-chapter-grid {
     grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .ppt-card-body {
-    height: auto;
-    min-height: 340px;
-    grid-template-columns: 1fr;
-  }
-
-  .viewer-shell {
-    min-height: 340px;
-    padding: 10px;
-  }
-
-  .thumbnail-rail {
-    max-height: 200px;
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 10px;
-    border-right: 0;
-    border-bottom: 2px solid #6f7686;
-  }
-
-  .thumbnail-card {
-    min-width: 136px;
   }
 }
 </style>

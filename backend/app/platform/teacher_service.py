@@ -1,9 +1,11 @@
 ﻿from __future__ import annotations
 
+from uuid import uuid4
+
 from sqlalchemy.orm import Session
 
 from backend.app.common.config import get_settings
-from backend.chaoxing_db.models import CourseClass, CourseMember, CoursePlatformBinding, School, User, UserPlatformBinding
+from backend.chaoxing_db.models import Course, CourseClass, CourseMember, CoursePlatformBinding, School, User, UserPlatformBinding
 
 JsonDict = dict[str, object]
 
@@ -63,3 +65,43 @@ def sync_courses(db: Session, teacher: User) -> dict[str, list[dict[str, str]]]:
             }
         )
     return {"courseList": course_list}
+
+
+def create_course_for_teacher(db: Session, teacher: User, course_name: str, course_code: str | None = None) -> JsonDict:
+    normalized_name = str(course_name or "").strip()
+    if not normalized_name:
+        raise ValueError("courseName is required")
+
+    normalized_code = str(course_code or "").strip() or f"C{uuid4().hex[:12].upper()}"
+    existing = db.query(Course).filter(Course.course_code == normalized_code).first()
+    if existing is not None:
+        raise ValueError("courseId already exists")
+
+    course = Course(
+        course_code=normalized_code,
+        course_name=normalized_name,
+        school_id=teacher.school_id,
+        created_by=teacher.id,
+        course_status="draft",
+    )
+    db.add(course)
+    db.flush()
+
+    db.add(
+        CourseMember(
+            course_id=course.id,
+            class_id=None,
+            user_id=teacher.id,
+            member_role="teacher",
+        )
+    )
+    db.commit()
+    db.refresh(course)
+
+    school = db.query(School).filter(School.id == course.school_id).first()
+    return {
+        "courseId": course.course_code,
+        "courseName": course.course_name,
+        "classId": "",
+        "schoolId": school.school_code if school else "",
+    }
