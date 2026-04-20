@@ -3,8 +3,12 @@ function toSafeNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function stripKnownSlideExtension(value) {
+  return String(value || '').trim().replace(/\.(pptx|ppt|pdf)$/i, '').trim()
+}
+
 function getRawSlideName(section) {
-  return String(section?.slideName || '').trim()
+  return stripKnownSlideExtension(section?.slideName || '')
 }
 
 function toChineseNumber(value) {
