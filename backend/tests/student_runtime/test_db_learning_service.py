@@ -404,6 +404,100 @@ class StudentDbLearningServiceTestCase(unittest.TestCase):
     @patch("backend.app.lesson.service.synthesize_speech")
     @patch("backend.app.courseware.service.build_cir")
     @patch("backend.app.courseware.service.parse_courseware")
+    def test_student_runtime_uses_published_chapter_name_for_grouping(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        assert self.temp_dir is not None
+        mock_get_voice_cache_dir.return_value = Path(self.temp_dir.name) / "voice-cache"
+        mock_synthesize_speech.return_value = TtsSynthesisResult(
+            audio_bytes=b"ID3demo-audio",
+            duration_ms=2200,
+            reqid="req-001",
+            log_id="log-001",
+            voice_type="volcano-voice",
+        )
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName="demo-original.pptx", fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId="cw-course-001",
+            title="demo",
+            chapters=[
+                CirChapter(
+                    chapterId="course-001-chap-001",
+                    chapterName="chapter",
+                    nodes=[
+                        LessonNode(nodeId="node-01-01", nodeName="node-1", pageRefs=[1, 2], keyPoints=["k1"], summary="summary-1"),
+                        LessonNode(nodeId="node-01-02", nodeName="node-2", pageRefs=[3], keyPoints=["k2"], summary="summary-2"),
+                    ],
+                )
+            ],
+        )
+        parse_payload = ParseRequest(
+            schoolId="school-001",
+            userId="teacher-001",
+            courseId="course-001",
+            fileType="ppt",
+            fileUrl="file:///tmp/demo-original.pptx",
+            isExtractKeyPoint=True,
+            enc="demo-signature",
+        )
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
+        script_summary = generate_script(
+            GenerateScriptRequest(
+                parseId=accepted.parseId,
+                teachingStyle="standard",
+                speechSpeed="normal",
+                customOpening=None,
+                enc="demo-signature",
+            )
+        )
+        script_detail = get_script_detail(script_summary.scriptId).model_copy(deep=True)
+        for index, section in enumerate(script_detail.scriptStructure[:2], start=1):
+            section.content = f"student runtime named section {index}"
+
+        with patch("backend.app.lesson.service.get_script", return_value=script_detail):
+            audio = generate_audio(
+                GenerateAudioRequest(
+                    scriptId=script_summary.scriptId,
+                    voiceType="female_standard",
+                    audioFormat="mp3",
+                    sectionIds=[section.sectionId for section in script_detail.scriptStructure[:2]],
+                    enc="demo-signature",
+                ),
+                base_url="http://testserver/",
+            )
+            publish = publish_lesson(
+                PublishRequest(
+                    coursewareId="cw-course-001",
+                    scriptId=script_summary.scriptId,
+                    audioId=audio["audioId"],
+                    publisherId="teacher-demo",
+                    chapterName="发布后的章节名",
+                    enc="demo-signature",
+                )
+            )
+
+        with session_scope() as db:
+            lessons = get_student_lessons_from_db(db=db, student_id=None)
+        lesson = next((item for item in lessons if item["lessonId"] == publish["lessonId"]), None)
+
+        self.assertIsNotNone(lesson)
+        assert lesson is not None
+        self.assertTrue(lesson["units"])
+        self.assertTrue(lesson["units"][0]["chapters"])
+        self.assertEqual(lesson["units"][0]["chapters"][0]["slideName"], "发布后的章节名")
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
     def test_mark_page_read_falls_back_to_page_no_for_string_page_id(
         self,
         mock_parse_courseware,

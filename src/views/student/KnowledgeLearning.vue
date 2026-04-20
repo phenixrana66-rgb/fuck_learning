@@ -129,7 +129,8 @@ const currentAggregatedChapter = computed(() => {
 const chapterSections = computed(() => getSectionsForAggregatedChapter(
   lesson.value.units || [],
   unitId.value || currentAggregatedChapter.value.unitId || '',
-  currentAggregatedChapter.value.chapterTitle || ''
+  currentAggregatedChapter.value.chapterTitle || '',
+  currentAggregatedChapter.value.chapterId || chapterId.value || ''
 ))
 const completedSectionCount = computed(() => chapterSections.value.filter((section) => Number(section.progressPercent || 0) >= 100).length)
 

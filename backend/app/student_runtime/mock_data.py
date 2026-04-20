@@ -99,7 +99,17 @@ def _build_units(unit_specs, lesson_id):
     for unit_index, (unit_title, chapters) in enumerate(unit_specs, start=1):
         chapter_items = []
         for chapter_index, chapter_title in enumerate(chapters, start=1):
-            chapter_payload = {"chapterId": f"{lesson_id}-U{unit_index}-C{chapter_index}", "chapterTitle": chapter_title, "progressPercent": 0, "masteryPercent": 0, "pageNo": page_no, "summary": f"围绕“{chapter_title}”展开知识讲解、课件学习与课堂习题训练。", "knowledgePoints": [chapter_title, unit_title, "核心概念"]}
+            chapter_payload = {
+                "chapterId": f"{lesson_id}-U{unit_index}-C{chapter_index}",
+                "chapterTitle": chapter_title,
+                "slideName": chapter_title,
+                "pptAssetId": None,
+                "progressPercent": 0,
+                "masteryPercent": 0,
+                "pageNo": page_no,
+                "summary": f"围绕“{chapter_title}”展开知识讲解、课件学习与课堂习题训练。",
+                "knowledgePoints": [chapter_title, unit_title, "核心概念"],
+            }
             if lesson_id == "L10001" and unit_title == "压杆稳定" and chapter_title == "压杆稳定":
                 chapter_payload["guideContent"] = "本章围绕压杆稳定的基本概念、临界载荷、欧拉公式以及工程中的稳定校核展开。学习时建议先完成课件页浏览，再结合章节练习巩固关键公式与工程应用。"
                 chapter_payload["learningPages"] = [

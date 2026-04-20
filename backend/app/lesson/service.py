@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from math import ceil
+from pathlib import Path
 import re
 from uuid import uuid4
 
@@ -34,6 +35,8 @@ from backend.chaoxing_db.models import (
 _AUDIO_STORE: dict[str, dict] = {}
 _LESSON_PACKAGES: dict[str, dict] = {}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+COURSEWARE_PREVIEW_ROOT = PROJECT_ROOT / "public" / "courseware-previews"
 
 
 def generate_audio(payload: GenerateAudioRequest, base_url: str | None = None) -> dict:
@@ -251,7 +254,10 @@ def publish_lesson(payload: PublishRequest) -> dict:
             fallback_title=lesson.lesson_name,
         )
 
-        page_mapping_lookup = _build_page_mapping_lookup(script_entity.parse_task.parse_result.page_mapping if script_entity.parse_task.parse_result else None)
+        page_mapping_lookup = _build_page_mapping_lookup(
+            script_entity.parse_task.parse_result.page_mapping if script_entity.parse_task.parse_result else None,
+            parse_no=script_entity.parse_task.parse_no if script_entity.parse_task else None,
+        )
         current_chapter_sections = {
             section.section_code: section
             for section in db.query(LessonSection)
@@ -308,6 +314,7 @@ def publish_lesson(payload: PublishRequest) -> dict:
                 source_ppt_asset_id=script_entity.parse_task.ppt_asset_id,
                 page_numbers=page_numbers,
                 page_mapping_lookup=page_mapping_lookup,
+                parse_no=script_entity.parse_task.parse_no if script_entity.parse_task else None,
             )
 
             anchor_page_no = created_page_numbers[0] if created_page_numbers else (page_numbers[0] if page_numbers else None)
@@ -541,12 +548,16 @@ def _parse_page_numbers(page_range: str | None) -> list[int]:
     return deduped
 
 
-def _build_page_mapping_lookup(page_mapping: list[dict] | None) -> dict[int, dict]:
+def _build_page_mapping_lookup(page_mapping: list[dict] | None, parse_no: str | None = None) -> dict[int, dict]:
     lookup: dict[int, dict] = {}
     for item in page_mapping or []:
         page_no = item.get("pageNo")
         if isinstance(page_no, int):
-            lookup[page_no] = item
+            item_payload = dict(item)
+            preview_url = _resolve_preview_url(item_payload, page_no, parse_no=parse_no)
+            if preview_url:
+                item_payload["previewUrl"] = preview_url
+            lookup[page_no] = item_payload
     return lookup
 
 
@@ -557,6 +568,7 @@ def _sync_lesson_pages(
     source_ppt_asset_id: int | None,
     page_numbers: list[int],
     page_mapping_lookup: dict[int, dict],
+    parse_no: str | None = None,
 ) -> list[int]:
     existing_rows = (
         db.query(LessonSectionPage)
@@ -590,7 +602,7 @@ def _sync_lesson_pages(
         row.page_no = page_no
         row.page_title = _build_page_title(page_mapping, page_no)
         row.page_summary = _build_page_summary(lesson_section.section_name, page_no)
-        row.ppt_page_url = _normalize_preview_url(page_mapping.get("previewUrl"))
+        row.ppt_page_url = _resolve_preview_url(page_mapping, page_no, parse_no=parse_no)
         row.parsed_content = parsed_content
         row.sort_no = sort_no
         if row.id is None:
@@ -798,6 +810,23 @@ def _normalize_preview_url(url: str | None) -> str:
     lower = url.lower()
     if any(lower.endswith(ext) for ext in IMAGE_EXTENSIONS):
         return url
+    return ""
+
+
+def _resolve_preview_url(page_mapping: dict, page_no: int, parse_no: str | None = None) -> str:
+    normalized = _normalize_preview_url(page_mapping.get("previewUrl"))
+    if normalized:
+        return normalized
+    return _resolve_courseware_preview_url(parse_no, page_no)
+
+
+def _resolve_courseware_preview_url(parse_no: str | None, page_no: int) -> str:
+    if not parse_no:
+        return ""
+    for extension in sorted(IMAGE_EXTENSIONS):
+        preview_file = COURSEWARE_PREVIEW_ROOT / parse_no / f"page-{page_no}{extension}"
+        if preview_file.exists():
+            return f"/courseware-previews/{parse_no}/page-{page_no}{extension}"
     return ""
 
 

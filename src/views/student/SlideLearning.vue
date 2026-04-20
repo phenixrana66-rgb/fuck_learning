@@ -566,7 +566,6 @@ function normalizeFallbackDetail() {
   const allUnits = lesson?.units || []
   const locatedUnit = allUnits.find((unit) => (unit.chapters || []).some((chapter) => chapter.sectionId === sectionId.value))
     || allUnits.find((unit) => (unit.chapters || []).some((chapter) => chapter.chapterId === chapterId.value))
-    || allUnits.find((unit) => unit.unitTitle === '压杆稳定')
     || allUnits[0]
   const chapter = (locatedUnit?.chapters || []).find((item) => item.sectionId === sectionId.value)
     || (locatedUnit?.chapters || []).find((item) => item.chapterId === chapterId.value)

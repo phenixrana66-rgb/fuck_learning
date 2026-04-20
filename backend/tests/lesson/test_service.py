@@ -565,6 +565,86 @@ class LessonServiceTestCase(unittest.TestCase):
             ],
         )
 
+    def test_sync_lesson_pages_fills_preview_url_from_courseware_preview_folder(self) -> None:
+        parse_payload = self.parse_payload
+        assert parse_payload is not None
+        accepted = create_parse_task(parse_payload)
+        preview_root = Path(self.temp_dir.name) / 'courseware-previews'
+        parse_preview_dir = preview_root / accepted.parseId
+        parse_preview_dir.mkdir(parents=True, exist_ok=True)
+        (parse_preview_dir / 'page-1.png').write_bytes(b'demo-preview')
+
+        with session_scope() as db:
+            parse_task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == accepted.parseId).first()
+            self.assertIsNotNone(parse_task)
+            assert parse_task is not None
+            lesson = Lesson(
+                lesson_no='lesson-preview-sync',
+                course_id=parse_task.course_id,
+                lesson_name='图片补齐课程',
+                teacher_id=parse_task.teacher_id,
+                publish_version=1,
+                publish_status='published',
+                published_at=None,
+            )
+            db.add(lesson)
+            db.flush()
+            unit = LessonUnit(
+                lesson_id=lesson.id,
+                course_id=parse_task.course_id,
+                source_chapter_id=parse_task.chapter_id,
+                unit_code='unit-preview-sync',
+                unit_title='图片补齐单元',
+                sort_no=0,
+            )
+            db.add(unit)
+            db.flush()
+            section = LessonSection(
+                lesson_id=lesson.id,
+                course_id=parse_task.course_id,
+                unit_id=unit.id,
+                source_chapter_id=parse_task.chapter_id,
+                ppt_asset_id=parse_task.ppt_asset_id,
+                section_code='sec001',
+                section_name='图片补齐章节',
+                section_summary='summary',
+                student_visible=True,
+                sort_no=0,
+            )
+            db.add(section)
+            db.flush()
+
+            with patch.object(lesson_service_module, 'COURSEWARE_PREVIEW_ROOT', preview_root):
+                _sync_lesson_pages(
+                    db,
+                    lesson_id=lesson.id,
+                    lesson_section=section,
+                    source_ppt_asset_id=parse_task.ppt_asset_id,
+                    page_numbers=[1],
+                    page_mapping_lookup={
+                        1: {
+                            'pageNo': 1,
+                            'title': '第一页',
+                            'previewUrl': '',
+                            'bodyTexts': ['第一页正文'],
+                            'tableTexts': [],
+                            'notes': '',
+                        }
+                    },
+                    parse_no=accepted.parseId,
+                )
+                db.flush()
+                page = (
+                    db.query(LessonSectionPage)
+                    .filter(LessonSectionPage.section_id == section.id)
+                    .order_by(LessonSectionPage.page_no.asc(), LessonSectionPage.id.asc())
+                    .first()
+                )
+                page_preview_url = page.ppt_page_url if page is not None else None
+
+        self.assertIsNotNone(page_preview_url)
+        self.assertEqual(page_preview_url, f'/courseware-previews/{accepted.parseId}/page-1.png')
+
     @patch('backend.app.lesson.voice_storage.get_voice_cache_dir')
     @patch('backend.app.lesson.service.synthesize_speech')
     @patch('backend.app.courseware.service.build_cir')
