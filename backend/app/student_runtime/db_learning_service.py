@@ -688,10 +688,55 @@ def get_recent_chapter_visits(db: Session, student_id: str | int | None, limit: 
     return result
 
 
+def _coerce_page_no(value: str | int | None) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    match = re.search(r"[Pp](\d+)$", text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _resolve_section_page(
+    db: Session,
+    section: LessonSection,
+    lesson_page_id: str | int | None,
+    page_no: int | None,
+) -> LessonSectionPage | None:
+    resolved_page_no = _coerce_page_no(page_no)
+    if lesson_page_id not in (None, ""):
+        lesson_page_text = str(lesson_page_id).strip()
+        if lesson_page_text.isdigit():
+            page = (
+                db.query(LessonSectionPage)
+                .filter(LessonSectionPage.id == int(lesson_page_text), LessonSectionPage.section_id == section.id)
+                .first()
+            )
+            if page:
+                return page
+        if resolved_page_no is None:
+            resolved_page_no = _coerce_page_no(lesson_page_text)
+    if resolved_page_no is None:
+        return None
+    return (
+        db.query(LessonSectionPage)
+        .filter(LessonSectionPage.section_id == section.id, LessonSectionPage.page_no == resolved_page_no)
+        .order_by(LessonSectionPage.sort_no.asc(), LessonSectionPage.id.asc())
+        .first()
+    )
+
+
 def mark_page_read(db: Session, student_id: str | int | None, lesson_identifier: str | int | None, section_identifier: str | int | None, lesson_page_id: str | int | None, page_no: int | None) -> JsonDict | None:
     lesson = _find_lesson(db, lesson_identifier)
     student_db_id = _resolve_user_id(db, student_id)
-    if not lesson or not student_db_id or section_identifier in (None, "") or lesson_page_id in (None, ""):
+    if not lesson or not student_db_id or section_identifier in (None, ""):
         return None
     section = _find_section(db, lesson.id, section_identifier)
     if not section:
@@ -700,7 +745,7 @@ def mark_page_read(db: Session, student_id: str | int | None, lesson_identifier:
         section = _find_section(db, lesson.id, section_identifier)
         if not section:
             return None
-    page = db.query(LessonSectionPage).filter(LessonSectionPage.id == int(lesson_page_id), LessonSectionPage.section_id == section.id).first()
+    page = _resolve_section_page(db, section, lesson_page_id, page_no)
     if not page:
         return None
     now = datetime.now()

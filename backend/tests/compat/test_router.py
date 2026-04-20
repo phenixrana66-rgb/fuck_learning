@@ -159,6 +159,48 @@ class CompatRouterTestCase(unittest.TestCase):
         self.assertEqual(payload['msg'], 'generateAudio payload is invalid')
         self.assertIn('errors', payload['data'])
 
+    @patch('backend.app.compat.router.Thread')
+    @patch('backend.app.compat.router.upload_parse')
+    @patch('backend.app.compat.router.require_teacher')
+    def test_lesson_parse_upload_uses_teacher_pipeline(self, mock_require_teacher, mock_upload_parse, mock_thread) -> None:
+        mock_require_teacher.return_value = object()
+        mock_upload_parse.return_value = {
+            'parseId': 'parse-001',
+            'status': 'processing',
+            'knowledgeTree': [],
+            'coursewareId': 'cw-course-001',
+        }
+        thread_instance = mock_thread.return_value
+
+        response = self.client.post(
+            '/api/v1/lesson/parse',
+            json={
+                'courseId': 'course-001',
+                'fileName': 'demo.pptx',
+                'fileContent': 'ZGVtbw==',
+                'token': 'teacher-token',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['data']['parseId'], 'parse-001')
+        mock_require_teacher.assert_called_once()
+        mock_upload_parse.assert_called_once_with(
+            unittest.mock.ANY,
+            mock_require_teacher.return_value,
+            'course-001',
+            'demo.pptx',
+            'ZGVtbw==',
+            'http://testserver/',
+        )
+        mock_thread.assert_called_once_with(
+            target=unittest.mock.ANY,
+            args=('parse-001',),
+            daemon=True,
+        )
+        thread_instance.start.assert_called_once()
+
     @patch('backend.app.compat.router.publish_lesson')
     def test_publish_lesson_uses_main_service(self, mock_publish_lesson) -> None:
         mock_publish_lesson.return_value = {

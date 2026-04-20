@@ -23,7 +23,11 @@ def parse_courseware(
             preview_public_base=preview_public_base,
         )
     elif file_type in {"ppt", "pptx"}:
-        file_info, extracted = extract_pptx_presentation(file_url)
+        file_info, extracted = extract_pptx_presentation(
+            file_url,
+            preview_output_dir=preview_output_dir,
+            preview_public_base=preview_public_base,
+        )
     else:
         raise ApiError(code=400, msg=f"不支持的课件类型：{file_type}", status_code=400)
 
