@@ -9,14 +9,14 @@
         @keydown.enter.prevent="goStudentHome"
         @keydown.space.prevent="goStudentHome"
       >
-        <div class="knowledge-brand-mark"></div>
-        <div class="knowledge-brand-name">泛雅</div>
+        <img class="knowledge-brand-mark" src="/chaoxing-erya-logo.svg" alt="超星尔雅" />
+        <div class="knowledge-brand-name">尔雅</div>
       </div>
       <el-button class="knowledge-back-button" plain @click="goBack">返回课程详情</el-button>
     </header>
 
     <main class="knowledge-workspace">
-      <section ref="knowledgeLeftRef" class="knowledge-left">
+      <section ref="knowledgeLeftRef" class="knowledge-left app-scrollable">
         <section class="knowledge-summary-card">
           <div class="knowledge-summary-main">
             <h1>{{ detail.sectionTitle || '章节学习' }}</h1>
@@ -50,7 +50,7 @@
           </div>
 
           <div class="ppt-card-body">
-            <aside ref="thumbnailRailRef" class="thumbnail-rail">
+            <aside ref="thumbnailRailRef" class="thumbnail-rail app-scrollable">
               <button
                 v-for="page in pages"
                 :key="page.lessonPageId || page.pageNo"
@@ -80,7 +80,7 @@
                   :src="activePage.imageUrl"
                   :alt="`第 ${activePage.pageNo} 页幻灯片`"
                 />
-                <div v-else-if="activePage" class="viewer-text-fallback">
+                <div v-else-if="activePage" class="viewer-text-fallback app-scrollable">
                   <div class="viewer-text-title">{{ activePage.pageTitle || `第 ${activePage.pageNo} 页` }}</div>
                   <div v-if="activePage.pageSummary" class="viewer-text-summary">{{ activePage.pageSummary }}</div>
                   <div class="viewer-text-content">{{ activePage.parsedContent || '当前页暂无可展示的预览图，已切换为文本内容。' }}</div>
@@ -167,7 +167,7 @@
             <div class="ai-welcome-spacer"></div>
           </template>
 
-          <div v-else ref="chatScrollRef" class="ai-chat-list">
+          <div v-else ref="chatScrollRef" class="ai-chat-list app-scrollable">
             <article
               v-for="message in chatList"
               :key="message.id"
@@ -188,7 +188,7 @@
           <form class="ai-input-box" @submit.prevent="submitQuestion">
             <textarea
               v-model="questionText"
-              class="ai-textarea"
+              class="ai-textarea app-scrollable"
               placeholder="输入你的问题"
               rows="3"
               @keydown.enter.exact.prevent="submitQuestion"
@@ -467,7 +467,9 @@ async function loadSectionDetail() {
     const hasTargetPage = (detail.value.pages || []).some((page) => Number(page.pageNo) === targetPageNo)
     activePageNo.value = hasTargetPage ? targetPageNo : firstPageNo
   } catch (error) {
-    ElMessage.warning(error?.msg || '知识学习内容加载失败，已切换为本地演示数据')
+    if (!error?.handled) {
+      ElMessage.warning(error?.msg || '知识学习内容加载失败，已切换为本地演示数据')
+    }
   } finally {
     hasLoadedDetail.value = true
     await nextTick()
@@ -718,12 +720,6 @@ onBeforeRouteLeave(() => {
   background: #ffffff;
   color: #17305e;
   overflow: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.knowledge-page::-webkit-scrollbar {
-  display: none;
 }
 
 .knowledge-topbar {
@@ -751,16 +747,18 @@ onBeforeRouteLeave(() => {
 }
 
 .knowledge-brand-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #ea4a3d 0%, #e73a32 100%);
+  width: 40px;
+  height: 40px;
+  display: block;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 10px;
 }
 
 .knowledge-brand-name {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
-  color: #1a2f57;
+  color: #222833;
 }
 
 .knowledge-back-button {
@@ -781,12 +779,6 @@ onBeforeRouteLeave(() => {
   overflow: hidden;
   align-items: stretch;
   background: #ffffff;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.knowledge-workspace::-webkit-scrollbar {
-  display: none;
 }
 
 .knowledge-left {
@@ -799,12 +791,6 @@ onBeforeRouteLeave(() => {
   padding-right: 4px;
   overscroll-behavior: contain;
   background: #ffffff;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.knowledge-left::-webkit-scrollbar {
-  display: none;
 }
 
 .knowledge-summary-card,
@@ -943,14 +929,8 @@ onBeforeRouteLeave(() => {
   flex-direction: column;
   gap: 10px;
   overscroll-behavior: contain;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   border-right: 2px solid #6f7686;
   background: #eaf2ff;
-}
-
-.thumbnail-rail::-webkit-scrollbar {
-  display: none;
 }
 
 .thumbnail-card {
@@ -1229,12 +1209,6 @@ onBeforeRouteLeave(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.ai-chat-list::-webkit-scrollbar {
-  display: none;
 }
 
 .ai-message {
@@ -1300,12 +1274,6 @@ onBeforeRouteLeave(() => {
   font-size: 14px;
   line-height: 1.6;
   min-height: 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.ai-textarea::-webkit-scrollbar {
-  display: none;
 }
 
 .ai-textarea::placeholder {

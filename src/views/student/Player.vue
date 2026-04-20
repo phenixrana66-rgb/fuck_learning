@@ -9,8 +9,8 @@
         @keydown.enter.prevent="goStudentHome"
         @keydown.space.prevent="goStudentHome"
       >
-        <div class="student-topbar-brand-mark"></div>
-        <div class="student-topbar-brand-name">泛雅</div>
+        <img class="student-topbar-brand-mark" src="/chaoxing-erya-logo.svg" alt="超星尔雅" />
+        <div class="student-topbar-brand-name">尔雅</div>
       </div>
 
       <div class="student-topbar-center">
@@ -30,15 +30,25 @@
         </nav>
       </div>
 
-      <div class="student-topbar-user">
-        <el-avatar :size="42">{{ (studentProfile.studentName || fallbackProfile.studentName).slice(0, 1) }}</el-avatar>
-        <span>{{ studentProfile.studentName || fallbackProfile.studentName }}</span>
-        <el-icon><ArrowDown /></el-icon>
+      <div ref="topbarUserRef" class="student-topbar-user" :class="{ open: userMenuOpen }">
+        <button type="button" class="student-topbar-user-trigger" @click="toggleUserMenu">
+          <el-avatar :size="42">{{ (studentProfile.studentName || fallbackProfile.studentName).slice(0, 1) }}</el-avatar>
+          <span>{{ studentProfile.studentName || fallbackProfile.studentName }}</span>
+          <el-icon class="student-topbar-user-arrow"><ArrowDown /></el-icon>
+        </button>
+        <div v-if="userMenuOpen" class="student-topbar-user-menu">
+          <button type="button" class="student-topbar-user-menu-item" @click="handleUserMenuAction('home')">回到首页</button>
+          <button type="button" class="student-topbar-user-menu-item" @click="handleUserMenuAction('message')">消息中心</button>
+        </div>
       </div>
     </header>
 
-    <main ref="pageMainRef" class="student-player-main">
-      <section v-if="activeView !== 'ai'" class="student-course-overview">
+    <main
+      ref="pageMainRef"
+      class="student-player-main app-scrollable"
+      :class="{ 'is-progress-view': activeView === 'progress' }"
+    >
+      <section v-if="showCourseOverview" class="student-course-overview">
         <div class="student-course-overview-main">
           <h1>{{ lesson.courseName || lesson.lessonName }}</h1>
           <h3 class="student-course-overview-teacher">授课教师：{{ lesson.teacherName || '未设置' }}</h3>
@@ -49,12 +59,8 @@
             <strong>{{ overallProgress }}%</strong>
           </div>
           <div class="student-course-overview-metric">
-            <span>平均掌握度</span>
+            <span>章节理解度</span>
             <strong>{{ overallMastery }}%</strong>
-          </div>
-          <div class="student-course-overview-metric">
-            <span>当前章节</span>
-            <strong>{{ activeChapter.chapterTitle || '待学习章节' }}</strong>
           </div>
         </div>
       </section>
@@ -100,7 +106,12 @@
                   <el-progress :percentage="chapter.progressPercent" :stroke-width="8" :show-text="false" />
                 </div>
                 <div class="student-chapter-footer-row">
-                  <el-button type="primary" @click.stop="goToKnowledgeLearning(chapter)">进入学习</el-button>
+                  <button type="button" class="student-knowledge-action-button" @click.stop="goToKnowledgeLearning(chapter)">
+                    <span class="student-knowledge-action-button-core">
+                      <span class="student-knowledge-action-button-text">进入学习</span>
+                      <span class="student-knowledge-action-button-glow" aria-hidden="true"></span>
+                    </span>
+                  </button>
                 </div>
               </div>
             </article>
@@ -111,31 +122,35 @@
       <section v-else-if="activeView === 'progress'" class="student-progress-page">
         <section class="student-progress-hero">
           <div class="student-progress-hero-main">
-            <div class="student-progress-chip">进度续接与节奏调整</div>
-            <h2>从上次学习位置继续，按当前状态调整学习节奏。</h2>
+            <div class="student-progress-hero-copy">
+              <h2>从上次学习位置继续，按当前状态调整学习节奏。</h2>
+            </div>
             <div class="student-progress-hero-actions">
-              <button type="button" class="student-secondary-action" @click="resumeLearning">
-                {{ resumeLoading ? '正在续学...' : '继续学习' }}
+              <button type="button" class="student-resume-button" @click="resumeLearning">
+                <span class="student-resume-button-core">
+                  <span class="student-resume-button-text">{{ resumeLoading ? '正在续学...' : '继续学习' }}</span>
+                  <span class="student-resume-button-glow" aria-hidden="true"></span>
+                </span>
               </button>
             </div>
           </div>
 
           <div class="student-progress-stats">
-            <div class="student-progress-stat-card">
-              <span>当前章节</span>
-              <strong>{{ recommendedResumeChapter.chapterTitle || '待学习章节' }}</strong>
+            <div class="student-progress-stats-top">
+              <div class="student-progress-stat-card">
+                <span>章节总数</span>
+                <strong>{{ chapterCount }} 个</strong>
+              </div>
+              <div class="student-progress-stat-card">
+                <span>最近问答</span>
+                <strong>{{ qaHistoryCount }} 条</strong>
+              </div>
             </div>
-            <div class="student-progress-stat-card">
-              <span>课程总进度</span>
-              <strong>{{ overallProgress }}%</strong>
-            </div>
-            <div class="student-progress-stat-card">
-              <span>平均掌握度</span>
-              <strong>{{ overallMastery }}%</strong>
-            </div>
-            <div class="student-progress-stat-card">
-              <span>最近问答</span>
-              <strong>{{ qaHistoryCount }} 条</strong>
+            <div class="student-progress-stats-bottom">
+              <div class="student-progress-stat-card chapter">
+                <span>当前章节</span>
+                <strong>{{ recommendedResumeChapter.chapterTitle || '待学习章节' }}</strong>
+              </div>
             </div>
           </div>
         </section>
@@ -150,7 +165,7 @@
             <button type="button" class="student-ai-new-chat-button" @click="startNewConversation">新对话</button>
           </div>
 
-          <div class="student-ai-chat-body" :class="{ empty: chatList.length === 0 }">
+          <div class="student-ai-chat-body app-scrollable" :class="{ empty: chatList.length === 0 }">
             <div v-if="chatList.length" class="student-chat-list">
               <div
                 v-for="item in chatList"
@@ -163,10 +178,6 @@
                   <div class="student-chat-content">{{ item.content }}</div>
                   <div v-if="item.relatedPoints?.length" class="student-chat-points">
                     <span v-for="point in item.relatedPoints" :key="point" class="student-chat-point-tag">{{ point }}</span>
-                  </div>
-                  <div v-if="item.understandingLabel" class="student-chat-meta">
-                    <span>理解程度：{{ item.understandingLabel }}</span>
-                    <span>推荐回看：{{ item.anchorTitle }}</span>
                   </div>
                 </div>
               </div>
@@ -282,7 +293,7 @@
 
             <section class="student-ai-sidebar-section history">
               <div class="student-ai-tools-title">历史问答</div>
-              <div class="student-ai-history-list">
+              <div class="student-ai-history-list app-scrollable">
                 <button
                   v-for="session in qaSessions"
                   :key="session.sessionId"
@@ -358,6 +369,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const topbarNavRef = ref(null)
+const topbarUserRef = ref(null)
 const pageMainRef = ref(null)
 const lesson = ref({ units: [], aiTools: [] })
 const fallbackProfile = {
@@ -388,6 +400,7 @@ const editingSessionId = ref('')
 const editingSessionTitle = ref('')
 const primaryNavRefs = ref({})
 const navIndicator = ref({ width: 0, left: 0, opacity: 0 })
+const userMenuOpen = ref(false)
 const progressFallbackNote = ref('若服务端节奏接口暂不可用，系统会自动回退为本地建议。')
 const rhythmSuggestion = ref('建议先完成当前章节，再根据掌握度决定是否进入下一章。')
 const hasLoadedLesson = ref(false)
@@ -441,6 +454,8 @@ const overallMastery = computed(() => {
   if (!allChapters.value.length) return 0
   return Math.round(allChapters.value.reduce((sum, chapter) => sum + Number(chapter.masteryPercent || 0), 0) / allChapters.value.length)
 })
+const showCourseOverview = computed(() => activeView.value === 'progress' || activeView.value === 'knowledge')
+const chapterCount = computed(() => allChapters.value.length)
 const filteredAiTools = computed(() => {
   const fallbackTools = [
     { id: 'tool-1', name: 'AI陪练' },
@@ -759,6 +774,7 @@ function updateNavIndicator() {
 
 function switchView(value) {
   activeView.value = value
+  userMenuOpen.value = false
   nextTick(() => {
     if (pageMainRef.value) {
       pageMainRef.value.scrollTo({ top: 0, left: 0, behavior: 'auto' })
@@ -768,11 +784,33 @@ function switchView(value) {
 }
 
 function goStudentHome() {
+  userMenuOpen.value = false
   capturePlayerViewState()
   router.push({
     name: 'StudentHome',
     query: route.query.token ? { token: route.query.token } : {}
   })
+}
+
+function toggleUserMenu() {
+  userMenuOpen.value = !userMenuOpen.value
+}
+
+function handleUserMenuAction(action) {
+  userMenuOpen.value = false
+  if (action === 'home') {
+    goStudentHome()
+    return
+  }
+  ElMessage.info('消息中心开发中')
+}
+
+function handleDocumentPointerDown(event) {
+  if (!userMenuOpen.value) return
+  const target = event.target
+  if (topbarUserRef.value && target instanceof Node && !topbarUserRef.value.contains(target)) {
+    userMenuOpen.value = false
+  }
 }
 
 function getChapterStatusLabel(chapter) {
@@ -1136,6 +1174,7 @@ async function startNewConversation() {
 }
 
 onMounted(async () => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
   try {
     await loadLesson()
     await nextTick()
@@ -1144,6 +1183,7 @@ onMounted(async () => {
     pageMainRef.value?.addEventListener('scroll', handlePlayerScroll, { passive: true })
     hasActivatedOnce.value = true
   } catch (error) {
+    if (error?.handled) return
     ElMessage.error(error?.msg || '课程详情加载失败')
   }
 })
@@ -1170,6 +1210,7 @@ watch([activeView, activeChapterId], () => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
   window.removeEventListener('resize', updateNavIndicator)
@@ -1223,17 +1264,18 @@ onDeactivated(() => {
 }
 
 .student-topbar-brand-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #ed5b56 0%, #cf2e2a 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+  width: 40px;
+  height: 40px;
+  display: block;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 10px;
 }
 
 .student-topbar-brand-name {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
-  color: #262626;
+  color: #222833;
 }
 
 .student-topbar-center {
@@ -1289,10 +1331,67 @@ onDeactivated(() => {
 }
 
 .student-topbar-user {
+  position: relative;
   justify-self: end;
   color: #33415f;
   font-size: 14px;
   font-weight: 500;
+}
+
+.student-topbar-user-trigger {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.student-topbar-user-arrow {
+  transition: transform 0.2s ease;
+}
+
+.student-topbar-user.open .student-topbar-user-arrow {
+  transform: rotate(180deg);
+}
+
+.student-topbar-user-menu {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  min-width: 156px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(216, 227, 246, 0.96);
+  box-shadow: 0 18px 36px rgba(88, 115, 165, 0.16);
+  backdrop-filter: blur(12px);
+  display: grid;
+  gap: 6px;
+  z-index: 40;
+}
+
+.student-topbar-user-menu-item {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #23375f;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.student-topbar-user-menu-item:hover {
+  background: #eef4ff;
+  color: #2f63c7;
+  transform: translateY(-1px);
 }
 
 .student-secondary-action,
@@ -1328,15 +1427,40 @@ onDeactivated(() => {
 }
 
 .student-player-main {
-  padding: 116px 36px 36px;
+  height: calc(100vh - 84px);
+  box-sizing: border-box;
+  padding: 24px 36px 36px;
+  margin-top: 84px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.student-player-main::-webkit-scrollbar-button,
+.student-player-main::-webkit-scrollbar-button:single-button,
+.student-player-main::-webkit-scrollbar-button:vertical:decrement,
+.student-player-main::-webkit-scrollbar-button:vertical:increment {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+.student-player-main.is-progress-view {
+  height: calc(100vh - 84px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-top: 18px;
+  padding-bottom: 28px;
 }
 
 .student-course-overview {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 22px;
-  margin-bottom: 24px;
-  padding: 30px 32px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: stretch;
+  gap: 16px;
+  margin-bottom: 10px;
+  min-height: 164px;
+  padding: 18px 24px;
   border-radius: 32px;
   border: 1px solid rgba(205, 223, 247, 0.92);
   background:
@@ -1349,50 +1473,62 @@ onDeactivated(() => {
 
 .student-course-overview-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .student-course-overview h1 {
   margin: 0;
   color: #17315d;
   font-size: 30px;
-  line-height: 1.32;
+  line-height: 1.22;
 }
 
 .student-course-overview-teacher {
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   color: rgba(49, 79, 133, 0.9);
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.42;
 }
 
 .student-course-overview-meta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  align-self: end;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-self: center;
+  justify-self: end;
+  width: 100%;
+  max-width: 420px;
 }
 
 .student-course-overview-metric {
-  padding: 18px 16px;
+  min-height: 108px;
+  padding: 16px 15px 24px;
   border-radius: 24px;
   border: 1px solid rgba(156, 186, 233, 0.28);
   background: rgba(255, 255, 255, 0.62);
   backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .student-course-overview-metric span {
   display: block;
   color: rgba(54, 85, 140, 0.72);
-  font-size: 12px;
+  font-size: 15px;
+  text-align: left;
 }
 
 .student-course-overview-metric strong {
   display: block;
-  margin-top: 10px;
+  margin-top: 8px;
   color: #16315e;
-  font-size: 18px;
-  line-height: 1.5;
+  font-size: 28px;
+  line-height: 1.24;
+  text-align: center;
 }
 
 .student-knowledge-page {
@@ -1402,7 +1538,8 @@ onDeactivated(() => {
 
 .student-progress-page {
   display: grid;
-  gap: 22px;
+  gap: 0;
+  min-height: 0;
 }
 
 .student-unit-section,
@@ -1465,7 +1602,7 @@ onDeactivated(() => {
 .student-chapter-grid {
   margin-top: 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
 }
 
@@ -1602,6 +1739,100 @@ onDeactivated(() => {
   box-shadow: 0 12px 22px rgba(94, 130, 208, 0.18);
 }
 
+.student-knowledge-action-button {
+  position: relative;
+  min-width: 118px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background:
+    linear-gradient(140deg, rgba(90, 180, 255, 0.22), rgba(90, 180, 255, 0.1)),
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.4), transparent 42%),
+    linear-gradient(135deg, rgb(90, 180, 255), rgb(72, 158, 240) 56%, rgb(57, 136, 224) 100%);
+  box-shadow:
+    0 14px 26px rgba(73, 150, 221, 0.2),
+    inset 0 0 0 1px rgba(190, 232, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, filter 0.24s ease;
+}
+
+.student-knowledge-action-button::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, rgba(90, 180, 255, 0.98), rgba(72, 158, 240, 0.98) 62%, rgba(57, 136, 224, 0.98));
+}
+
+.student-knowledge-action-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, transparent 20%, rgba(218, 245, 255, 0.44) 34%, transparent 52%),
+    linear-gradient(90deg, transparent, rgba(176, 231, 255, 0.24), transparent);
+  transform: translateX(-120%);
+  transition: transform 0.55s ease;
+}
+
+.student-knowledge-action-button:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 20px 30px rgba(73, 150, 221, 0.26),
+    inset 0 0 0 1px rgba(201, 238, 255, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  filter: saturate(1.12);
+}
+
+.student-knowledge-action-button:hover::after {
+  transform: translateX(120%);
+}
+
+.student-knowledge-action-button:active {
+  transform: translateY(0) scale(0.988);
+}
+
+.student-knowledge-action-button-core {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.student-knowledge-action-button-text {
+  position: relative;
+  z-index: 2;
+  color: #f4fbff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 16px rgba(217, 244, 255, 0.32);
+}
+
+.student-knowledge-action-button-glow {
+  position: absolute;
+  inset: 8px 10px;
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(190, 238, 255, 0.1), rgba(234, 248, 255, 0.32), rgba(190, 238, 255, 0.1));
+  filter: blur(9px);
+  opacity: 0.7;
+  transition: opacity 0.22s ease, filter 0.22s ease;
+}
+
+.student-knowledge-action-button:hover .student-knowledge-action-button-glow {
+  opacity: 1;
+  filter: blur(11px);
+}
+
 .student-progress-hero,
 .student-progress-panel {
   padding: 26px 28px;
@@ -1609,35 +1840,44 @@ onDeactivated(() => {
 
 .student-progress-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 520px;
-  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 14px;
+  min-height: calc(100vh - 300px);
+  padding: 16px 22px;
   background:
     radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.86), transparent 28%),
     linear-gradient(135deg, #e7f0ff 0%, #d9e8ff 48%, #f2f7ff 100%);
 }
 
-.student-progress-chip {
-  display: inline-flex;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  color: #4868a9;
-  font-size: 12px;
-  font-weight: 600;
+.student-progress-hero-main {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 136px auto;
+  align-content: start;
+  padding-right: 8px;
+  min-height: 0;
+}
+
+.student-progress-hero-copy {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  padding-top: 30px;
+  height: 136px;
+  overflow: hidden;
 }
 
 .student-progress-hero h2 {
-  margin: 16px 0 0;
+  margin: 0;
   color: #17315d;
-  font-size: 28px;
-  line-height: 1.35;
-}
-
-.student-progress-hero p {
-  margin: 12px 0 0;
-  color: #7082a4;
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: 32px;
+  line-height: 1.1;
+  max-width: 720px;
+  max-height: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .student-progress-hero-actions,
@@ -1646,35 +1886,162 @@ onDeactivated(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 22px;
+  margin-top: 0;
+  padding-top: 2px;
+  padding-left: 22px;
+  align-self: flex-start;
 }
 
 .student-progress-stats {
   display: grid;
+  grid-template-rows: auto auto;
+  gap: 14px;
+  align-self: start;
+  justify-self: end;
+  width: 100%;
+  max-width: 420px;
+}
+
+.student-progress-stats-top {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 14px;
+}
+
+.student-progress-stats-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
 }
 
 .student-progress-stat-card {
-  min-height: 132px;
-  padding: 22px 20px;
+  min-height: 0;
+  padding: 16px 18px 24px;
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.66);
   border: 1px solid rgba(208, 222, 245, 0.96);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.student-progress-stat-card.chapter {
+  min-height: 116px;
+  justify-content: flex-start;
+}
+
+.student-progress-stats-top .student-progress-stat-card {
+  min-height: 104px;
 }
 
 .student-progress-stat-card span {
   display: block;
   color: #7590bc;
-  font-size: 12px;
+  font-size: 15px;
+  text-align: left;
 }
 
 .student-progress-stat-card strong {
   display: block;
-  margin-top: 12px;
+  margin-top: auto;
   color: #17315d;
   font-size: 26px;
-  line-height: 1.5;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.student-resume-button {
+  position: relative;
+  min-width: 254px;
+  height: 86px;
+  padding: 0;
+  border: 0;
+  border-radius: 28px;
+  background:
+    linear-gradient(140deg, rgba(90, 180, 255, 0.22), rgba(90, 180, 255, 0.1)),
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.4), transparent 42%),
+    linear-gradient(135deg, rgb(90, 180, 255), rgb(72, 158, 240) 56%, rgb(57, 136, 224) 100%);
+  box-shadow:
+    0 22px 38px rgba(73, 150, 221, 0.24),
+    inset 0 0 0 1px rgba(190, 232, 255, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, filter 0.24s ease;
+}
+
+.student-resume-button::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 27px;
+  background:
+    linear-gradient(135deg, rgba(90, 180, 255, 0.98), rgba(72, 158, 240, 0.98) 62%, rgba(57, 136, 224, 0.98));
+}
+
+.student-resume-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, transparent 20%, rgba(218, 245, 255, 0.44) 34%, transparent 52%),
+    linear-gradient(90deg, transparent, rgba(176, 231, 255, 0.24), transparent);
+  transform: translateX(-120%);
+  transition: transform 0.55s ease;
+}
+
+.student-resume-button:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 28px 46px rgba(73, 150, 221, 0.3),
+    inset 0 0 0 1px rgba(201, 238, 255, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  filter: saturate(1.12);
+}
+
+.student-resume-button:hover::after {
+  transform: translateX(120%);
+}
+
+.student-resume-button:active {
+  transform: translateY(0) scale(0.988);
+}
+
+.student-resume-button-core {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.student-resume-button-text {
+  position: relative;
+  z-index: 2;
+  color: #f4fbff;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 16px rgba(217, 244, 255, 0.32);
+}
+
+.student-resume-button-glow {
+  position: absolute;
+  inset: 16px 18px;
+  border-radius: 16px;
+  background:
+    linear-gradient(90deg, rgba(190, 238, 255, 0.1), rgba(234, 248, 255, 0.32), rgba(190, 238, 255, 0.1));
+  filter: blur(12px);
+  opacity: 0.7;
+  transition: opacity 0.22s ease, filter 0.22s ease;
+}
+
+.student-resume-button:hover .student-resume-button-glow {
+  opacity: 1;
+  filter: blur(15px);
 }
 
 .student-progress-panel-head {
@@ -1884,8 +2251,6 @@ onDeactivated(() => {
   min-height: 0;
   padding: 8px 2px 10px 0;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 
 .student-ai-chat-body.empty {
@@ -1893,11 +2258,6 @@ onDeactivated(() => {
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
   padding-right: 0;
-}
-
-.student-ai-chat-body::-webkit-scrollbar {
-  width: 0;
-  height: 0;
 }
 
 .student-ai-welcome {
@@ -2005,17 +2365,6 @@ onDeactivated(() => {
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(214, 225, 244, 0.96);
   color: #49689f;
-  font-size: 12px;
-}
-
-.student-chat-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(220, 230, 246, 0.96);
-  color: #7687a6;
   font-size: 12px;
 }
 
@@ -2294,13 +2643,6 @@ onDeactivated(() => {
   max-height: none;
   overflow-y: auto;
   padding-right: 4px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.student-ai-history-list::-webkit-scrollbar {
-  width: 0;
-  height: 0;
 }
 
 .student-ai-history-item {
@@ -2378,8 +2720,26 @@ onDeactivated(() => {
 }
 
 @media (max-width: 1180px) {
-  .student-progress-grid,
   .student-progress-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .student-player-main.is-progress-view {
+    height: auto;
+    overflow: auto;
+  }
+
+  .student-progress-page {
+    height: auto;
+    min-height: 0;
+  }
+
+  .student-progress-stats {
+    max-width: none;
+  }
+
+  .student-progress-stats-top,
+  .student-progress-stats-bottom {
     grid-template-columns: 1fr;
   }
 
@@ -2431,7 +2791,7 @@ onDeactivated(() => {
   }
 
   .student-player-main {
-    padding: 164px 20px 28px;
+    padding: 80px 20px 28px;
   }
 
   .student-course-overview {
@@ -2440,11 +2800,16 @@ onDeactivated(() => {
 
   .student-course-overview-meta {
     grid-template-columns: 1fr;
+    max-width: none;
   }
 
   .student-progress-chapter-item {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .student-chapter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .student-unit-header,
@@ -2463,8 +2828,12 @@ onDeactivated(() => {
 }
 
 @media (max-width: 640px) {
+  .student-chapter-grid {
+    grid-template-columns: 1fr;
+  }
+
   .student-player-main {
-    padding: 164px 16px 24px;
+    padding: 80px 16px 24px;
   }
 
   .student-course-overview,
@@ -2484,8 +2853,17 @@ onDeactivated(() => {
     font-size: 24px;
   }
 
+  .student-resume-button {
+    min-width: 220px;
+    height: 78px;
+  }
+
+  .student-resume-button-text {
+    font-size: 20px;
+  }
+
   .student-progress-stats {
-    grid-template-columns: 1fr;
+    grid-template-rows: auto;
   }
 
   .student-chat-bubble {
