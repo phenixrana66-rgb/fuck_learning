@@ -5,13 +5,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.app.cir.schemas import CIR, CirChapter, LessonNode
-from backend.app.common.db import configure_database_url, reset_database_url
+from backend.app.common.db import configure_database_url, reset_database_url, session_scope
 from backend.app.common.exceptions import ApiError
 from backend.app.courseware.schemas import ParseRequest
 from backend.app.courseware.service import clear_parse_tasks, create_parse_task, run_parse_task
 from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest, UpdateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script, update_script
+from backend.chaoxing_db.models import ChapterAudioAsset, ChapterScript, ChapterScriptSection, ChapterSectionAudioAsset
 
 
 class ScriptServiceTestCase(unittest.TestCase):
@@ -294,6 +295,99 @@ class ScriptServiceTestCase(unittest.TestCase):
 
         self.assertEqual(updated.version, 2)
         self.assertEqual(get_script(summary.scriptId).version, 2)
+
+    @patch('backend.app.courseware.service.build_cir')
+    @patch('backend.app.courseware.service.parse_courseware')
+    @patch('backend.app.script.service.generate_script_section_with_llm')
+    def test_update_script_preserves_existing_section_audio_links(self, mock_generate_script_section_with_llm, mock_parse_courseware, mock_build_cir) -> None:
+        parse_payload = self.parse_payload
+        assert parse_payload is not None
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName='demo.pptx', fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = _build_single_node_cir()
+        mock_generate_script_section_with_llm.return_value = {
+            'content': '先把人工智能的定义讲清楚，再继续往后展开。',
+            'summaryForNext': '人工智能定义已经讲完。',
+        }
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
+        summary = generate_script(
+            GenerateScriptRequest(
+                parseId=accepted.parseId,
+                teachingStyle='standard',
+                speechSpeed='normal',
+                customOpening=None,
+                enc='demo-signature',
+            )
+        )
+        detail = self._wait_for_script_status(summary.scriptId, expected_status='completed')
+
+        with session_scope() as db:
+            script = db.query(ChapterScript).filter(ChapterScript.script_no == summary.scriptId).first()
+            self.assertIsNotNone(script)
+            section = (
+                db.query(ChapterScriptSection)
+                .filter(ChapterScriptSection.script_id == script.id, ChapterScriptSection.section_code == detail.scriptStructure[0].sectionId)
+                .first()
+            )
+            self.assertIsNotNone(section)
+            audio_asset = ChapterAudioAsset(
+                course_id=script.course_id,
+                chapter_id=script.chapter_id,
+                script_id=script.id,
+                voice_type='female_standard',
+                audio_format='mp3',
+                audio_url='http://test/audio.mp3',
+                total_duration_sec=20,
+                file_size=1024,
+                bit_rate=128,
+                status='generated',
+            )
+            db.add(audio_asset)
+            db.flush()
+            section_audio = ChapterSectionAudioAsset(
+                audio_asset_id=audio_asset.id,
+                course_id=script.course_id,
+                chapter_id=script.chapter_id,
+                script_id=script.id,
+                script_section_id=section.id,
+                voice_type='female_standard',
+                audio_format='mp3',
+                audio_url='http://test/audio-section.mp3',
+                duration_sec=20,
+                file_size=1024,
+                bit_rate=128,
+                status='generated',
+                sort_no=0,
+            )
+            db.add(section_audio)
+            db.flush()
+            original_section_id = section.id
+            section_audio_id = section_audio.id
+
+        updated = update_script(
+            summary.scriptId,
+            UpdateScriptRequest(scriptStructure=detail.scriptStructure, versionRemark='preserve-audio-links', enc='demo-signature'),
+        )
+
+        with session_scope() as db:
+            section = (
+                db.query(ChapterScriptSection)
+                .join(ChapterScript, ChapterScriptSection.script_id == ChapterScript.id)
+                .filter(ChapterScript.script_no == summary.scriptId, ChapterScriptSection.section_code == detail.scriptStructure[0].sectionId)
+                .first()
+            )
+            section_audio = db.query(ChapterSectionAudioAsset).filter(ChapterSectionAudioAsset.id == section_audio_id).first()
+            section_id = section.id if section is not None else None
+            section_audio_section_id = section_audio.script_section_id if section_audio is not None else None
+
+        self.assertEqual(updated.version, 2)
+        self.assertIsNotNone(section_id)
+        self.assertEqual(section_id, original_section_id)
+        self.assertIsNotNone(section_audio)
+        self.assertEqual(section_audio_section_id, original_section_id)
 
     def _wait_for_script_status(self, script_id: str, expected_status: str, timeout_seconds: float = 2.0):
         deadline = time.time() + timeout_seconds

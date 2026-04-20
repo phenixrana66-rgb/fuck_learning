@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import fitz
+from pptx import Presentation
 
 from backend.app.cir.schemas import CIR
 from backend.app.common.db import configure_database_url, reset_database_url, session_scope
@@ -171,6 +172,33 @@ class CoursewareServiceTestCase(unittest.TestCase):
         self.assertEqual(built_cir.coursewareId, "cw-course-001")
         self.assertIsNotNone(preview)
 
+    @patch("backend.app.parser.pptx_reader._export_with_powerpoint")
+    @patch("backend.app.courseware.service.build_cir")
+    def test_execute_parse_pipeline_supports_pptx_previews(self, mock_build_cir, mock_export_with_powerpoint) -> None:
+        assert self.temp_dir is not None
+        pptx_path = self._create_demo_pptx("courseware.pptx")
+        preview_dir = Path(self.temp_dir.name) / "pptx-previews"
+        cir = CIR(coursewareId="cw-course-001", title="pptx-demo", chapters=[])
+        mock_build_cir.return_value = cir
+        mock_export_with_powerpoint.side_effect = self._mock_exported_pptx_pngs
+
+        file_info, preview, extracted, built_cir = execute_parse_pipeline(
+            course_id="course-001",
+            file_url=pptx_path.as_uri(),
+            file_type="pptx",
+            preview_output_dir=preview_dir,
+            preview_public_base="/courseware-previews/parse-demo",
+        )
+
+        self.assertEqual(file_info.fileName, "courseware.pptx")
+        self.assertEqual(file_info.pageCount, 2)
+        self.assertEqual(extracted.sourceType, "pptx")
+        self.assertEqual(len(extracted.slides), 2)
+        self.assertEqual(extracted.slides[0].previewUrl, "/courseware-previews/parse-demo/page-1.png")
+        self.assertTrue((preview_dir / "page-1.png").exists())
+        self.assertEqual(built_cir.coursewareId, "cw-course-001")
+        self.assertIsNotNone(preview)
+
     def _create_text_pdf(self, file_name: str, page_texts: list[str]) -> Path:
         assert self.temp_dir is not None
         target = Path(self.temp_dir.name) / file_name
@@ -181,3 +209,23 @@ class CoursewareServiceTestCase(unittest.TestCase):
         document.save(target)
         document.close()
         return target
+
+    def _create_demo_pptx(self, file_name: str) -> Path:
+        assert self.temp_dir is not None
+        target = Path(self.temp_dir.name) / file_name
+        presentation = Presentation()
+
+        title_slide = presentation.slides.add_slide(presentation.slide_layouts[0])
+        title_slide.shapes.title.text = "第一章 绪论"
+        title_slide.placeholders[1].text = "这是第一页内容。"
+
+        content_slide = presentation.slides.add_slide(presentation.slide_layouts[1])
+        content_slide.shapes.title.text = "第二章 重点"
+        content_slide.placeholders[1].text = "这是第二页内容。"
+
+        presentation.save(target)
+        return target
+
+    def _mock_exported_pptx_pngs(self, _input_path: Path, export_dir: Path) -> None:
+        (export_dir / "幻灯片1.PNG").write_bytes(b"slide-1")
+        (export_dir / "幻灯片2.PNG").write_bytes(b"slide-2")

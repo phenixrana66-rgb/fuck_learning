@@ -21,12 +21,14 @@ from backend.chaoxing_db.models import (
     ChapterScript,
     ChapterScriptSection,
     ChapterSectionAudioAsset,
+    Course,
     Lesson,
     LessonSection,
     LessonSectionAnchor,
     LessonSectionKnowledgePoint,
     LessonSectionPage,
     LessonUnit,
+    StudentPageProgress,
 )
 
 _AUDIO_STORE: dict[str, dict] = {}
@@ -213,94 +215,109 @@ def publish_lesson(payload: PublishRequest) -> dict:
         chapter = script_entity.chapter
         unit_chapter = chapter.parent if chapter and chapter.parent is not None else chapter
         next_publish_version = _next_publish_version(db, script_entity.course_id)
-        lesson = Lesson(
-            lesson_no=_build_id("lesson"),
-            course_id=script_entity.course_id,
-            lesson_name=(chapter.chapter_name if chapter is not None else "Published Lesson"),
-            teacher_id=script_entity.teacher_id,
-            publish_version=next_publish_version,
-            publish_status="published",
-            published_at=_utc_now_naive(),
+        lesson = (
+            db.query(Lesson)
+            .filter(Lesson.course_id == script_entity.course_id)
+            .order_by(Lesson.id.desc())
+            .first()
         )
-        db.add(lesson)
-        db.flush()
+        if lesson is None:
+            lesson = Lesson(
+                lesson_no=_build_id("lesson"),
+                course_id=script_entity.course_id,
+                lesson_name=_resolve_course_lesson_name(db, script_entity, chapter),
+                teacher_id=script_entity.teacher_id,
+                publish_version=next_publish_version,
+                publish_status="published",
+                published_at=_utc_now_naive(),
+            )
+            db.add(lesson)
+            db.flush()
+        else:
+            lesson.lesson_name = _resolve_course_lesson_name(db, script_entity, chapter)
+            lesson.teacher_id = script_entity.teacher_id
+            lesson.publish_version = next_publish_version
+            lesson.publish_status = "published"
+            lesson.published_at = _utc_now_naive()
 
-        lesson_unit = LessonUnit(
-            lesson_id=lesson.id,
+        lesson_unit = _get_or_create_lesson_unit(
+            db,
+            lesson=lesson,
             course_id=script_entity.course_id,
-            source_chapter_id=unit_chapter.id if unit_chapter is not None else script_entity.chapter_id,
-            unit_code=(unit_chapter.chapter_code if unit_chapter is not None else f"unit-{lesson.id}"),
-            unit_title=(unit_chapter.chapter_name if unit_chapter is not None else lesson.lesson_name),
-            sort_no=0,
+            unit_chapter=unit_chapter,
+            fallback_title=lesson.lesson_name,
         )
-        db.add(lesson_unit)
-        db.flush()
 
         page_mapping_lookup = _build_page_mapping_lookup(script_entity.parse_task.parse_result.page_mapping if script_entity.parse_task.parse_result else None)
-        cumulative_start = 0
-        script_refs: list[dict] = []
-        audio_refs: list[dict] = []
-        node_sequence: list[str] = []
+        current_chapter_sections = {
+            section.section_code: section
+            for section in db.query(LessonSection)
+            .filter(LessonSection.lesson_id == lesson.id, LessonSection.ppt_asset_id == script_entity.parse_task.ppt_asset_id)
+            .order_by(LessonSection.sort_no.asc(), LessonSection.id.asc())
+            .all()
+        }
+        section_audio_refs: list[tuple[LessonSection, ChapterSectionAudioAsset]] = []
 
         for sort_no, script_section in enumerate(published_sections):
             section_audio_asset = section_audio_map[script_section.id]
-            lesson_section = LessonSection(
-                lesson_id=lesson.id,
-                course_id=script_entity.course_id,
-                unit_id=lesson_unit.id,
-                source_chapter_id=script_entity.chapter_id,
-                parse_result_id=script_entity.parse_task.parse_result.id if script_entity.parse_task.parse_result else None,
-                ppt_asset_id=script_entity.parse_task.ppt_asset_id,
-                script_id=script_entity.id,
-                audio_asset_id=audio_asset.id,
-                section_audio_asset_id=section_audio_asset.id,
-                section_code=script_section.section_code,
-                section_name=script_section.section_name,
-                section_summary=_build_section_summary(script_section.section_content),
-                student_visible=True,
-                sort_no=sort_no,
-            )
-            db.add(lesson_section)
-            db.flush()
+            lesson_section = current_chapter_sections.get(script_section.section_code)
+            if lesson_section is None:
+                lesson_section = LessonSection(
+                    lesson_id=lesson.id,
+                    course_id=script_entity.course_id,
+                    unit_id=lesson_unit.id,
+                    source_chapter_id=script_entity.chapter_id,
+                    parse_result_id=script_entity.parse_task.parse_result.id if script_entity.parse_task.parse_result else None,
+                    ppt_asset_id=script_entity.parse_task.ppt_asset_id,
+                    script_id=script_entity.id,
+                    audio_asset_id=audio_asset.id,
+                    section_audio_asset_id=section_audio_asset.id,
+                    section_code=script_section.section_code,
+                    section_name=script_section.section_name,
+                    section_summary=_build_section_summary(script_section.section_content),
+                    student_visible=True,
+                    sort_no=sort_no,
+                )
+                db.add(lesson_section)
+                db.flush()
+                current_chapter_sections[script_section.section_code] = lesson_section
+            else:
+                lesson_section.lesson_id = lesson.id
+                lesson_section.course_id = script_entity.course_id
+                lesson_section.unit_id = lesson_unit.id
+                lesson_section.source_chapter_id = script_entity.chapter_id
+                lesson_section.parse_result_id = script_entity.parse_task.parse_result.id if script_entity.parse_task.parse_result else None
+                lesson_section.ppt_asset_id = script_entity.parse_task.ppt_asset_id
+                lesson_section.script_id = script_entity.id
+                lesson_section.audio_asset_id = audio_asset.id
+                lesson_section.section_audio_asset_id = section_audio_asset.id
+                lesson_section.section_code = script_section.section_code
+                lesson_section.section_name = script_section.section_name
+                lesson_section.section_summary = _build_section_summary(script_section.section_content)
+                lesson_section.student_visible = True
+                lesson_section.sort_no = sort_no
 
             page_numbers = _parse_page_numbers(script_section.related_page_range)
-            created_page_numbers = _create_lesson_pages(
+            created_page_numbers = _sync_lesson_pages(
                 db,
                 lesson_id=lesson.id,
-                lesson_section_id=lesson_section.id,
+                lesson_section=lesson_section,
                 source_ppt_asset_id=script_entity.parse_task.ppt_asset_id,
                 page_numbers=page_numbers,
                 page_mapping_lookup=page_mapping_lookup,
             )
 
             anchor_page_no = created_page_numbers[0] if created_page_numbers else (page_numbers[0] if page_numbers else None)
-            db.add(
-                LessonSectionAnchor(
-                    lesson_id=lesson.id,
-                    section_id=lesson_section.id,
-                    lesson_page_id=None,
-                    anchor_code=f"{lesson_section.section_code}-anchor",
-                    anchor_title=lesson_section.section_name,
-                    page_no=anchor_page_no,
-                    start_time_sec=cumulative_start,
-                    sort_no=0,
-                )
+            _sync_lesson_anchor(
+                db,
+                lesson_id=lesson.id,
+                lesson_section=lesson_section,
+                anchor_page_no=anchor_page_no,
+                start_time_sec=sum(asset.duration_sec or 0 for _, asset in section_audio_refs),
             )
 
-            node_code = _create_lesson_knowledge_point(db, lesson.id, lesson_section.id, script_section.related_node_id)
-            if node_code:
-                node_sequence.append(node_code)
-            cumulative_start += section_audio_asset.duration_sec or 0
-
-            script_refs.append({"sectionId": script_section.section_code, "scriptId": payload.scriptId})
-            audio_refs.append(
-                {
-                    "sectionId": script_section.section_code,
-                    "audioId": payload.audioId,
-                    "sectionAudioId": str(section_audio_asset.id),
-                    "audioUrl": section_audio_asset.audio_url,
-                }
-            )
+            node_code = _sync_lesson_knowledge_point(db, lesson.id, lesson_section, script_section.related_node_id)
+            section_audio_refs.append((lesson_section, section_audio_asset))
 
         script_entity.script_status = "published"
         audio_asset.status = "published"
@@ -310,6 +327,7 @@ def publish_lesson(payload: PublishRequest) -> dict:
 
         lesson_id = lesson.lesson_no
         parse_id = script_entity.parse_task.parse_no
+        snapshot = _build_lesson_snapshot(db, lesson.id)
 
     publish_id = _build_id("publish")
     data = {
@@ -321,9 +339,9 @@ def publish_lesson(payload: PublishRequest) -> dict:
             "scriptId": payload.scriptId,
             "audioId": payload.audioId,
             "parseId": parse_id,
-            "nodeSequence": node_sequence,
-            "scriptRefs": script_refs,
-            "audioRefs": audio_refs,
+            "nodeSequence": snapshot["nodeSequence"],
+            "scriptRefs": snapshot["scriptRefs"],
+            "audioRefs": snapshot["audioRefs"],
         },
     }
     _LESSON_PACKAGES[lesson_id] = data
@@ -529,32 +547,246 @@ def _build_page_mapping_lookup(page_mapping: list[dict] | None) -> dict[int, dic
     return lookup
 
 
-def _create_lesson_pages(
+def _sync_lesson_pages(
     db,
     lesson_id: int,
-    lesson_section_id: int,
+    lesson_section: LessonSection,
     source_ppt_asset_id: int | None,
     page_numbers: list[int],
     page_mapping_lookup: dict[int, dict],
 ) -> list[int]:
+    existing_rows = (
+        db.query(LessonSectionPage)
+        .filter(LessonSectionPage.section_id == lesson_section.id)
+        .order_by(LessonSectionPage.sort_no.asc(), LessonSectionPage.page_no.asc(), LessonSectionPage.id.asc())
+        .all()
+    )
+    existing_by_source_page_no = {
+        row.source_page_no: row
+        for row in existing_rows
+        if row.source_page_no is not None
+    }
+    existing_by_page_no = {row.page_no: row for row in existing_rows}
+    matched_row_refs: set[int] = set()
     created_page_numbers: list[int] = []
     for sort_no, page_no in enumerate(page_numbers):
         page_mapping = page_mapping_lookup.get(page_no, {})
-        row = LessonSectionPage(
-            lesson_id=lesson_id,
-            section_id=lesson_section_id,
-            source_ppt_asset_id=source_ppt_asset_id,
-            source_page_no=page_no,
+        row = _match_existing_lesson_page_row(
+            existing_by_source_page_no=existing_by_source_page_no,
+            existing_by_page_no=existing_by_page_no,
+            matched_row_refs=matched_row_refs,
             page_no=page_no,
-            page_title=page_mapping.get("title") or f"Page {page_no}",
-            page_summary=(page_mapping.get("title") or f"Page {page_no}"),
-            ppt_page_url=_normalize_preview_url(page_mapping.get("previewUrl")),
-            parsed_content="\n".join(page_mapping.get("bodyTexts") or []),
-            sort_no=sort_no,
         )
-        db.add(row)
+        if row is None:
+            row = LessonSectionPage(lesson_id=lesson_id, section_id=lesson_section.id)
+        parsed_content = _build_page_parsed_content(page_mapping)
+        row.lesson_id = lesson_id
+        row.section_id = lesson_section.id
+        row.source_ppt_asset_id = source_ppt_asset_id
+        row.source_page_no = page_no
+        row.page_no = page_no
+        row.page_title = _build_page_title(page_mapping, page_no)
+        row.page_summary = _build_page_summary(lesson_section.section_name, page_no)
+        row.ppt_page_url = _normalize_preview_url(page_mapping.get("previewUrl"))
+        row.parsed_content = parsed_content
+        row.sort_no = sort_no
+        if row.id is None:
+            db.add(row)
+        matched_row_refs.add(id(row))
         created_page_numbers.append(page_no)
+    for stale_row in existing_rows:
+        if id(stale_row) in matched_row_refs:
+            continue
+        db.query(StudentPageProgress).filter(StudentPageProgress.lesson_page_id == stale_row.id).delete()
+        db.delete(stale_row)
     return created_page_numbers
+
+
+def _match_existing_lesson_page_row(
+    *,
+    existing_by_source_page_no: dict[int, LessonSectionPage],
+    existing_by_page_no: dict[int, LessonSectionPage],
+    matched_row_refs: set[int],
+    page_no: int,
+) -> LessonSectionPage | None:
+    candidates = [
+        existing_by_source_page_no.get(page_no),
+        existing_by_page_no.get(page_no),
+    ]
+    for candidate in candidates:
+        if candidate is None or id(candidate) in matched_row_refs:
+            continue
+        return candidate
+    return None
+
+
+def _build_page_title(page_mapping: dict, page_no: int) -> str:
+    title = page_mapping.get("title")
+    if isinstance(title, str) and title.strip():
+        return title.strip()
+    return f"第 {page_no} 页"
+
+
+def _build_page_summary(section_name: str | None, page_no: int) -> str:
+    if section_name:
+        return f"查看《{section_name}》课件第 {page_no} 页内容。"
+    return f"查看第 {page_no} 页内容。"
+
+
+def _build_page_parsed_content(page_mapping: dict) -> str:
+    parts: list[str] = []
+    for item in page_mapping.get("bodyTexts") or []:
+        if isinstance(item, str) and item.strip():
+            parts.append(item.strip())
+    for item in page_mapping.get("tableTexts") or []:
+        if isinstance(item, str) and item.strip():
+            parts.append(item.strip())
+    notes = page_mapping.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        parts.append(notes.strip())
+    return "\n".join(parts)
+
+
+def _sync_lesson_anchor(
+    db,
+    lesson_id: int,
+    lesson_section: LessonSection,
+    anchor_page_no: int | None,
+    start_time_sec: int,
+) -> None:
+    existing_anchors = (
+        db.query(LessonSectionAnchor)
+        .filter(LessonSectionAnchor.section_id == lesson_section.id)
+        .order_by(LessonSectionAnchor.sort_no.asc(), LessonSectionAnchor.id.asc())
+        .all()
+    )
+    lesson_page = None
+    if anchor_page_no is not None:
+        lesson_page = (
+            db.query(LessonSectionPage)
+            .filter(LessonSectionPage.section_id == lesson_section.id, LessonSectionPage.page_no == anchor_page_no)
+            .order_by(LessonSectionPage.sort_no.asc(), LessonSectionPage.id.asc())
+            .first()
+        )
+    anchor = existing_anchors[0] if existing_anchors else LessonSectionAnchor(lesson_id=lesson_id, section_id=lesson_section.id)
+    anchor.lesson_id = lesson_id
+    anchor.section_id = lesson_section.id
+    anchor.lesson_page_id = lesson_page.id if lesson_page is not None else None
+    anchor.anchor_code = f"{lesson_section.section_code}-anchor"
+    anchor.anchor_title = lesson_section.section_name
+    anchor.page_no = anchor_page_no
+    anchor.start_time_sec = start_time_sec
+    anchor.sort_no = 0
+    if anchor.id is None:
+        db.add(anchor)
+    for stale_anchor in existing_anchors[1:]:
+        db.delete(stale_anchor)
+
+
+def _sync_lesson_knowledge_point(
+    db,
+    lesson_id: int,
+    lesson_section: LessonSection,
+    related_node_id: int | None,
+) -> str | None:
+    existing_points = (
+        db.query(LessonSectionKnowledgePoint)
+        .filter(LessonSectionKnowledgePoint.section_id == lesson_section.id)
+        .order_by(LessonSectionKnowledgePoint.sort_no.asc(), LessonSectionKnowledgePoint.id.asc())
+        .all()
+    )
+    if related_node_id is None:
+        return existing_points[0].point_code if existing_points else None
+    node = db.query(ChapterKnowledgeNode).filter(ChapterKnowledgeNode.id == related_node_id).first()
+    if node is None:
+        return existing_points[0].point_code if existing_points else None
+    point = existing_points[0] if existing_points else LessonSectionKnowledgePoint(lesson_id=lesson_id, section_id=lesson_section.id)
+    point.lesson_id = lesson_id
+    point.section_id = lesson_section.id
+    point.source_node_id = node.id
+    point.point_code = node.node_code
+    point.point_name = node.node_name
+    point.point_summary = None
+    point.sort_no = 0
+    if point.id is None:
+        db.add(point)
+    for stale_point in existing_points[1:]:
+        db.delete(stale_point)
+    return node.node_code
+
+
+def _get_or_create_lesson_unit(db, lesson: Lesson, course_id: int, unit_chapter, fallback_title: str) -> LessonUnit:
+    source_chapter_id = unit_chapter.id if unit_chapter is not None else None
+    lesson_unit = None
+    if source_chapter_id is not None:
+        lesson_unit = (
+            db.query(LessonUnit)
+            .filter(LessonUnit.lesson_id == lesson.id, LessonUnit.source_chapter_id == source_chapter_id)
+            .order_by(LessonUnit.id.asc())
+            .first()
+        )
+    if lesson_unit is None:
+        lesson_unit = LessonUnit(
+            lesson_id=lesson.id,
+            course_id=course_id,
+            source_chapter_id=source_chapter_id,
+            unit_code=(unit_chapter.chapter_code if unit_chapter is not None else f"unit-{lesson.id}"),
+            unit_title=(unit_chapter.chapter_name if unit_chapter is not None else fallback_title),
+            sort_no=(unit_chapter.sort_no if unit_chapter is not None else _next_unit_sort_no(db, lesson.id)),
+        )
+        db.add(lesson_unit)
+        db.flush()
+        return lesson_unit
+    lesson_unit.course_id = course_id
+    lesson_unit.source_chapter_id = source_chapter_id
+    lesson_unit.unit_code = unit_chapter.chapter_code if unit_chapter is not None else lesson_unit.unit_code
+    lesson_unit.unit_title = unit_chapter.chapter_name if unit_chapter is not None else fallback_title
+    lesson_unit.sort_no = unit_chapter.sort_no if unit_chapter is not None else lesson_unit.sort_no
+    db.flush()
+    return lesson_unit
+
+
+def _resolve_course_lesson_name(db, script_entity: ChapterScript, chapter) -> str:
+    course = db.query(Course).filter(Course.id == script_entity.course_id).first()
+    if course is not None and course.course_name:
+        return course.course_name
+    if chapter is not None and chapter.chapter_name:
+        return chapter.chapter_name
+    return "Published Lesson"
+
+
+def _next_unit_sort_no(db, lesson_id: int) -> int:
+    latest_sort_no = db.query(func.max(LessonUnit.sort_no)).filter(LessonUnit.lesson_id == lesson_id).scalar()
+    return int(latest_sort_no or 0) + 1
+
+
+def _build_lesson_snapshot(db, lesson_id: int) -> dict:
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    if lesson is None:
+        return {"nodeSequence": [], "scriptRefs": [], "audioRefs": []}
+    sections = [
+        section
+        for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id))
+        for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id))
+    ]
+    script_refs = [
+        {"sectionId": str(section.id), "scriptId": section.script.script_no if section.script_id and section.script else ""}
+        for section in sections
+    ]
+    audio_refs = [
+        {
+            "sectionId": str(section.id),
+            "audioId": str(section.audio_asset_id) if section.audio_asset_id is not None else "",
+            "sectionAudioId": str(section.section_audio_asset_id) if section.section_audio_asset_id is not None else "",
+            "audioUrl": section.section_audio_asset.audio_url if section.section_audio_asset_id and section.section_audio_asset else "",
+        }
+        for section in sections
+    ]
+    node_sequence = []
+    for section in sections:
+        for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id)):
+            node_sequence.append(point.point_code)
+    return {"nodeSequence": node_sequence, "scriptRefs": script_refs, "audioRefs": audio_refs}
 
 
 def _normalize_preview_url(url: str | None) -> str:
@@ -591,32 +823,15 @@ def _load_lesson_package(lesson_id: str) -> dict:
         lesson = db.query(Lesson).filter(Lesson.lesson_no == lesson_id).first()
         if lesson is None:
             raise ApiError(code=404, msg="lesson was not found", status_code=404)
-        sections = db.query(LessonSection).filter(LessonSection.lesson_id == lesson.id).order_by(LessonSection.sort_no.asc(), LessonSection.id.asc()).all()
-        script_refs = [
-            {"sectionId": section.section_code, "scriptId": section.script.script_no if section.script_id and section.script else ""}
-            for section in sections
-        ]
-        audio_refs = [
-            {
-                "sectionId": section.section_code,
-                "audioId": str(section.audio_asset_id) if section.audio_asset_id is not None else "",
-                "sectionAudioId": str(section.section_audio_asset_id) if section.section_audio_asset_id is not None else "",
-                "audioUrl": section.section_audio_asset.audio_url if section.section_audio_asset_id and section.section_audio_asset else "",
-            }
-            for section in sections
-        ]
-        node_sequence = []
-        for section in sections:
-            for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id)):
-                node_sequence.append(point.point_code)
+        snapshot = _build_lesson_snapshot(db, lesson.id)
         snapshot = {
             "coursewareId": "",
-            "scriptId": sections[0].script.script_no if sections and sections[0].script_id and sections[0].script else "",
-            "audioId": str(sections[0].audio_asset_id) if sections and sections[0].audio_asset_id is not None else "",
-            "parseId": sections[0].script.parse_task.parse_no if sections and sections[0].script_id and sections[0].script else "",
-            "nodeSequence": node_sequence,
-            "scriptRefs": script_refs,
-            "audioRefs": audio_refs,
+            "scriptId": snapshot["scriptRefs"][0]["scriptId"] if snapshot["scriptRefs"] else "",
+            "audioId": snapshot["audioRefs"][0]["audioId"] if snapshot["audioRefs"] else "",
+            "parseId": lesson.sections[0].script.parse_task.parse_no if lesson.sections and lesson.sections[0].script_id and lesson.sections[0].script else "",
+            "nodeSequence": snapshot["nodeSequence"],
+            "scriptRefs": snapshot["scriptRefs"],
+            "audioRefs": snapshot["audioRefs"],
         }
         data = {
             "publishId": "",

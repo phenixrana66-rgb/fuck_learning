@@ -118,7 +118,9 @@ def update_script(script_id: str, payload: UpdateScriptRequest) -> ScriptDetail:
         if parse_task is None:
             raise ApiError(code=404, msg='parse task not found', status_code=404)
 
-        existing_node_map = {section.section_code: section.related_node_id for section in script.sections}
+        existing_sections = sorted(script.sections, key=lambda item: (item.sort_no, item.id))
+        existing_node_map = {section.section_code: section.related_node_id for section in existing_sections}
+        existing_sections_by_code = {section.section_code: section for section in existing_sections}
         parse_result = get_parse_task(parse_task.parse_no)
         section_nodes = _build_section_nodes_from_parse(parse_result)
         node_id_map = {node.node_code: node.id for node in parse_task.knowledge_nodes}
@@ -128,18 +130,25 @@ def update_script(script_id: str, payload: UpdateScriptRequest) -> ScriptDetail:
         if not script.edit_url:
             script.edit_url = f'/teacher/scripts/{script_id}/edit'
 
-        for section in list(script.sections):
-            db.delete(section)
-        db.flush()
-
-        _replace_script_sections(
+        stale_sections = _sync_script_sections(
             db,
             script.id,
             payload.scriptStructure,
             section_nodes,
             node_id_map,
+            existing_sections_by_code=existing_sections_by_code,
             existing_node_map=existing_node_map,
         )
+        stale_sections_with_audio = [section.section_code for section in stale_sections if section.audio_assets]
+        if stale_sections_with_audio:
+            raise ApiError(
+                code=409,
+                msg='cannot remove script sections with generated audio',
+                status_code=409,
+                data={'sectionIds': stale_sections_with_audio},
+            )
+        for section in stale_sections:
+            db.delete(section)
         db.flush()
         db.refresh(script)
         detail = _build_script_detail(script, parse_result=parse_result)
@@ -276,6 +285,43 @@ def _replace_script_sections(
                 sort_no=sort_no,
             )
         )
+
+
+def _sync_script_sections(
+    db,
+    script_db_id: int,
+    sections: list[ScriptSection],
+    section_nodes: dict[str, LessonNode],
+    node_id_map: dict[str, int],
+    existing_sections_by_code: dict[str, ChapterScriptSection] | None = None,
+    existing_node_map: dict[str, int | None] | None = None,
+) -> list[ChapterScriptSection]:
+    existing_sections_by_code = existing_sections_by_code or {}
+    existing_node_map = existing_node_map or {}
+    seen_codes: set[str] = set()
+
+    for sort_no, section in enumerate(sections):
+        node = section_nodes.get(section.sectionId)
+        related_node_id = existing_node_map.get(section.sectionId)
+        if related_node_id is None and node is not None:
+            related_node_id = node_id_map.get(node.nodeId)
+
+        row = existing_sections_by_code.get(section.sectionId)
+        if row is None:
+            row = ChapterScriptSection(script_id=script_db_id, section_code=section.sectionId, section_name=section.sectionName, section_content='')
+            db.add(row)
+
+        row.script_id = script_db_id
+        row.section_code = section.sectionId
+        row.section_name = section.sectionName
+        row.section_content = section.content
+        row.duration_sec = section.duration
+        row.related_node_id = related_node_id
+        row.related_page_range = section.relatedPage
+        row.sort_no = sort_no
+        seen_codes.add(section.sectionId)
+
+    return [section for code, section in existing_sections_by_code.items() if code not in seen_codes]
 
 
 def _update_script_section_content(script_id: str, section_id: str, content: str, duration: int) -> None:

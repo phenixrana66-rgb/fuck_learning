@@ -209,11 +209,9 @@ import {
   markStudentNotificationRead,
   verifyStudentAuth
 } from '@/api/student'
-import { getFrontendTestLessons } from '@/mock/studentLessons'
 import {
   ensurePlatformToken,
   getPlatformToken,
-  getStudentLessonListCache,
   getStudentProfile,
   saveStudentLessonList,
   saveStudentProfile
@@ -517,29 +515,18 @@ async function bootstrapStudent() {
     })
 
     const apiLessons = (lessonsRes.data?.lessons || []).map(normalizeLesson)
-    if (apiLessons.length > 0) {
-      lessonList.value = apiLessons
-    } else {
-      lessonList.value = getFrontendTestLessons().map(normalizeLesson)
-    }
-
+    lessonList.value = apiLessons
     saveStudentLessonList(lessonList.value)
   } catch (error) {
     studentProfile.value = {
       ...fallbackProfile,
       ...studentProfile.value
     }
-    const cachedLessons = (getStudentLessonListCache() || []).map(normalizeLesson)
-    if (cachedLessons.length > 0) {
-      lessonList.value = cachedLessons
-      loadError.value = ''
-    } else {
-      const fallbackLessons = getFrontendTestLessons().map(normalizeLesson)
-      lessonList.value = fallbackLessons
-      loadError.value = ''
-    }
+    lessonList.value = []
+    saveStudentLessonList([])
+    loadError.value = error?.msg || '课程数据加载失败'
     if (!error?.handled) {
-      ElMessage.error(error?.msg || '课程数据加载失败，已切换到本地演示数据')
+      ElMessage.error(error?.msg || '课程数据加载失败')
     }
   } finally {
     loading.value = false
@@ -680,11 +667,6 @@ watch(totalCoursePages, (value) => {
 onMounted(async () => {
   supportsHover.value = window.matchMedia('(hover: hover)').matches
   document.addEventListener('click', handleDocumentClick)
-
-  const cachedLessons = (getStudentLessonListCache() || []).map(normalizeLesson)
-  if (cachedLessons.length > 0) {
-    lessonList.value = cachedLessons
-  }
 
   await bootstrapStudent()
   await loadNotifications()
