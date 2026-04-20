@@ -11,7 +11,7 @@ class ParseRequest(AppBaseModel):
     schoolId: str
     userId: str
     courseId: str
-    fileType: Literal["ppt", "pdf"]
+    fileType: Literal["ppt", "pptx", "pdf"]
     fileUrl: str
     isExtractKeyPoint: bool = True
     enc: str

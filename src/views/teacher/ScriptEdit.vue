@@ -96,17 +96,20 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import { getScript, updateScript } from '@/api/teacher'
-import { getScriptResult, getScriptTask, patchScriptTask, saveScriptResult } from '@/utils/platform'
+import { getCurrentCourse, getScriptResult, getScriptTask, getTeacherWorkspaceContext, patchTeacherWorkspaceContext, patchScriptTask, saveScriptResult } from '@/utils/platform'
 
 const TASK_PAGE = 'script-edit'
 const POLL_INTERVAL_MS = 2000
+const route = useRoute()
 const router = useRouter()
+const currentCourse = getCurrentCourse()
 const cachedResult = getScriptResult()
 const cachedTask = getScriptTask()
+const workspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
 
 const form = reactive(createFormState(cachedResult.scriptId ? cachedResult : cachedTask))
 const saving = ref(false)
@@ -169,7 +172,8 @@ watch(
 
 onMounted(async () => {
   patchScriptTask({ lastPage: TASK_PAGE })
-  await loadLastResult({ silent: true, forceRemote: hasRemoteScriptSource() })
+  const routeScriptId = typeof route.query.scriptId === 'string' ? route.query.scriptId : ''
+  await loadLastResult({ silent: true, forceRemote: hasRemoteScriptSource() || Boolean(routeScriptId), scriptId: routeScriptId || workspaceContext.scriptId || '' })
   bootstrapped.value = true
   window.addEventListener('beforeunload', persistDraft)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -225,10 +229,10 @@ async function handleSave() {
 }
 
 async function loadLastResult(options = {}) {
-  const { silent = false, forceRemote = false } = options
+  const { silent = false, forceRemote = false, scriptId: targetScriptId = '' } = options
   const latestResult = getScriptResult()
   const latestTask = getScriptTask()
-  const scriptId = latestResult.scriptId || latestTask.scriptId || form.scriptId
+  const scriptId = targetScriptId || latestResult.scriptId || latestTask.scriptId || form.scriptId
 
   if (!forceRemote && hasScriptStructure(latestResult) && latestResult.generationStatus !== 'running') {
     applyForm(latestResult)
@@ -269,6 +273,10 @@ async function loadLastResult(options = {}) {
       ...mergedResult,
       lastPage: TASK_PAGE
     })
+    patchTeacherWorkspaceContext(currentCourse.courseId, {
+      parseId: mergedResult.parseId || '',
+      scriptId: mergedResult.scriptId || ''
+    })
     syncElapsed()
     if (!silent) {
       ElMessage.success('已加载最新脚本状态')
@@ -300,6 +308,10 @@ function persistDraft() {
   patchScriptTask({
     ...nextResult,
     lastPage: TASK_PAGE
+  })
+  patchTeacherWorkspaceContext(currentCourse.courseId, {
+    parseId: form.parseId,
+    scriptId: form.scriptId
   })
 }
 

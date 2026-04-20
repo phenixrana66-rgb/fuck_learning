@@ -175,7 +175,7 @@
       </section>
 
       <aside class="knowledge-right">
-        <section class="ai-card" :class="{ 'has-chat': chatList.length > 0 }">
+        <section class="ai-card" :class="{ 'has-chat': chatList.length > 0 }" @click="pauseSectionAudioIfPlaying">
           <div class="ai-card-head">
             <h2>AI 学伴</h2>
           </div>
@@ -331,6 +331,7 @@ const audioCurrentTime = ref(0)
 const audioDuration = ref(0)
 const audioPending = ref(false)
 const audioError = ref('')
+const audioShouldNotifyError = ref(false)
 const audioSeeking = ref(false)
 const thumbnailRailRef = ref(null)
 const viewerShellRef = ref(null)
@@ -339,11 +340,16 @@ const sectionAudioRef = ref(null)
 const thumbnailRefs = ref({})
 const hasLoadedDetail = ref(false)
 const hasActivatedOnce = ref(false)
+const isKnowledgeViewActive = ref(false)
+let sectionDetailLoadSeq = 0
 
-const lessonId = computed(() => String(route.params.lessonId || ''))
+const routeLessonId = computed(() => String(route.params.lessonId || ''))
+const routeSectionId = computed(() => String(route.params.sectionId || ''))
+const isKnowledgeRoute = computed(() => route.name === 'StudentKnowledgeLearning')
+const lessonId = computed(() => routeLessonId.value || String(detail.value.lessonId || ''))
 const chapterId = computed(() => String(route.query.chapterId || ''))
 const restorePageNo = computed(() => Number(route.query.pageNo || 0))
-const sectionId = computed(() => String(route.params.sectionId || detail.value.sectionId || ''))
+const sectionId = computed(() => routeSectionId.value || String(detail.value.sectionId || ''))
 const pages = computed(() => detail.value.pages || [])
 const totalPages = computed(() => pages.value.length)
 const activePage = computed(() => pages.value.find((page) => Number(page.pageNo) === Number(activePageNo.value)) || pages.value[0] || null)
@@ -409,6 +415,7 @@ function resetSectionAudioState() {
   audioDuration.value = 0
   audioPending.value = false
   audioError.value = ''
+  audioShouldNotifyError.value = false
   audioSeeking.value = false
   isAudioPlaying.value = false
 }
@@ -420,6 +427,13 @@ function stopSectionAudio() {
     audio.currentTime = 0
   }
   resetSectionAudioState()
+}
+
+function pauseSectionAudioIfPlaying() {
+  const audio = sectionAudioRef.value
+  if (!audio || audio.paused) return
+  audioShouldNotifyError.value = false
+  audio.pause()
 }
 
 function handleAudioLoadedMetadata() {
@@ -456,19 +470,52 @@ function handleAudioPlay() {
 function handleAudioPause() {
   isAudioPlaying.value = false
   audioPending.value = false
+  audioShouldNotifyError.value = false
 }
 
 function handleAudioEnded() {
   isAudioPlaying.value = false
   audioPending.value = false
   audioCurrentTime.value = audioDuration.value
+  audioShouldNotifyError.value = false
+}
+
+function resolveAudioErrorMessage() {
+  const code = sectionAudioRef.value?.error?.code
+  if (code === 2) {
+    return '讲解音频加载失败，请稍后重试。'
+  }
+  if (code === 3) {
+    return '讲解音频解析失败，请稍后重试。'
+  }
+  if (code === 4) {
+    return '讲解音频地址不可用，请联系老师重新发布。'
+  }
+  return '讲解音频暂时无法播放，请稍后重试。'
 }
 
 function handleAudioError() {
+  const shouldSurfaceError = audioShouldNotifyError.value
+    || Boolean(audioPending.value)
+    || Boolean(isAudioPlaying.value)
   isAudioPlaying.value = false
   audioPending.value = false
-  audioError.value = '音频资源加载失败'
-  ElMessage.warning('语音播放失败，请检查音频资源是否已生成。')
+  if (!detail.value.audioUrl) {
+    audioError.value = ''
+    audioShouldNotifyError.value = false
+    return
+  }
+  if (!shouldSurfaceError) {
+    audioError.value = ''
+    audioShouldNotifyError.value = false
+    return
+  }
+  const message = resolveAudioErrorMessage()
+  audioError.value = message
+  if (audioShouldNotifyError.value) {
+    ElMessage.warning(message)
+  }
+  audioShouldNotifyError.value = false
 }
 
 function handleAudioSeekInput(event) {
@@ -580,20 +627,34 @@ function keepThumbnailVisible() {
   }
 }
 
+function canLoadSectionDetail(targetLessonId = routeLessonId.value, targetSectionId = routeSectionId.value) {
+  return isKnowledgeViewActive.value && isKnowledgeRoute.value && Boolean(targetLessonId) && Boolean(targetSectionId)
+}
+
 async function loadSectionDetail() {
+  const targetLessonId = routeLessonId.value
+  const targetSectionId = routeSectionId.value
+  if (!canLoadSectionDetail(targetLessonId, targetSectionId)) return
+  const loadSeq = ++sectionDetailLoadSeq
   stopSectionAudio()
   const fallback = normalizeFallbackDetail()
   detail.value = fallback
   activePageNo.value = restorePageNo.value || fallback.currentPageNo || 1
 
-  if (!sectionId.value) return
-
   try {
     const res = await getStudentSectionDetail({
       studentId: studentProfile.value.studentId,
-      lessonId: lessonId.value,
-      sectionId: sectionId.value
+      lessonId: targetLessonId,
+      sectionId: targetSectionId
     })
+    if (
+      loadSeq !== sectionDetailLoadSeq
+      || !canLoadSectionDetail(targetLessonId, targetSectionId)
+      || targetLessonId !== routeLessonId.value
+      || targetSectionId !== routeSectionId.value
+    ) {
+      return
+    }
     detail.value = {
       ...fallback,
       ...(res.data || {})
@@ -678,12 +739,22 @@ async function toggleSectionAudio() {
   try {
     if (audio.paused) {
       audioPending.value = true
+      audioError.value = ''
+      audioShouldNotifyError.value = true
       await audio.play()
     } else {
+      audioShouldNotifyError.value = false
       audio.pause()
     }
-  } catch (_error) {
-    ElMessage.warning('语音播放失败，请稍后重试。')
+  } catch (error) {
+    audioPending.value = false
+    audioShouldNotifyError.value = false
+    if (error?.name === 'AbortError') return
+    if (!audio.error) {
+      const message = resolveAudioErrorMessage()
+      audioError.value = message
+      ElMessage.warning(message)
+    }
   }
 }
 
@@ -802,6 +873,7 @@ watch(activePageNo, async () => {
 })
 
 onMounted(async () => {
+  isKnowledgeViewActive.value = true
   window.addEventListener('pagehide', persistRecentVisit)
   knowledgeLeftRef.value?.addEventListener('scroll', handleKnowledgeScroll, { passive: true })
   await loadSectionDetail()
@@ -812,6 +884,7 @@ onMounted(async () => {
 })
 
 onActivated(async () => {
+  isKnowledgeViewActive.value = true
   if (!hasActivatedOnce.value) return
   if (!hasLoadedDetail.value) {
     await loadSectionDetail()
@@ -827,12 +900,14 @@ watch(
   () => [route.params.lessonId, route.params.sectionId, route.query.pageNo],
   async ([nextLessonId, nextSectionId, nextPageNo], [prevLessonId, prevSectionId, prevPageNo] = []) => {
     if (nextLessonId === prevLessonId && nextSectionId === prevSectionId && nextPageNo === prevPageNo) return
+    if (!isKnowledgeViewActive.value || !isKnowledgeRoute.value || !nextLessonId || !nextSectionId) return
     hasLoadedDetail.value = false
     await loadSectionDetail()
   }
 )
 
 onBeforeUnmount(() => {
+  isKnowledgeViewActive.value = false
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
   stopSectionAudio()
@@ -842,11 +917,13 @@ onBeforeUnmount(() => {
 })
 
 onDeactivated(() => {
+  isKnowledgeViewActive.value = false
   knowledgeLeftRef.value?.removeEventListener('scroll', handleKnowledgeScroll)
   captureKnowledgeViewState()
 })
 
 onBeforeRouteLeave(() => {
+  isKnowledgeViewActive.value = false
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
   stopSectionAudio()

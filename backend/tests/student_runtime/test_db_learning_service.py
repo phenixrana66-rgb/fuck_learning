@@ -14,7 +14,7 @@ from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
 from backend.app.student_runtime.db_learning_service import get_db_progress_state, get_section_detail, get_student_lessons_from_db
-from backend.chaoxing_db.models import LessonSection, LessonSectionPage
+from backend.chaoxing_db.models import ChapterScript, ChapterScriptSection, LessonSection, LessonSectionPage
 
 
 class StudentDbLearningServiceTestCase(unittest.TestCase):
@@ -98,6 +98,17 @@ class StudentDbLearningServiceTestCase(unittest.TestCase):
             section.content = f"student runtime short section {index}"
         section_ids = [section.sectionId for section in script_detail.scriptStructure[:2]]
 
+        with session_scope() as db:
+            persisted_sections = (
+                db.query(ChapterScriptSection)
+                .join(ChapterScript, ChapterScriptSection.script_id == ChapterScript.id)
+                .filter(ChapterScript.script_no == script_summary.scriptId)
+                .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
+                .all()
+            )
+            for index, section in enumerate(persisted_sections[:2], start=1):
+                section.section_content = f"student runtime short section {index}"
+
         with patch("backend.app.lesson.service.get_script", return_value=script_detail):
             audio = generate_audio(
                 GenerateAudioRequest(
@@ -146,6 +157,7 @@ class StudentDbLearningServiceTestCase(unittest.TestCase):
         self.assertEqual(progress["progressPercent"], 0)
         self.assertEqual(progress["sectionId"], lesson["units"][0]["chapters"][0]["sectionId"])
         self.assertNotEqual(detail["aiGuideContent"], "summary-1\n\nsummary-2")
+        self.assertEqual(detail["scriptContent"], "student runtime short section 1")
         self.assertTrue(detail["audioUrl"].startswith("/cache/voice/") or detail["audioUrl"].startswith("http://testserver/cache/voice/"))
         self.assertEqual(detail["audioStatus"], "published")
         self.assertEqual(detail["pages"][0]["imageUrl"], "")

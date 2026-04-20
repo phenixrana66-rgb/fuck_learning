@@ -73,12 +73,17 @@ def _load_primary_script_content(db: Session, section: LessonSection) -> str:
         return ""
     row = (
         db.query(ChapterScriptSection)
-        .join(ChapterScript, ChapterScript.id == ChapterScriptSection.script_id)
-        .filter(ChapterScript.id == section.script_id)
+        .filter(
+            ChapterScriptSection.script_id == section.script_id,
+            ChapterScriptSection.section_code == section.section_code,
+        )
         .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
         .first()
     )
-    return _clean_text(row.section_content if row else None)
+    content = _clean_text(row.section_content if row else None)
+    if content:
+        return content
+    return _clean_text(section.section_summary)
 
 
 def _build_section_chapter_context(db: Session, section: LessonSection) -> dict[str, str]:
@@ -483,6 +488,7 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
 
     practice_attempt = _find_latest_practice_attempt(db, student_db_id, lesson.id, section.id)
     parse_result = db.query(ChapterParseResult).filter(ChapterParseResult.id == section.parse_result_id).first() if section.parse_result_id else None
+    chapter_context = _build_section_chapter_context(db, section)
 
     page_progress_rows = {}
     if student_db_id:
@@ -533,6 +539,7 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
         "practicePercent": _round_int(practice_attempt.accuracy_percent if practice_attempt and practice_attempt.accuracy_percent is not None else 0),
         "currentPageNo": current_page_no,
         "aiGuideContent": _build_ai_guide_content(section, parse_result),
+        "scriptContent": chapter_context["scriptContent"],
         "knowledgePoints": [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))],
         "pages": pages,
     }

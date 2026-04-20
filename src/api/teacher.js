@@ -87,3 +87,25 @@ export function getLessonStatus(data) {
     data
   })
 }
+
+export function getCoursewareAssets(params) {
+  return request({
+    url: '/api/v1/lesson/courseware/assets',
+    method: 'get',
+    params
+  })
+}
+
+export function getParseScripts(parseId) {
+  return request({
+    url: `/api/v1/lesson/parse/${parseId}/scripts`,
+    method: 'get'
+  })
+}
+
+export function getScriptAudios(scriptId) {
+  return request({
+    url: `/api/v1/lesson/scripts/${scriptId}/audios`,
+    method: 'get'
+  })
+}

@@ -1,5 +1,6 @@
 ﻿const SCRIPT_TASK_KEY = 'scriptTask'
 const SCRIPT_RESULT_KEY = 'scriptResult'
+const TEACHER_WORKSPACE_CONTEXT_KEY = 'teacherWorkspaceContexts'
 
 function readJsonStorage(key, fallback) {
   try {
@@ -12,6 +13,14 @@ function readJsonStorage(key, fallback) {
 
 function writeJsonStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value ?? {}))
+}
+
+function readWorkspaceContexts() {
+  return readJsonStorage(TEACHER_WORKSPACE_CONTEXT_KEY, {})
+}
+
+function writeWorkspaceContexts(value) {
+  writeJsonStorage(TEACHER_WORKSPACE_CONTEXT_KEY, value || {})
 }
 
 function hasScriptStructure(value) {
@@ -179,6 +188,34 @@ export function saveAudioResult(data) {
 
 export function getAudioResult() {
   return JSON.parse(localStorage.getItem('audioResult') || '{}')
+}
+
+export function getTeacherWorkspaceContext(courseId) {
+  if (!courseId) return {}
+  const contexts = readWorkspaceContexts()
+  return contexts[String(courseId)] || {}
+}
+
+export function patchTeacherWorkspaceContext(courseId, patch) {
+  if (!courseId) return {}
+  const key = String(courseId)
+  const contexts = readWorkspaceContexts()
+  const next = {
+    ...(contexts[key] || {}),
+    ...(patch || {}),
+    updatedAt: new Date().toISOString()
+  }
+  contexts[key] = next
+  writeWorkspaceContexts(contexts)
+  return next
+}
+
+export function clearTeacherWorkspaceContext(courseId) {
+  if (!courseId) return
+  const key = String(courseId)
+  const contexts = readWorkspaceContexts()
+  delete contexts[key]
+  writeWorkspaceContexts(contexts)
 }
 
 export function saveStudentProfile(profile) {
