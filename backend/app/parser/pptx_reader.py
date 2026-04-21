@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+import platform
 import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
@@ -14,6 +17,16 @@ from backend.app.parser.schemas import ExtractedPresentation, ExtractedSlide, Fi
 from backend.app.parser.source_loader import load_source_bytes
 
 POWERSHELL_EXE = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+LIBREOFFICE_CANDIDATES = (
+    Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
+    Path("/usr/bin/soffice"),
+    Path("/usr/local/bin/soffice"),
+)
+MACOS_POWERPOINT_BUNDLE_ID = "com.microsoft.Powerpoint"
+MACOS_POWERPOINT_APP_CANDIDATES = (
+    Path("/Applications/Microsoft PowerPoint.app"),
+)
+OSASCRIPT_EXE = Path("/usr/bin/osascript")
 POWERPOINT_EXPORT_SCRIPT = """\
 param(
     [Parameter(Mandatory = $true)][string]$InputPath,
@@ -37,6 +50,18 @@ finally {
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($ppt)
     }
 }
+"""
+MACOS_POWERPOINT_EXPORT_SCRIPT = """\
+on run argv
+    if (count of argv) is less than 2 then error "missing arguments"
+    set inputPath to POSIX file (item 1 of argv)
+    set outputDir to POSIX file (item 2 of argv)
+    tell application "Microsoft PowerPoint"
+        open inputPath
+        save active presentation in outputDir as save as PNG
+        close active presentation saving no
+    end tell
+end run
 """
 
 
@@ -137,16 +162,29 @@ def _build_preview_urls(
         export_dir.mkdir(parents=True, exist_ok=True)
         input_path.write_bytes(file_bytes)
 
-        _export_with_powerpoint(input_path, export_dir)
-        exported_files = _collect_exported_images(export_dir)
+        exported_files: list[Path] = []
+        export_errors: list[str] = []
+        for exporter_name, exporter in _resolve_preview_exporters():
+            _clear_exported_images(export_dir)
+            try:
+                exporter(input_path, export_dir, slide_count)
+                exported_files = _collect_exported_images(export_dir)
+                if not exported_files:
+                    raise ApiError(code=500, msg=f"{exporter_name} 未导出任何页图，请检查本机渲染能力", status_code=500)
+                if slide_count and len(exported_files) != slide_count:
+                    raise ApiError(
+                        code=500,
+                        msg=f"{exporter_name} 导出的页图数量异常，期望 {slide_count} 页，实际 {len(exported_files)} 页",
+                        status_code=500,
+                    )
+                break
+            except ApiError as exc:
+                export_errors.append(exc.msg)
+                continue
+
         if not exported_files:
-            raise ApiError(code=500, msg="PowerPoint 未导出任何页图，请检查本机 Office 渲染能力", status_code=500)
-        if slide_count and len(exported_files) != slide_count:
-            raise ApiError(
-                code=500,
-                msg=f"PowerPoint 导出的页图数量异常，期望 {slide_count} 页，实际 {len(exported_files)} 页",
-                status_code=500,
-            )
+            message = export_errors[-1] if export_errors else "当前环境没有可用的课件页图导出器"
+            raise ApiError(code=500, msg=message, status_code=500)
 
         preview_urls: dict[int, str] = {}
         for index, source_path in enumerate(exported_files, start=1):
@@ -156,7 +194,95 @@ def _build_preview_urls(
         return preview_urls
 
 
-def _export_with_powerpoint(input_path: Path, output_dir: Path) -> None:
+def _resolve_preview_exporters() -> list[tuple[str, Callable[[Path, Path, int], None]]]:
+    exporters: list[tuple[str, Callable[[Path, Path, int], None]]] = []
+    current_system = platform.system().lower()
+    if current_system == "windows" and POWERSHELL_EXE.exists():
+        exporters.append(("PowerPoint", _export_with_powerpoint))
+    elif current_system == "darwin":
+        macos_powerpoint_app = _find_macos_powerpoint_app()
+        if macos_powerpoint_app is not None and OSASCRIPT_EXE.exists():
+            exporters.append(
+                (
+                    "PowerPoint for Mac",
+                    lambda input_path, output_dir, slide_count: _export_with_macos_powerpoint(
+                        macos_powerpoint_app,
+                        input_path,
+                        output_dir,
+                        slide_count,
+                    ),
+                )
+            )
+
+    soffice_path = _find_soffice_executable()
+    if soffice_path is not None:
+        exporters.append(
+            (
+                "LibreOffice",
+                lambda input_path, output_dir, slide_count: _export_with_libreoffice(
+                    soffice_path,
+                    input_path,
+                    output_dir,
+                    slide_count,
+                ),
+            )
+        )
+
+    if exporters:
+        return exporters
+
+    if current_system == "windows":
+        raise ApiError(
+            code=500,
+            msg="当前环境既缺少 PowerPoint/PowerShell，也未找到 LibreOffice soffice，无法导出课件页图",
+            status_code=500,
+        )
+    if current_system == "darwin":
+        raise ApiError(
+            code=500,
+            msg="当前环境既未找到 PowerPoint for Mac，也未找到 LibreOffice soffice，无法导出课件页图",
+            status_code=500,
+        )
+    raise ApiError(
+        code=500,
+        msg="当前环境未找到 LibreOffice soffice，macOS/Linux 请先安装 LibreOffice 后再导出课件页图",
+        status_code=500,
+    )
+
+
+def _find_macos_powerpoint_app() -> Path | None:
+    for candidate in MACOS_POWERPOINT_APP_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    try:
+        completed = subprocess.run(
+            ["mdfind", f"kMDItemCFBundleIdentifier == '{MACOS_POWERPOINT_BUNDLE_ID}'"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        candidate = Path(line.strip())
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _find_soffice_executable() -> Path | None:
+    soffice_path = shutil.which("soffice")
+    if soffice_path:
+        return Path(soffice_path)
+    for candidate in LIBREOFFICE_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _export_with_powerpoint(input_path: Path, output_dir: Path, _slide_count: int) -> None:
     if not POWERSHELL_EXE.exists():
         raise ApiError(code=500, msg="当前环境缺少 PowerShell，无法调用 PowerPoint 导出课件页图", status_code=500)
 
@@ -184,6 +310,85 @@ def _export_with_powerpoint(input_path: Path, output_dir: Path) -> None:
         detail = (completed.stderr or completed.stdout or "").strip().splitlines()
         message = detail[-1] if detail else "未知错误"
         raise ApiError(code=500, msg=f"调用 PowerPoint 导出页图失败：{message}", status_code=500)
+
+
+def _export_with_macos_powerpoint(_powerpoint_app: Path, input_path: Path, output_dir: Path, _slide_count: int) -> None:
+    if not OSASCRIPT_EXE.exists():
+        raise ApiError(code=500, msg="当前环境缺少 osascript，无法调用 PowerPoint for Mac 导出课件页图", status_code=500)
+
+    script_path = output_dir.parent / "export_pptx_preview.scpt"
+    script_path.write_text(MACOS_POWERPOINT_EXPORT_SCRIPT, encoding="utf-8")
+    completed = subprocess.run(
+        [
+            str(OSASCRIPT_EXE),
+            str(script_path),
+            str(input_path),
+            str(output_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+        message = detail[-1] if detail else "未知错误"
+        raise ApiError(code=500, msg=f"调用 PowerPoint for Mac 导出页图失败：{message}", status_code=500)
+
+
+def _export_with_libreoffice(soffice_path: Path, input_path: Path, output_dir: Path, slide_count: int) -> None:
+    if slide_count <= 0:
+        return
+
+    for page_number in range(1, slide_count + 1):
+        page_output_dir = output_dir / f"page-{page_number}"
+        page_output_dir.mkdir(parents=True, exist_ok=True)
+        completed = subprocess.run(
+            [
+                str(soffice_path),
+                "--headless",
+                "--nologo",
+                "--nodefault",
+                "--nolockcheck",
+                "--nofirststartwizard",
+                "--convert-to",
+                _build_libreoffice_png_filter(page_number),
+                "--outdir",
+                str(page_output_dir),
+                str(input_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+            message = detail[-1] if detail else "未知错误"
+            raise ApiError(code=500, msg=f"调用 LibreOffice 导出第 {page_number} 页失败：{message}", status_code=500)
+
+        page_images = sorted(path for path in page_output_dir.iterdir() if path.is_file() and path.suffix.lower() == ".png")
+        if len(page_images) != 1:
+            raise ApiError(
+                code=500,
+                msg=f"LibreOffice 导出第 {page_number} 页异常，期望 1 张图片，实际 {len(page_images)} 张",
+                status_code=500,
+            )
+        shutil.move(str(page_images[0]), str(output_dir / f"slide-{page_number}.png"))
+
+
+def _build_libreoffice_png_filter(page_number: int) -> str:
+    filter_options = {
+        "PageNumber": {"type": "long", "value": str(page_number)},
+    }
+    return f"png:impress_png_Export:{json.dumps(filter_options, separators=(',', ':'))}"
+
+
+def _clear_exported_images(export_dir: Path) -> None:
+    for path in export_dir.iterdir():
+        if path.is_file():
+            path.unlink()
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
 
 
 def _collect_exported_images(export_dir: Path) -> list[Path]:
