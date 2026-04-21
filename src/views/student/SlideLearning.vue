@@ -1079,6 +1079,7 @@ onBeforeRouteLeave(() => {
 }
 
 .knowledge-left {
+  --ppt-learning-height: clamp(414px, 50vh, 576px);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1331,7 +1332,7 @@ onBeforeRouteLeave(() => {
 }
 
 .ppt-card-body {
-  height: clamp(414px, 50vh, 576px);
+  height: var(--ppt-learning-height);
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);
@@ -1561,9 +1562,20 @@ onBeforeRouteLeave(() => {
 }
 
 .guide-card-body {
+  max-height: calc(var(--ppt-learning-height) * 0.75);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   color: #51698f;
   line-height: 1.75;
   font-size: 14px;
+}
+
+.guide-card-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .knowledge-right {
