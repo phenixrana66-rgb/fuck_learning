@@ -1,5 +1,3 @@
-# fuck_learning
-
 ## 初次使用
 
 ### 1. 安装软件
@@ -8,14 +6,11 @@
 - Python 3.11+
 - MySQL 客户端
 - PostgreSQL 客户端（要能执行 `psql`）
-- Docker Desktop
+- Microsoft Power Point(用于提取课件图片)
 
-### 2. 进入项目
-```powershell
-cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
-```
+### 2. 安装依赖
+先进入代码根目录
 
-### 3. 安装依赖
 前端：
 ```powershell
 npm install
@@ -23,7 +18,7 @@ npm install
 
 后端：
 ```powershell
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 如果使用虚拟环境：
@@ -36,12 +31,14 @@ pip install -r requirements.txt
 ### 4. 初始化 MySQL
 数据库信息：
 ```text
-host=10.195.20.215
+host=your_database_host
 port=3306
-user=Zenith
+user=user_name
 password=123456
 database=chaoxing_ai_course
 ```
+
+#### 初始化主库（手工导入）
 
 建库：
 ```sql
@@ -50,12 +47,17 @@ CREATE DATABASE chaoxing_ai_course DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4
 
 导入表结构：
 ```powershell
-mysql -h 10.195.20.215 -P 3306 -u Zenith -p chaoxing_ai_course < ".\docs\mysql建表.sql"
+mysql -h your_database_host -P 3306 -u user_name -p chaoxing_ai_course < ".\docs\mysql建表.sql"
+```
+
+导入 QA 检索相关表：
+```powershell
+mysql -h your_database_host -P 3306 -u user_name -p chaoxing_ai_course < ".\docs\mysql_qa_retrieval.sql"
 ```
 
 导入测试数据：
 ```powershell
-mysql -h 10.195.20.215 -P 3306 -u Zenith -p chaoxing_ai_course < ".\docs\init_test_data.sql"
+mysql -h your_database_host -P 3306 -u user_name -p chaoxing_ai_course < ".\docs\init_test_data.sql"
 ```
 
 ### 5. 连接向量数据库
@@ -66,7 +68,7 @@ psql --version
 
 向量数据库信息：
 ```text
-host=10.199.6.229
+host=your_vertor_database_host
 port=5433
 database=chaoxing_ai_vector
 user=vector_reader
@@ -75,7 +77,7 @@ password=123456
 
 测试连接：
 ```powershell
-psql "postgresql://vector_reader:123456@10.199.6.229:5433/chaoxing_ai_vector?sslmode=disable"
+psql "postgresql://vector_reader:123456@your_vertor_database_host/chaoxing_ai_vector?sslmode=disable"
 ```
 
 连接后可执行：
@@ -97,28 +99,39 @@ Copy-Item .\config.example.py .\config.local.py
 
 至少改这几项：
 
+说明：
+- 当前后端启动时直接读取仓库根目录下的 `config.local.py`
+- `db_name` 里不要写 SQL 反引号
+- 错误写法：``db_name = "`chaoxing_ai_course`"``
+- 正确写法：`db_name = "chaoxing_ai_course"`
+
 MySQL：
 ```python
-db_host = "10.195.20.215"
+db_host = "your_database_host"
 db_port = 3306
-db_user = "Zenith"
+db_user = "user_name"
 db_password = "123456"
+db_name = "chaoxing_ai_course_test"
+```
+
+数据库名
+```python
 db_name = "chaoxing_ai_course"
 ```
 
 向量数据库：
 ```python
-vector_db_url = "postgresql+psycopg://vector_reader:123456@10.199.6.229:5433/chaoxing_ai_vector"
+vector_db_url = "postgresql+psycopg://vector_reader:123456@your_vertor_database_host:5433/chaoxing_ai_vector"
 ```
 
 大语言模型：
 ```python
 llm_api_base_url = "http://127.0.0.1:13010/v1"
 llm_api_key = "replace-with-your-key"
-llm_model = "gpt-5.1-codex-mini"
+llm_model = "deepseek-chat"
 ```
 
-学生端问答 / embedding：
+学生端问答 / embedding数据库：
 ```python
 qa_llm_provider = "dashscope"
 qa_llm_model = "qwen-max"
@@ -128,7 +141,7 @@ dashscope_api_key = "你的 DashScope API Key"
 dashscope_base_url = "https://dashscope.aliyuncs.com"
 ```
 
-如果启用语音：
+语音合成大模型：
 ```python
 APPID = "你的 APPID"
 ACCESS_TOKEN = "你的 ACCESS_TOKEN"
@@ -147,17 +160,14 @@ ASR_CLUSTER = "你的 ASR_CLUSTER"
 
 等价命令：
 ```powershell
-$env:A12_DB_HOST = "10.195.20.215"
-$env:A12_DB_PORT = "3306"
-$env:A12_DB_USER = "Zenith"
-$env:A12_DB_PASSWORD = "123456"
-$env:A12_DB_NAME = "chaoxing_ai_course"
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3001 --reload
 ```
 
+启动前请先确认 `config.local.py` 里的 `db_name` 已经指向你要使用的数据库。
+
 ### 8. 启动前端
 ```powershell
-npm run dev -- --host 127.0.0.1 --port 5173
+.\start-frontend.ps1
 ```
 
 ### 9. 打开页面
@@ -165,6 +175,8 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```text
 http://127.0.0.1:5173/
 ```
+
+体验学生端功能时，请先使用教师端进行一次课程发布。
 
 学生端：
 ```text
@@ -174,90 +186,4 @@ http://127.0.0.1:5173/student/home?token=student_demo_token_001
 后端接口文档：
 ```text
 http://127.0.0.1:3001/docs
-```
-
-## 后续使用
-
-### 1. 进入项目
-```powershell
-cd "D:\服务外包（学习通）\xuexitong\fuck_learning"
-```
-
-### 2. 是否需要重新配置
-只有下面几种情况才需要重新改配置：
-- `config.local.py` 被删了或被覆盖了
-- 数据库地址、端口、账号、密码变了
-- LLM / DashScope / 语音 API Key 变了
-- 新代码新增了新的配置项
-
-### 3. 拉取新代码后做什么
-如果只是普通代码改动：
-```powershell
-git pull
-```
-
-如果前端依赖有变化，再执行：
-```powershell
-npm install
-```
-
-如果后端依赖有变化，再执行：
-```powershell
-pip install -r requirements.txt
-```
-
-如果数据库脚本有变化，再按需要重新导入对应 SQL。
-
-### 4. 启动后端
-```powershell
-.\start-backend.ps1
-```
-
-### 5. 启动前端
-```powershell
-npm run dev -- --host 127.0.0.1 --port 5173
-```
-
-### 6. 改完代码后怎么生效
-前端代码改动后：
-- 开着 `npm run dev` 时，通常会自动热更新
-- 如果页面没刷新出来，手动刷新浏览器
-
-后端代码改动后：
-- 开着 `uvicorn --reload` 时，通常会自动重载
-- 如果接口没有生效，重启后端
-
-重启后端：
-```powershell
-.\start-backend.ps1
-```
-
-## 最短步骤
-
-### 初次使用最短步骤
-```text
-1. 安装 Node.js、Python、MySQL 客户端、PostgreSQL 客户端、Docker Desktop
-2. cd 到项目目录
-3. npm install
-4. pip install -r requirements.txt
-5. 创建 MySQL 数据库 chaoxing_ai_course
-6. 导入 docs/mysql建表.sql
-7. 导入 docs/init_test_data.sql
-8. 用 psql 测试连接 10.199.6.229:5433/chaoxing_ai_vector
-9. 复制 config.example.py 为 config.local.py
-10. 填好 MySQL、向量数据库、LLM、DashScope、语音配置
-11. 启动后端
-12. 启动前端
-13. 打开学生端页面
-```
-
-### 后续使用最短步骤
-```text
-1. cd 到项目目录
-2. git pull
-3. 依赖变了就执行 npm install / pip install -r requirements.txt
-4. 配置没变就不用重新改
-5. 启动后端
-6. 启动前端
-7. 前端不生效就刷新页面，后端不生效就重启后端
 ```
