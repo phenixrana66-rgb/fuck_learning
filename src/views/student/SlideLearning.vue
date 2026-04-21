@@ -1,6 +1,17 @@
 ﻿<template>
   <div class="knowledge-page">
     <header class="knowledge-topbar">
+      <button
+        type="button"
+        class="knowledge-back-icon-button"
+        aria-label="返回课程详情"
+        @click="goBack"
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+
       <div
         class="knowledge-brand"
         role="button"
@@ -12,7 +23,6 @@
         <img class="knowledge-brand-mark" src="/chaoxing-erya-logo.svg" alt="超星尔雅" />
         <div class="knowledge-brand-name">尔雅</div>
       </div>
-      <el-button class="knowledge-back-button" plain @click="goBack">返回课程详情</el-button>
     </header>
 
     <main class="knowledge-workspace">
@@ -1020,17 +1030,52 @@ onBeforeRouteLeave(() => {
 }
 
 .knowledge-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
   height: 84px;
   padding: 0 24px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 220px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: stretch;
   background: rgba(255, 255, 255, 0.98);
   border-bottom: 1px solid #e4ebf8;
   box-shadow: 0 10px 24px rgba(17, 34, 78, 0.05);
+  backdrop-filter: blur(14px);
+}
+
+.knowledge-back-icon-button {
+  justify-self: start;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #d8e4f6;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #f6f9ff);
+  color: #315186;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.knowledge-back-icon-button:hover {
+  transform: translateY(-1px);
+  border-color: #c4d6f2;
+  background: #f6f9ff;
+}
+
+.knowledge-back-icon-button svg {
+  width: 18px;
+  height: 18px;
 }
 
 .knowledge-brand {
+  grid-column: 3;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -1058,17 +1103,11 @@ onBeforeRouteLeave(() => {
   color: #222833;
 }
 
-.knowledge-back-button {
-  border-radius: 14px;
-  padding: 0 16px;
-  height: 38px;
-  font-size: 14px;
-}
-
 .knowledge-workspace {
   height: calc(100vh - 84px);
   max-width: 1332px;
   margin: 0 auto;
+  margin-top: 84px;
   padding: 6px 14px 14px;
   display: grid;
   grid-template-columns: minmax(0, 1.48fr) minmax(320px, 0.8fr);
@@ -1076,6 +1115,30 @@ onBeforeRouteLeave(() => {
   overflow: hidden;
   align-items: stretch;
   background: #ffffff;
+}
+
+.knowledge-summary-card,
+.ppt-card,
+.guide-card,
+.ai-card {
+  opacity: 0;
+  animation: slide-learning-panel-enter 0.46s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.knowledge-summary-card {
+  animation-delay: 0.05s;
+}
+
+.ppt-card {
+  animation-delay: 0.1s;
+}
+
+.guide-card {
+  animation-delay: 0.16s;
+}
+
+.ai-card {
+  animation-delay: 0.12s;
 }
 
 .knowledge-left {
@@ -1830,6 +1893,20 @@ onBeforeRouteLeave(() => {
 @keyframes ai-loading-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes slide-learning-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.992);
+    filter: blur(7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
   }
 }
 

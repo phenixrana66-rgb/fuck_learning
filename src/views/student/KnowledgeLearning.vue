@@ -33,7 +33,7 @@
             <h1>{{ currentAggregatedChapter.chapterTitle || '章节学习' }}</h1>
           </div>
           <div class="knowledge-chapter-header-meta">
-            {{ currentPageDisplay }}/{{ totalPageCount }} 页
+            {{ currentPageDisplay }}/{{ totalPageCount }} 节
           </div>
         </div>
 
@@ -320,16 +320,18 @@ onBeforeUnmount(() => {
   right: 0;
   z-index: 30;
   height: 84px;
-  padding: 0 28px;
-  display: flex;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 220px;
   align-items: center;
-  justify-content: space-between;
-  background: rgba(255, 255, 255, 0.96);
-  border-bottom: 1px solid #edf1f7;
+  background: rgba(255, 255, 255, 0.98);
+  border-bottom: 1px solid #e4ebf8;
+  box-shadow: 0 10px 24px rgba(17, 34, 78, 0.05);
   backdrop-filter: blur(14px);
 }
 
 .knowledge-chapter-back-button {
+  justify-self: start;
   width: 44px;
   height: 44px;
   border: 1px solid #dbe6f8;
@@ -355,6 +357,8 @@ onBeforeUnmount(() => {
 }
 
 .knowledge-chapter-brand {
+  grid-column: 3;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -399,6 +403,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid #edf2f8;
   box-shadow: 0 16px 40px rgba(25, 43, 92, 0.05);
+  animation: knowledge-chapter-shell-enter 0.44s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .knowledge-chapter-header {
@@ -473,7 +478,16 @@ onBeforeUnmount(() => {
   border: 1px solid #e2eaf7;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  opacity: 0;
+  animation: knowledge-course-card-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+
+.knowledge-course-card:nth-child(1) { animation-delay: 0.08s; }
+.knowledge-course-card:nth-child(2) { animation-delay: 0.12s; }
+.knowledge-course-card:nth-child(3) { animation-delay: 0.16s; }
+.knowledge-course-card:nth-child(4) { animation-delay: 0.2s; }
+.knowledge-course-card:nth-child(5) { animation-delay: 0.24s; }
+.knowledge-course-card:nth-child(6) { animation-delay: 0.28s; }
 
 .knowledge-course-card:hover,
 .knowledge-course-card.active {
@@ -681,6 +695,32 @@ onBeforeUnmount(() => {
 .knowledge-course-action-button:hover .knowledge-course-action-button-glow {
   opacity: 1;
   filter: blur(11px);
+}
+
+@keyframes knowledge-chapter-shell-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.992);
+    filter: blur(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes knowledge-course-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 960px) {

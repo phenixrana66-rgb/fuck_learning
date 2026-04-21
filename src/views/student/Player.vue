@@ -174,7 +174,6 @@
                   <div class="student-course-mastery-item-head">
                     <div class="student-course-mastery-item-main">
                       <div class="student-course-mastery-item-title">{{ chapter.chapterTitle }}</div>
-                      <span class="student-course-mastery-item-label">章节掌握度</span>
                     </div>
                     <div class="student-course-mastery-item-actions">
                       <strong class="student-course-mastery-item-value">{{ Number(chapter.masteryPercent || 0) }}%</strong>
@@ -200,27 +199,28 @@
                     :show-text="false"
                     class="student-course-mastery-bar"
                   />
-                  <div v-if="isCourseMasteryExpanded(chapter.chapterId)" class="student-course-mastery-section-list">
-                    <div
-                      v-for="section in chapter.sections"
-                      :key="section.sectionId || section.chapterId"
-                      class="student-course-mastery-section-item"
-                    >
-                      <div class="student-course-mastery-section-main">
-                        <div class="student-course-mastery-section-title">{{ section.chapterTitle }}</div>
-                        <div class="student-course-mastery-section-meta">课掌握度</div>
-                      </div>
-                      <div class="student-course-mastery-section-side">
-                        <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
-                        <el-progress
-                          :percentage="Number(section.masteryPercent || 0)"
-                          :stroke-width="8"
-                          :show-text="false"
-                          class="student-course-mastery-section-bar"
-                        />
+                  <transition name="student-course-mastery-expand">
+                    <div v-if="isCourseMasteryExpanded(chapter.chapterId)" class="student-course-mastery-section-list">
+                      <div
+                        v-for="section in chapter.sections"
+                        :key="section.sectionId || section.chapterId"
+                        class="student-course-mastery-section-item"
+                      >
+                        <div class="student-course-mastery-section-main">
+                          <div class="student-course-mastery-section-title">{{ section.chapterTitle }}</div>
+                        </div>
+                        <div class="student-course-mastery-section-side">
+                          <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
+                          <el-progress
+                            :percentage="Number(section.masteryPercent || 0)"
+                            :stroke-width="8"
+                            :show-text="false"
+                            class="student-course-mastery-section-bar"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </transition>
                 </div>
               </div>
             </div>
@@ -368,7 +368,7 @@
 
             <section class="student-ai-sidebar-section history">
               <div class="student-ai-tools-title">历史问答</div>
-              <div class="student-ai-history-list app-scrollable">
+              <div v-if="qaSessions.length" class="student-ai-history-list app-scrollable">
                 <button
                   v-for="session in qaSessions"
                   :key="session.sessionId"
@@ -396,10 +396,8 @@
                   />
                   <span v-else class="student-ai-history-title">{{ getSessionDisplayTitle(session) }}</span>
                 </button>
-                <div v-if="!qaSessions.length" class="student-ai-history-empty">
-                  暂无历史问答
-                </div>
               </div>
+              <div v-else class="student-ai-history-empty">暂无历史问答</div>
             </section>
           </aside>
         </div>
@@ -1391,12 +1389,13 @@ onDeactivated(() => {
   right: 0;
   z-index: 30;
   height: 84px;
-  padding: 0 28px;
+  padding: 0 24px;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 220px;
   align-items: center;
-  background: rgba(255, 255, 255, 0.96);
-  border-bottom: 1px solid #edf1f7;
+  background: rgba(255, 255, 255, 0.98);
+  border-bottom: 1px solid #e4ebf8;
+  box-shadow: 0 10px 24px rgba(17, 34, 78, 0.05);
   backdrop-filter: blur(14px);
 }
 
@@ -2344,6 +2343,33 @@ onDeactivated(() => {
   padding-top: 4px;
 }
 
+.student-course-mastery-expand-enter-active,
+.student-course-mastery-expand-leave-active {
+  overflow: hidden;
+  transform-origin: top center;
+  transition:
+    max-height 0.32s ease,
+    opacity 0.24s ease,
+    transform 0.32s ease,
+    padding-top 0.32s ease;
+}
+
+.student-course-mastery-expand-enter-from,
+.student-course-mastery-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+  padding-top: 0;
+}
+
+.student-course-mastery-expand-enter-to,
+.student-course-mastery-expand-leave-from {
+  max-height: 640px;
+  opacity: 1;
+  transform: translateY(0);
+  padding-top: 4px;
+}
+
 .student-course-mastery-section-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
@@ -2875,6 +2901,7 @@ onDeactivated(() => {
 }
 
 .student-ai-sidebar-section.history {
+  grid-template-rows: auto minmax(0, 1fr);
   margin-top: 28px;
   padding-top: 22px;
   border-top: 1px solid #edf2f8;
@@ -3040,10 +3067,16 @@ onDeactivated(() => {
 }
 
 .student-ai-history-empty {
-  padding: 8px 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
   color: #7b8cad;
   font-size: 13px;
   line-height: 1.6;
+  text-align: center;
 }
 
 @media (max-width: 1180px) {
