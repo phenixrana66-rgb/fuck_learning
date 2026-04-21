@@ -163,17 +163,36 @@
           </div>
 
           <div class="student-course-mastery-card">
-            <div v-if="allChapters.length" class="student-course-mastery-list">
+            <div v-if="courseMasteryChapters.length" class="student-course-mastery-list">
               <div
-                v-for="chapter in allChapters"
+                v-for="chapter in courseMasteryChapters"
                 :key="chapter.chapterId"
                 class="student-course-mastery-item"
+                :class="{ expanded: isCourseMasteryExpanded(chapter.chapterId) }"
               >
-                <div class="student-course-mastery-item-title">{{ chapter.chapterTitle }}</div>
                 <div class="student-course-mastery-item-shell">
                   <div class="student-course-mastery-item-head">
-                    <span class="student-course-mastery-item-label">章节掌握度</span>
-                    <strong class="student-course-mastery-item-value">{{ Number(chapter.masteryPercent || 0) }}%</strong>
+                    <div class="student-course-mastery-item-main">
+                      <div class="student-course-mastery-item-title">{{ chapter.chapterTitle }}</div>
+                      <span class="student-course-mastery-item-label">章节掌握度</span>
+                    </div>
+                    <div class="student-course-mastery-item-actions">
+                      <strong class="student-course-mastery-item-value">{{ Number(chapter.masteryPercent || 0) }}%</strong>
+                      <button
+                        type="button"
+                        class="student-course-mastery-toggle"
+                        :aria-label="isCourseMasteryExpanded(chapter.chapterId) ? '收起章节内课掌握度' : '展开章节内课掌握度'"
+                        @click="toggleCourseMasteryChapter(chapter.chapterId)"
+                      >
+                        <svg
+                          viewBox="0 0 20 20"
+                          aria-hidden="true"
+                          :class="{ expanded: isCourseMasteryExpanded(chapter.chapterId) }"
+                        >
+                          <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <el-progress
                     :percentage="Number(chapter.masteryPercent || 0)"
@@ -181,6 +200,27 @@
                     :show-text="false"
                     class="student-course-mastery-bar"
                   />
+                  <div v-if="isCourseMasteryExpanded(chapter.chapterId)" class="student-course-mastery-section-list">
+                    <div
+                      v-for="section in chapter.sections"
+                      :key="section.sectionId || section.chapterId"
+                      class="student-course-mastery-section-item"
+                    >
+                      <div class="student-course-mastery-section-main">
+                        <div class="student-course-mastery-section-title">{{ section.chapterTitle }}</div>
+                        <div class="student-course-mastery-section-meta">课掌握度</div>
+                      </div>
+                      <div class="student-course-mastery-section-side">
+                        <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
+                        <el-progress
+                          :percentage="Number(section.masteryPercent || 0)"
+                          :stroke-width="8"
+                          :show-text="false"
+                          class="student-course-mastery-section-bar"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -400,7 +440,7 @@ import {
   saveStudentQaSessions,
   saveStudentViewState
 } from '@/utils/platform'
-import { buildAggregatedKnowledgeUnits, findAggregatedChapterForSection } from '@/utils/studentKnowledge'
+import { buildAggregatedKnowledgeUnits, findAggregatedChapterForSection, getSectionsForAggregatedChapter } from '@/utils/studentKnowledge'
 
 const route = useRoute()
 const router = useRouter()
@@ -442,6 +482,7 @@ const progressFallbackNote = ref('若服务端节奏接口暂不可用，系统�
 const rhythmSuggestion = ref('建议先完成当前章节，再根据掌握度决定是否进入下一章。')
 const hasLoadedLesson = ref(false)
 const hasActivatedOnce = ref(false)
+const expandedCourseMasteryMap = ref({})
 
 const primaryNavItems = [
   { label: '学习进度', value: 'progress' },
@@ -454,6 +495,15 @@ const allChapters = computed(() => (lesson.value.units || []).flatMap((unit) => 
 const activeChapter = computed(() => allChapters.value.find((chapter) => chapter.chapterId === activeChapterId.value) || allChapters.value[0] || {})
 const aggregatedUnitChapters = computed(() => buildAggregatedKnowledgeUnits(lesson.value.units || []))
 const allAggregatedChapters = computed(() => aggregatedUnitChapters.value.flatMap((unit) => unit.chapters || []))
+const courseMasteryChapters = computed(() => allAggregatedChapters.value.map((chapter) => ({
+  ...chapter,
+  sections: getSectionsForAggregatedChapter(
+    lesson.value.units || [],
+    chapter.unitId,
+    chapter.chapterTitle,
+    chapter.chapterId
+  )
+})))
 const currentLearningAggregatedChapter = computed(() => {
   const locatedByProgress = findAggregatedChapterForSection(lesson.value.units || [], progressState.value.sectionId || '')
   if (locatedByProgress) return locatedByProgress
@@ -498,6 +548,20 @@ function formatRecordingDuration(totalSeconds) {
   const seconds = safeSeconds % 60
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
+
+function isCourseMasteryExpanded(chapterId) {
+  return Boolean(expandedCourseMasteryMap.value[String(chapterId || '')])
+}
+
+function toggleCourseMasteryChapter(chapterId) {
+  const safeChapterId = String(chapterId || '')
+  if (!safeChapterId) return
+  expandedCourseMasteryMap.value = {
+    ...expandedCourseMasteryMap.value,
+    [safeChapterId]: !expandedCourseMasteryMap.value[safeChapterId]
+  }
+}
+
 const overallProgress = computed(() => {
   if (!allChapters.value.length) return 0
   return Math.round(allChapters.value.reduce((sum, chapter) => sum + Number(chapter.progressPercent || 0), 0) / allChapters.value.length)
@@ -1933,7 +1997,7 @@ onDeactivated(() => {
   grid-template-columns: minmax(0, 1fr) 420px;
   gap: 14px;
   min-height: calc(100vh - 300px);
-  padding: 16px 22px;
+  padding: 16px 22px 20px;
   background:
     radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.86), transparent 28%),
     linear-gradient(135deg, #e7f0ff 0%, #d9e8ff 48%, #f2f7ff 100%);
@@ -1986,7 +2050,7 @@ onDeactivated(() => {
   display: grid;
   grid-template-rows: auto auto;
   gap: 14px;
-  align-self: start;
+  align-self: end;
   justify-self: end;
   width: 100%;
   max-width: 420px;
@@ -2176,13 +2240,6 @@ onDeactivated(() => {
   gap: 10px;
 }
 
-.student-course-mastery-item-title {
-  color: #17315d;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
 .student-course-mastery-item-shell {
   padding: 16px 18px 18px;
   border-radius: 18px;
@@ -2190,13 +2247,32 @@ onDeactivated(() => {
   border: 1px solid rgba(220, 231, 247, 0.96);
   display: grid;
   gap: 12px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.student-course-mastery-item.expanded .student-course-mastery-item-shell {
+  border-color: rgba(198, 216, 243, 0.98);
+  box-shadow: 0 12px 24px rgba(95, 123, 180, 0.08);
 }
 
 .student-course-mastery-item-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.student-course-mastery-item-main {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.student-course-mastery-item-title {
+  color: #17315d;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .student-course-mastery-item-label {
@@ -2205,10 +2281,47 @@ onDeactivated(() => {
   line-height: 1.4;
 }
 
+.student-course-mastery-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .student-course-mastery-item-value {
   color: #17315d;
   font-size: 18px;
   line-height: 1;
+}
+
+.student-course-mastery-toggle {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #d7e3f7;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff, #f5f8ff);
+  color: #4c70af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.student-course-mastery-toggle:hover {
+  transform: translateY(-1px);
+  border-color: #bfd3f0;
+  background: #f8fbff;
+}
+
+.student-course-mastery-toggle svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.18s ease;
+}
+
+.student-course-mastery-toggle svg.expanded {
+  transform: rotate(180deg);
 }
 
 .student-course-mastery-empty {
@@ -2223,6 +2336,60 @@ onDeactivated(() => {
 
 .student-course-mastery-bar :deep(.el-progress-bar__inner) {
   background: linear-gradient(135deg, rgb(70, 150, 255), rgb(70, 150, 255));
+}
+
+.student-course-mastery-section-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.student-course-mastery-section-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  gap: 16px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(241, 246, 255, 0.92);
+  border: 1px solid rgba(216, 227, 245, 0.96);
+}
+
+.student-course-mastery-section-main {
+  min-width: 0;
+}
+
+.student-course-mastery-section-title {
+  color: #213b6b;
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 600;
+}
+
+.student-course-mastery-section-meta {
+  margin-top: 4px;
+  color: #7a8cae;
+  font-size: 12px;
+}
+
+.student-course-mastery-section-side {
+  display: grid;
+  gap: 10px;
+}
+
+.student-course-mastery-section-side strong {
+  color: #17315d;
+  font-size: 15px;
+  line-height: 1;
+  text-align: right;
+}
+
+.student-course-mastery-section-bar :deep(.el-progress-bar__outer) {
+  background: #e6eefb;
+}
+
+.student-course-mastery-section-bar :deep(.el-progress-bar__inner) {
+  background: linear-gradient(135deg, #7ea7ff, #5a89f0);
 }
 
 .student-progress-resume-card,
@@ -2966,6 +3133,14 @@ onDeactivated(() => {
   .student-progress-chapter-item {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .student-course-mastery-section-item {
+    grid-template-columns: 1fr;
+  }
+
+  .student-course-mastery-section-side strong {
+    text-align: left;
   }
 
   .student-chapter-grid {
