@@ -34,6 +34,11 @@ ACCESS_TOKEN = "从火山引擎控制台获取"
 TTS_URL = "https://openspeech.bytedance.com/api/v1/tts"
 TTS_CLUSTER = "volcano_tts"
 TTS_VOICE_TYPE = "zh_male_M392_conversation_wvae_bigtts"
+# 仅本地临时调试使用：跳过 HTTPS 证书校验（生产环境务必保持 False）
+tts_insecure_skip_verify = False
+# 上游限流/抖动时重试配置
+tts_retry_attempts = 4
+tts_retry_backoff_seconds = 1.0
 
 # 语音识别配置(火山引擎一句话识别60s)
 ASR_URL = "wss://openspeech.bytedance.com/api/v2/asr"
@@ -47,6 +52,4 @@ qa_embedding_model = "text-embedding-v4"
 qa_embedding_dimensions = 1024
 dashscope_api_key = "你的阿里云API Key"
 dashscope_base_url = "https://dashscope.aliyuncs.com"
-
-
 

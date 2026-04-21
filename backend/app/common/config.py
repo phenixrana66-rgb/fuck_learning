@@ -11,6 +11,7 @@ _SETTING_ALIASES = {
     "tts_url": "TTS_URL",
     "tts_cluster": "TTS_CLUSTER",
     "tts_voice_type": "TTS_VOICE_TYPE",
+    "tts_insecure_skip_verify": "tts_insecure_skip_verify",
     "asr_url": "ASR_URL",
     "asr_cluster": "ASR_CLUSTER",
 }
@@ -39,6 +40,9 @@ class Settings(BaseModel):
     TTS_CLUSTER: str | None = None
     TTS_VOICE_TYPE: str | None = None
     tts_timeout_seconds: float = 60.0
+    tts_insecure_skip_verify: bool = False
+    tts_retry_attempts: int = 4
+    tts_retry_backoff_seconds: float = 1.0
     ASR_URL: str | None = None
     ASR_CLUSTER: str | None = None
     llm_api_base_url: str = "http://10.195.20.215:13010/v1"

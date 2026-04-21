@@ -10,6 +10,7 @@ from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
+import fitz
 from pptx import Presentation
 
 from backend.app.common.exceptions import ApiError
@@ -50,18 +51,6 @@ finally {
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($ppt)
     }
 }
-"""
-MACOS_POWERPOINT_EXPORT_SCRIPT = """\
-on run argv
-    if (count of argv) is less than 2 then error "missing arguments"
-    set inputPath to POSIX file (item 1 of argv)
-    set outputDir to POSIX file (item 2 of argv)
-    tell application "Microsoft PowerPoint"
-        open inputPath
-        save active presentation in outputDir as save as PNG
-        close active presentation saving no
-    end tell
-end run
 """
 
 
@@ -155,7 +144,7 @@ def _build_preview_urls(
         return {}
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="pptx-preview-") as temp_dir_name:
+    with tempfile.TemporaryDirectory(prefix="pptx-preview-", dir="/tmp") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
         input_path = temp_dir / Path(file_name).name
         export_dir = temp_dir / "exported"
@@ -312,18 +301,26 @@ def _export_with_powerpoint(input_path: Path, output_dir: Path, _slide_count: in
         raise ApiError(code=500, msg=f"调用 PowerPoint 导出页图失败：{message}", status_code=500)
 
 
-def _export_with_macos_powerpoint(_powerpoint_app: Path, input_path: Path, output_dir: Path, _slide_count: int) -> None:
+def _export_with_macos_powerpoint(_powerpoint_app: Path, input_path: Path, output_dir: Path, slide_count: int) -> None:
     if not OSASCRIPT_EXE.exists():
         raise ApiError(code=500, msg="当前环境缺少 osascript，无法调用 PowerPoint for Mac 导出课件页图", status_code=500)
 
-    script_path = output_dir.parent / "export_pptx_preview.scpt"
-    script_path.write_text(MACOS_POWERPOINT_EXPORT_SCRIPT, encoding="utf-8")
+    pdf_path = output_dir.parent / "exported-preview.pdf"
+    if pdf_path.exists():
+        pdf_path.unlink()
+    input_literal = _to_applescript_posix_file_literal(input_path)
+    output_literal = _to_applescript_posix_file_literal(pdf_path)
     completed = subprocess.run(
         [
             str(OSASCRIPT_EXE),
-            str(script_path),
-            str(input_path),
-            str(output_dir),
+            "-e",
+            'tell application "Microsoft PowerPoint" to activate',
+            "-e",
+            f'tell application "Microsoft PowerPoint" to open {input_literal}',
+            "-e",
+            f'tell application "Microsoft PowerPoint" to save active presentation in {output_literal} as save as PDF',
+            "-e",
+            'tell application "Microsoft PowerPoint" to close active presentation saving no',
         ],
         capture_output=True,
         text=True,
@@ -332,7 +329,16 @@ def _export_with_macos_powerpoint(_powerpoint_app: Path, input_path: Path, outpu
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip().splitlines()
         message = detail[-1] if detail else "未知错误"
-        raise ApiError(code=500, msg=f"调用 PowerPoint for Mac 导出页图失败：{message}", status_code=500)
+        raise ApiError(code=500, msg=f"调用 PowerPoint for Mac 导出 PDF 失败：{message}", status_code=500)
+    if not pdf_path.exists():
+        raise ApiError(code=500, msg="PowerPoint for Mac 未导出 PDF 文件，请检查本机 Office 渲染能力", status_code=500)
+
+    _render_pdf_to_png(pdf_path, output_dir, slide_count=slide_count)
+
+
+def _to_applescript_posix_file_literal(path: Path) -> str:
+    escaped = str(path).replace("\\", "\\\\").replace('"', '\\"')
+    return f'POSIX file "{escaped}"'
 
 
 def _export_with_libreoffice(soffice_path: Path, input_path: Path, output_dir: Path, slide_count: int) -> None:
@@ -382,6 +388,27 @@ def _build_libreoffice_png_filter(page_number: int) -> str:
     return f"png:impress_png_Export:{json.dumps(filter_options, separators=(',', ':'))}"
 
 
+def _render_pdf_to_png(pdf_path: Path, output_dir: Path, *, slide_count: int) -> None:
+    try:
+        with fitz.open(pdf_path) as document:
+            page_total = document.page_count
+            for page_index in range(page_total):
+                page = document.load_page(page_index)
+                pixmap = page.get_pixmap(alpha=False)
+                target_path = output_dir / f"slide-{page_index + 1}.png"
+                pixmap.save(target_path)
+    except Exception as exc:  # noqa: BLE001
+        raise ApiError(code=500, msg=f"PDF 渲染页图失败：{exc}", status_code=500) from exc
+
+    exported_count = len([path for path in output_dir.iterdir() if path.is_file() and path.suffix.lower() == ".png"])
+    if slide_count and exported_count != slide_count:
+        raise ApiError(
+            code=500,
+            msg=f"PowerPoint for Mac 导出的 PDF 页数异常，期望 {slide_count} 页，实际 {exported_count} 页",
+            status_code=500,
+        )
+
+
 def _clear_exported_images(export_dir: Path) -> None:
     for path in export_dir.iterdir():
         if path.is_file():
@@ -392,16 +419,23 @@ def _clear_exported_images(export_dir: Path) -> None:
 
 
 def _collect_exported_images(export_dir: Path) -> list[Path]:
+    png_files = [path for path in export_dir.rglob("*.png") if path.is_file()]
+    if not png_files:
+        return []
+
     numbered_files: list[tuple[int, Path]] = []
-    for path in export_dir.iterdir():
-        if not path.is_file() or path.suffix.lower() != ".png":
-            continue
-        match = re.search(r"(\d+)$", path.stem)
-        if not match:
-            continue
-        numbered_files.append((int(match.group(1)), path))
-    numbered_files.sort(key=lambda item: item[0])
-    return [path for _, path in numbered_files]
+    unnumbered_files: list[Path] = []
+    for path in png_files:
+        # 兼容不同平台命名：Slide1 / 幻灯片 1 / page-1 等
+        matches = re.findall(r"(\d+)", path.stem)
+        if matches:
+            numbered_files.append((int(matches[-1]), path))
+        else:
+            unnumbered_files.append(path)
+
+    numbered_files.sort(key=lambda item: (item[0], str(item[1])))
+    unnumbered_files.sort(key=str)
+    return [path for _, path in numbered_files] + unnumbered_files
 
 
 def _extract_title(shape: object) -> str | None:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import ssl
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -29,6 +31,9 @@ def synthesize_speech(text: str, voice_type: str, audio_format: str) -> TtsSynth
     tts_cluster = _required_setting("tts_cluster")
     resolved_voice_type = _resolve_voice_type(voice_type)
     timeout_seconds = float(get_setting("tts_timeout_seconds", 60.0))
+    insecure_skip_verify = bool(get_setting("tts_insecure_skip_verify", False))
+    retry_attempts = max(1, int(get_setting("tts_retry_attempts", 4)))
+    retry_backoff_seconds = max(0.1, float(get_setting("tts_retry_backoff_seconds", 1.0)))
     request_id = str(uuid4())
 
     request_body = json.dumps(
@@ -63,14 +68,39 @@ def synthesize_speech(text: str, voice_type: str, audio_format: str) -> TtsSynth
         method="POST",
     )
 
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            raw_body = response.read().decode("utf-8")
-            log_id = response.headers.get("X-Tt-Logid")
-    except HTTPError as exc:
-        _raise_tts_error("volcengine tts http error", status_code=502, data={"status": exc.code})
-    except (URLError, TimeoutError, OSError) as exc:
-        _raise_tts_error("volcengine tts request failed", status_code=502, data={"detail": str(exc)})
+    ssl_context = _build_ssl_context(insecure_skip_verify)
+    last_exc: Exception | None = None
+    raw_body = ""
+    log_id = None
+    for attempt in range(retry_attempts):
+        try:
+            with urlopen(request, timeout=timeout_seconds, context=ssl_context) as response:
+                raw_body = response.read().decode("utf-8")
+                log_id = response.headers.get("X-Tt-Logid")
+            break
+        except HTTPError as exc:
+            last_exc = exc
+            # 429 限流时做指数退避重试，降低长任务失败率
+            if exc.code == 429 and attempt < retry_attempts - 1:
+                time.sleep(retry_backoff_seconds * (2**attempt))
+                continue
+            _raise_tts_error("volcengine tts http error", status_code=502, data={"status": exc.code, "attempt": attempt + 1})
+        except (URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            if attempt < retry_attempts - 1:
+                time.sleep(retry_backoff_seconds * (2**attempt))
+                continue
+            _raise_tts_error(
+                "volcengine tts request failed",
+                status_code=502,
+                data={
+                    "detail": str(exc),
+                    "insecureSkipVerify": insecure_skip_verify,
+                    "attempt": attempt + 1,
+                },
+            )
+    else:
+        _raise_tts_error("volcengine tts request failed", status_code=502, data={"detail": str(last_exc) if last_exc else "unknown"})
 
     try:
         payload = json.loads(raw_body)
@@ -145,6 +175,12 @@ def _parse_duration_ms(addition: Any) -> int | None:
         return max(0, int(duration_value))
     except (TypeError, ValueError):
         return None
+
+
+def _build_ssl_context(insecure_skip_verify: bool) -> ssl.SSLContext:
+    if insecure_skip_verify:
+        return ssl._create_unverified_context()  # noqa: SLF001
+    return ssl.create_default_context()
 
 
 def _raise_tts_error(message: str, status_code: int, data: dict[str, Any] | None = None) -> None:
