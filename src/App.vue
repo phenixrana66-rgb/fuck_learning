@@ -16,6 +16,7 @@ const router = useRouter()
 const route = useRoute()
 const pageTransitionName = ref('app-page-fade')
 let removeRouteGuard = null
+const STATIC_TOPBAR_ROUTE_NAMES = new Set(['StudentKnowledgeLearning', 'StudentSlideLearning'])
 
 function resolveStudentLearningDepth(routeName) {
   if (routeName === 'StudentPlayer') return 1
@@ -25,8 +26,14 @@ function resolveStudentLearningDepth(routeName) {
 }
 
 function resolvePageTransitionName(to, from) {
-  const toDepth = resolveStudentLearningDepth(String(to?.name || ''))
-  const fromDepth = resolveStudentLearningDepth(String(from?.name || ''))
+  const toName = String(to?.name || '')
+  const fromName = String(from?.name || '')
+  const toDepth = resolveStudentLearningDepth(toName)
+  const fromDepth = resolveStudentLearningDepth(fromName)
+
+  if (STATIC_TOPBAR_ROUTE_NAMES.has(toName) && STATIC_TOPBAR_ROUTE_NAMES.has(fromName)) {
+    return 'student-shell-static'
+  }
 
   if (toDepth && fromDepth) {
     if (toDepth > fromDepth) return 'student-flow-forward'
@@ -116,7 +123,9 @@ onBeforeUnmount(() => {
 .student-flow-backward-enter-active,
 .student-flow-backward-leave-active,
 .student-flow-fade-enter-active,
-.student-flow-fade-leave-active {
+.student-flow-fade-leave-active,
+.student-shell-static-enter-active,
+.student-shell-static-leave-active {
   will-change: opacity, filter;
 }
 
@@ -136,6 +145,11 @@ onBeforeUnmount(() => {
   transition:
     opacity 0.32s ease,
     filter 0.42s ease;
+}
+
+.student-shell-static-enter-active,
+.student-shell-static-leave-active {
+  transition: none;
 }
 
 .app-page-fade-enter-from,

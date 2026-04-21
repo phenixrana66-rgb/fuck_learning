@@ -25,7 +25,11 @@
       </div>
     </header>
 
-    <main ref="pageMainRef" class="knowledge-chapter-main app-scrollable">
+    <main
+      ref="pageMainRef"
+      class="knowledge-chapter-main app-scrollable"
+      :class="{ 'is-content-animating': isContentAnimating }"
+    >
       <section class="knowledge-chapter-shell">
         <div class="knowledge-chapter-header">
           <div class="knowledge-chapter-header-main">
@@ -96,6 +100,9 @@ import { buildAggregatedKnowledgeUnits, getSectionsForAggregatedChapter } from '
 const route = useRoute()
 const router = useRouter()
 const pageMainRef = ref(null)
+const isContentAnimating = ref(true)
+let contentMotionFrame = 0
+let contentMotionTimer = 0
 
 const fallbackProfile = {
   studentId: 'S2026001',
@@ -203,6 +210,38 @@ function captureChapterViewState() {
   saveStudentViewState(lessonId.value, { chapterDetail: chapterState })
 }
 
+function clearContentMotionSchedule() {
+  if (contentMotionFrame) {
+    window.cancelAnimationFrame(contentMotionFrame)
+    contentMotionFrame = 0
+  }
+  if (contentMotionTimer) {
+    window.clearTimeout(contentMotionTimer)
+    contentMotionTimer = 0
+  }
+}
+
+function scheduleContentMotionClear() {
+  if (contentMotionTimer) {
+    window.clearTimeout(contentMotionTimer)
+  }
+  contentMotionTimer = window.setTimeout(() => {
+    isContentAnimating.value = false
+    contentMotionTimer = 0
+  }, 520)
+}
+
+function triggerContentMotion() {
+  clearContentMotionSchedule()
+  isContentAnimating.value = false
+  contentMotionFrame = window.requestAnimationFrame(() => {
+    contentMotionFrame = window.requestAnimationFrame(() => {
+      isContentAnimating.value = true
+      scheduleContentMotionClear()
+    })
+  })
+}
+
 async function restoreChapterViewState() {
   const lessonViewState = getStudentViewState(lessonId.value)
   const stored = lessonViewState.chapterDetail?.[currentAggregatedChapter.value.chapterId || chapterId.value || 'default'] || {}
@@ -283,12 +322,14 @@ watch(
     if (nextLessonId === prevLessonId && nextUnitId === prevUnitId && nextChapterId === prevChapterId) return
     await loadLesson()
     await restoreChapterViewState()
+    triggerContentMotion()
   }
 )
 
 onMounted(async () => {
   await loadLesson()
   await restoreChapterViewState()
+  scheduleContentMotionClear()
 })
 
 onActivated(async () => {
@@ -296,14 +337,18 @@ onActivated(async () => {
     await loadLesson()
   }
   await restoreChapterViewState()
+  triggerContentMotion()
 })
 
 onDeactivated(() => {
   captureChapterViewState()
+  clearContentMotionSchedule()
+  isContentAnimating.value = false
 })
 
 onBeforeUnmount(() => {
   captureChapterViewState()
+  clearContentMotionSchedule()
 })
 </script>
 
@@ -403,7 +448,6 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid #edf2f8;
   box-shadow: 0 16px 40px rgba(25, 43, 92, 0.05);
-  animation: knowledge-chapter-shell-enter 0.44s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .knowledge-chapter-header {
@@ -478,16 +522,24 @@ onBeforeUnmount(() => {
   border: 1px solid #e2eaf7;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  opacity: 1;
+}
+
+.knowledge-chapter-main.is-content-animating .knowledge-chapter-shell {
+  animation: knowledge-chapter-shell-enter 0.44s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.knowledge-chapter-main.is-content-animating .knowledge-course-card {
   opacity: 0;
   animation: knowledge-course-card-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.knowledge-course-card:nth-child(1) { animation-delay: 0.08s; }
-.knowledge-course-card:nth-child(2) { animation-delay: 0.12s; }
-.knowledge-course-card:nth-child(3) { animation-delay: 0.16s; }
-.knowledge-course-card:nth-child(4) { animation-delay: 0.2s; }
-.knowledge-course-card:nth-child(5) { animation-delay: 0.24s; }
-.knowledge-course-card:nth-child(6) { animation-delay: 0.28s; }
+.knowledge-chapter-main.is-content-animating .knowledge-course-card:nth-child(1) { animation-delay: 0.08s; }
+.knowledge-chapter-main.is-content-animating .knowledge-course-card:nth-child(2) { animation-delay: 0.12s; }
+.knowledge-chapter-main.is-content-animating .knowledge-course-card:nth-child(3) { animation-delay: 0.16s; }
+.knowledge-chapter-main.is-content-animating .knowledge-course-card:nth-child(4) { animation-delay: 0.2s; }
+.knowledge-chapter-main.is-content-animating .knowledge-course-card:nth-child(5) { animation-delay: 0.24s; }
+.knowledge-chapter-main.is-content-animating .knowledge-course-card:nth-child(6) { animation-delay: 0.28s; }
 
 .knowledge-course-card:hover,
 .knowledge-course-card.active {

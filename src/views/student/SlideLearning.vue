@@ -25,7 +25,7 @@
       </div>
     </header>
 
-    <main class="knowledge-workspace">
+    <main class="knowledge-workspace" :class="{ 'is-content-animating': isContentAnimating }">
       <section ref="knowledgeLeftRef" class="knowledge-left app-scrollable">
         <section class="knowledge-summary-card">
           <div class="knowledge-summary-main">
@@ -175,7 +175,16 @@
           <div class="ppt-card-footer">
             <button
               type="button"
-              class="ppt-next-section-button"
+              class="ppt-section-nav-button"
+              :disabled="!prevChapter"
+              @click="goPrevSection"
+            >
+              {{ prevChapter ? '上一节' : '已是第一节' }}
+            </button>
+            <div class="ppt-section-nav-meta">{{ currentSectionOrderLabel }}</div>
+            <button
+              type="button"
+              class="ppt-section-nav-button"
               :disabled="!nextChapter"
               @click="goNextSection"
             >
@@ -309,11 +318,12 @@ import {
 } from '@/api/student'
 import { findFrontendTestLesson } from '@/mock/studentLessons'
 import { getStudentLessonListCache, getStudentProfile, getStudentViewState, saveStudentViewState } from '@/utils/platform'
-import { findAggregatedChapterForSection } from '@/utils/studentKnowledge'
+import { findAggregatedChapterForSection, getSectionsForAggregatedChapter } from '@/utils/studentKnowledge'
 
 const router = useRouter()
 const route = useRoute()
 const knowledgeLeftRef = ref(null)
+const isContentAnimating = ref(true)
 
 const fallbackProfile = {
   studentId: 'S2026001',
@@ -363,6 +373,8 @@ const hasLoadedDetail = ref(false)
 const hasActivatedOnce = ref(false)
 const isKnowledgeViewActive = ref(false)
 let sectionDetailLoadSeq = 0
+let contentMotionFrame = 0
+let contentMotionTimer = 0
 
 const routeLessonId = computed(() => String(route.params.lessonId || ''))
 const routeSectionId = computed(() => String(route.params.sectionId || ''))
@@ -398,6 +410,40 @@ const currentChapterIndex = computed(() => lessonChapters.value.findIndex((chapt
   if (sectionId.value && String(chapter.sectionId || '') === sectionId.value) return true
   return String(chapter.chapterTitle || '') === String(detail.value.sectionTitle || '')
 }))
+const currentAggregatedChapterLocator = computed(() => {
+  if (routeUnitId.value && knowledgeChapterId.value) {
+    return {
+      unitId: routeUnitId.value,
+      chapterId: knowledgeChapterId.value
+    }
+  }
+  return findAggregatedChapterForSection(lessonUnits.value, sectionId.value || detail.value.sectionId || '')
+})
+const currentAggregatedChapterSections = computed(() => {
+  const locator = currentAggregatedChapterLocator.value
+  if (!locator?.unitId || !locator?.chapterId) return []
+  return getSectionsForAggregatedChapter(
+    lessonUnits.value,
+    locator.unitId,
+    '',
+    locator.chapterId
+  )
+})
+const currentSectionOrder = computed(() => {
+  const currentSectionId = String(sectionId.value || detail.value.sectionId || '')
+  if (!currentSectionId) return 0
+  return currentAggregatedChapterSections.value.findIndex((section) => String(section.sectionId || '') === currentSectionId) + 1
+})
+const currentSectionOrderLabel = computed(() => {
+  const total = currentAggregatedChapterSections.value.length
+  const current = currentSectionOrder.value
+  if (!total) return '第 0 / 0 节'
+  return `第 ${Math.max(current, 1)} / ${total} 节`
+})
+const prevChapter = computed(() => {
+  if (currentChapterIndex.value <= 0) return null
+  return lessonChapters.value[currentChapterIndex.value - 1] || null
+})
 const nextChapter = computed(() => {
   if (currentChapterIndex.value < 0) return null
   return lessonChapters.value[currentChapterIndex.value + 1] || null
@@ -679,6 +725,38 @@ function canLoadSectionDetail(targetLessonId = routeLessonId.value, targetSectio
   return isKnowledgeViewActive.value && isSlideRoute.value && Boolean(targetLessonId) && Boolean(targetSectionId)
 }
 
+function clearContentMotionSchedule() {
+  if (contentMotionFrame) {
+    window.cancelAnimationFrame(contentMotionFrame)
+    contentMotionFrame = 0
+  }
+  if (contentMotionTimer) {
+    window.clearTimeout(contentMotionTimer)
+    contentMotionTimer = 0
+  }
+}
+
+function scheduleContentMotionClear() {
+  if (contentMotionTimer) {
+    window.clearTimeout(contentMotionTimer)
+  }
+  contentMotionTimer = window.setTimeout(() => {
+    isContentAnimating.value = false
+    contentMotionTimer = 0
+  }, 520)
+}
+
+function triggerContentMotion() {
+  clearContentMotionSchedule()
+  isContentAnimating.value = false
+  contentMotionFrame = window.requestAnimationFrame(() => {
+    contentMotionFrame = window.requestAnimationFrame(() => {
+      isContentAnimating.value = true
+      scheduleContentMotionClear()
+    })
+  })
+}
+
 async function loadSectionDetail() {
   const targetLessonId = routeLessonId.value
   const targetSectionId = routeSectionId.value
@@ -781,6 +859,26 @@ async function goNextSection() {
       ...(aggregatedChapter?.unitId ? { unitId: aggregatedChapter.unitId } : {}),
       ...(aggregatedChapter?.chapterId ? { knowledgeChapterId: aggregatedChapter.chapterId } : {}),
       pageNo: String(nextChapter.value.pageNo || 1)
+    }
+  })
+}
+
+async function goPrevSection() {
+  if (!prevChapter.value) return
+  persistRecentVisit()
+  const aggregatedChapter = findAggregatedChapterForSection(lessonUnits.value, prevChapter.value.sectionId || '')
+  await router.push({
+    name: 'StudentSlideLearning',
+    params: {
+      lessonId: lessonId.value,
+      sectionId: prevChapter.value.sectionId || sectionId.value || ''
+    },
+    query: {
+      ...(route.query.token ? { token: route.query.token } : {}),
+      ...(prevChapter.value.chapterId ? { chapterId: prevChapter.value.chapterId } : {}),
+      ...(aggregatedChapter?.unitId ? { unitId: aggregatedChapter.unitId } : {}),
+      ...(aggregatedChapter?.chapterId ? { knowledgeChapterId: aggregatedChapter.chapterId } : {}),
+      pageNo: String(prevChapter.value.pageNo || 1)
     }
   })
 }
@@ -967,6 +1065,7 @@ onMounted(async () => {
   window.addEventListener('pagehide', persistRecentVisit)
   knowledgeLeftRef.value?.addEventListener('scroll', handleKnowledgeScroll, { passive: true })
   await loadSectionDetail()
+  scheduleContentMotionClear()
   if (activePage.value) {
     syncPageRead(activePage.value)
   }
@@ -983,6 +1082,7 @@ onActivated(async () => {
     await nextTick()
     keepThumbnailVisible()
   }
+  triggerContentMotion()
   knowledgeLeftRef.value?.addEventListener('scroll', handleKnowledgeScroll, { passive: true })
 })
 
@@ -993,6 +1093,7 @@ watch(
     if (!isKnowledgeViewActive.value || !isSlideRoute.value || !nextLessonId || !nextSectionId) return
     hasLoadedDetail.value = false
     await loadSectionDetail()
+    triggerContentMotion()
   }
 )
 
@@ -1001,6 +1102,7 @@ onBeforeUnmount(() => {
   activeAnswerController.value?.abort()
   cleanupRealtimeAsr()
   stopSectionAudio()
+  clearContentMotionSchedule()
   window.removeEventListener('pagehide', persistRecentVisit)
   knowledgeLeftRef.value?.removeEventListener('scroll', handleKnowledgeScroll)
   persistRecentVisit()
@@ -1009,6 +1111,8 @@ onBeforeUnmount(() => {
 onDeactivated(() => {
   isKnowledgeViewActive.value = false
   knowledgeLeftRef.value?.removeEventListener('scroll', handleKnowledgeScroll)
+  clearContentMotionSchedule()
+  isContentAnimating.value = false
   captureKnowledgeViewState()
 })
 
@@ -1121,23 +1225,30 @@ onBeforeRouteLeave(() => {
 .ppt-card,
 .guide-card,
 .ai-card {
+  opacity: 1;
+}
+
+.knowledge-workspace.is-content-animating .knowledge-summary-card,
+.knowledge-workspace.is-content-animating .ppt-card,
+.knowledge-workspace.is-content-animating .guide-card,
+.knowledge-workspace.is-content-animating .ai-card {
   opacity: 0;
   animation: slide-learning-panel-enter 0.46s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.knowledge-summary-card {
+.knowledge-workspace.is-content-animating .knowledge-summary-card {
   animation-delay: 0.05s;
 }
 
-.ppt-card {
+.knowledge-workspace.is-content-animating .ppt-card {
   animation-delay: 0.1s;
 }
 
-.guide-card {
+.knowledge-workspace.is-content-animating .guide-card {
   animation-delay: 0.16s;
 }
 
-.ai-card {
+.knowledge-workspace.is-content-animating .ai-card {
   animation-delay: 0.12s;
 }
 
@@ -1225,12 +1336,30 @@ onBeforeRouteLeave(() => {
 
 .ppt-card-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   margin-top: 12px;
   padding: 0 6px 4px;
 }
 
-.ppt-next-section-button {
+.ppt-section-nav-meta {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(242, 247, 255, 0.92);
+  border: 1px solid #d8e4f6;
+  color: #48679c;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ppt-section-nav-button {
   min-width: 124px;
   height: 42px;
   padding: 0 20px;
@@ -1244,13 +1373,13 @@ onBeforeRouteLeave(() => {
   transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, opacity 0.18s ease;
 }
 
-.ppt-next-section-button:hover:not(:disabled) {
+.ppt-section-nav-button:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: #7e9de0;
   background: linear-gradient(135deg, #edf4ff 0%, #e5efff 100%);
 }
 
-.ppt-next-section-button:disabled {
+.ppt-section-nav-button:disabled {
   opacity: 0.56;
   cursor: not-allowed;
 }
