@@ -71,19 +71,26 @@ def _has_real_page_payload(section_name: str | None, page: LessonSectionPage) ->
 def _load_primary_script_content(db: Session, section: LessonSection) -> str:
     if not section.script_id:
         return ""
-    row = (
-        db.query(ChapterScriptSection)
-        .filter(
-            ChapterScriptSection.script_id == section.script_id,
-            ChapterScriptSection.section_code == section.section_code,
+    section_code = _clean_text(section.section_code)
+    candidate_codes = [section_code] if section_code else []
+    # 发布后 lesson section code 可能带有 ch{chapterId}- 前缀，这里补一个无前缀候选。
+    if section_code and section_code.startswith("ch") and "-" in section_code:
+        candidate_codes.append(section_code.split("-", 1)[1])
+
+    for code in candidate_codes:
+        row = (
+            db.query(ChapterScriptSection)
+            .filter(
+                ChapterScriptSection.script_id == section.script_id,
+                ChapterScriptSection.section_code == code,
+            )
+            .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
+            .first()
         )
-        .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
-        .first()
-    )
-    content = _clean_text(row.section_content if row else None)
-    if content:
-        return content
-    return _clean_text(section.section_summary)
+        content = _clean_text(row.section_content if row else None)
+        if content:
+            return content
+    return ""
 
 
 def _build_section_chapter_context(db: Session, section: LessonSection) -> dict[str, str]:
@@ -91,7 +98,8 @@ def _build_section_chapter_context(db: Session, section: LessonSection) -> dict[
     summary = _clean_text(section.section_summary)
     parse_summary = _clean_text(parse_result.chapter_summary if parse_result else None)
     normalized_content = _clean_text(parse_result.normalized_content if parse_result else None)
-    script_content = _load_primary_script_content(db, section)
+    primary_script_content = _load_primary_script_content(db, section)
+    script_content = primary_script_content or normalized_content or summary
     knowledge_lines = [
         f"{(point.point_name or '').strip()}：{(point.point_summary or '').strip()}"
         for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))

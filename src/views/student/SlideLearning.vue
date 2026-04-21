@@ -603,7 +603,7 @@ function normalizeFallbackDetail() {
     progressPercent: Number(chapter?.progressPercent || 0),
     masteryPercent: Number(chapter?.masteryPercent || 0),
     aiGuideContent: chapter?.guideContent || chapter?.summary || '',
-    scriptContent: chapter?.guideContent || chapter?.summary || '',
+    scriptContent: chapter?.scriptContent || '',
     audioUrl: '',
     audioStatus: 'empty',
     knowledgePoints: chapter?.knowledgePoints || [],
