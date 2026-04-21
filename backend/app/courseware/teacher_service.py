@@ -45,12 +45,19 @@ def upload_parse(
     file_content: str | None,
     chapter_name: str | None = None,
     base_url: str | None = None,
+    target_chapter_id: str | int | None = None,
 ) -> JsonDict:
     settings = get_settings()
     course = _resolve_course(db, course_id)
     if not course:
         raise ValueError("courseId 不能为空或课程不存在")
-    chapter = _resolve_or_create_chapter(db, course.id, file_name, chapter_name)
+    chapter = _resolve_or_create_chapter(
+        db,
+        course.id,
+        file_name,
+        chapter_name,
+        target_chapter_id=target_chapter_id,
+    )
     parse_no = f"P{uuid4().hex[:12].upper()}"
     asset_path = _save_uploaded_file(parse_no, file_name, file_content)
     file_url = _build_mock_remote_url(base_url, asset_path)
@@ -163,7 +170,23 @@ def _resolve_course(db: Session, external_course_id: str) -> Course | None:
     return db.query(Course).filter(Course.course_code == external_course_id).first()
 
 
-def _resolve_or_create_chapter(db: Session, course_id: int, file_name: str, chapter_name: str | None = None) -> CourseChapter:
+def _resolve_or_create_chapter(
+    db: Session,
+    course_id: int,
+    file_name: str,
+    chapter_name: str | None = None,
+    target_chapter_id: str | int | None = None,
+) -> CourseChapter:
+    if target_chapter_id not in (None, ""):
+        target_chapter = (
+            db.query(CourseChapter)
+            .filter(CourseChapter.id == int(target_chapter_id), CourseChapter.course_id == course_id)
+            .first()
+        )
+        if target_chapter is None:
+            raise LookupError("目标章节不存在")
+        return target_chapter
+
     target_name = str(chapter_name or "").strip() or Path(file_name or "").stem.strip()
     if not target_name:
         target_name = "未命名章节"
@@ -174,11 +197,6 @@ def _resolve_or_create_chapter(db: Session, course_id: int, file_name: str, chap
         .order_by(CourseChapter.sort_no.asc(), CourseChapter.id.asc())
         .all()
     )
-
-    normalized_target = target_name.replace(" ", "")
-    for chapter in chapters:
-        if chapter.chapter_name.replace(" ", "") == normalized_target:
-            return chapter
 
     next_sort_no = max((chapter.sort_no or 0 for chapter in chapters), default=0) + 1
     chapter = CourseChapter(

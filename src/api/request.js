@@ -1,7 +1,7 @@
 ﻿import axios from 'axios'
 import { buildSignedPayload } from '@/utils/sign'
 import { showErrorMessage } from '@/utils/message'
-import { getPlatformToken } from '@/utils/platform'
+import { getTeacherPlatformToken } from '@/utils/platform'
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '',
@@ -13,7 +13,7 @@ const service = axios.create({
 
 service.interceptors.request.use(
   (config) => {
-    const token = getPlatformToken()
+    const token = getTeacherPlatformToken()
     const data = config.data || {}
     const signedData = buildSignedPayload(data)
 

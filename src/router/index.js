@@ -1,5 +1,5 @@
 ﻿import { createRouter, createWebHistory } from 'vue-router'
-import { getPlatformToken, savePlatformToken } from '@/utils/platform'
+import { getTeacherPlatformToken, saveTeacherPlatformToken, saveStudentPlatformToken } from '@/utils/platform'
 
 const routes = [
   {
@@ -78,7 +78,11 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   if (typeof to.query.token === 'string' && to.query.token) {
-    savePlatformToken(to.query.token)
+    if (to.path.startsWith('/teacher')) {
+      saveTeacherPlatformToken(to.query.token)
+    } else if (to.path.startsWith('/student')) {
+      saveStudentPlatformToken(to.query.token)
+    }
   }
 
   if (!to.path.startsWith('/teacher')) {
@@ -91,7 +95,7 @@ router.beforeEach((to, from, next) => {
     return
   }
 
-  if (!getPlatformToken()) {
+  if (!getTeacherPlatformToken()) {
     next('/teacher/login')
     return
   }

@@ -85,8 +85,8 @@ import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
 import { createCourse, syncCourse, syncUser } from '@/api/teacher'
 import {
-  getPlatformToken,
-  savePlatformToken,
+  getTeacherPlatformToken,
+  saveTeacherPlatformToken,
   saveTeacherProfile,
   saveCourseList,
   saveCurrentCourse
@@ -107,8 +107,8 @@ const createCourseForm = ref({
 })
 
 onMounted(() => {
-  token.value = getPlatformToken() || 'test_token_001'
-  if (getPlatformToken()) {
+  token.value = getTeacherPlatformToken() || 'test_token_001'
+  if (getTeacherPlatformToken()) {
     handleSync()
   }
 })
@@ -125,7 +125,7 @@ async function handleSync() {
   errorMsg.value = ''
 
   try {
-    savePlatformToken(token.value)
+    saveTeacherPlatformToken(token.value)
 
     const userRes = await syncUser({ token: token.value })
     teacherInfo.value = userRes.data || {}

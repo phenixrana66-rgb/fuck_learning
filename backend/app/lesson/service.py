@@ -258,17 +258,20 @@ def publish_lesson(payload: PublishRequest) -> dict:
             script_entity.parse_task.parse_result.page_mapping if script_entity.parse_task.parse_result else None,
             parse_no=script_entity.parse_task.parse_no if script_entity.parse_task else None,
         )
-        current_chapter_sections = {
-            section.section_code: section
-            for section in db.query(LessonSection)
-            .filter(LessonSection.lesson_id == lesson.id, LessonSection.ppt_asset_id == script_entity.parse_task.ppt_asset_id)
+        current_chapter_sections = {}
+        for section in (
+            db.query(LessonSection)
+            .filter(LessonSection.lesson_id == lesson.id, LessonSection.source_chapter_id == script_entity.chapter_id)
             .order_by(LessonSection.sort_no.asc(), LessonSection.id.asc())
             .all()
-        }
+        ):
+            lookup_code = _extract_script_section_code(section.section_code, script_entity.chapter_id)
+            current_chapter_sections.setdefault(lookup_code, section)
         section_audio_refs: list[tuple[LessonSection, ChapterSectionAudioAsset]] = []
 
         for sort_no, script_section in enumerate(published_sections):
             section_audio_asset = section_audio_map[script_section.id]
+            scoped_section_code = _build_lesson_section_code(script_entity.chapter_id, script_section.section_code)
             lesson_section = current_chapter_sections.get(script_section.section_code)
             if lesson_section is None:
                 lesson_section = LessonSection(
@@ -281,7 +284,7 @@ def publish_lesson(payload: PublishRequest) -> dict:
                     script_id=script_entity.id,
                     audio_asset_id=audio_asset.id,
                     section_audio_asset_id=section_audio_asset.id,
-                    section_code=script_section.section_code,
+                    section_code=scoped_section_code,
                     section_name=script_section.section_name,
                     section_summary=_build_section_summary(script_section.section_content),
                     student_visible=True,
@@ -300,7 +303,7 @@ def publish_lesson(payload: PublishRequest) -> dict:
                 lesson_section.script_id = script_entity.id
                 lesson_section.audio_asset_id = audio_asset.id
                 lesson_section.section_audio_asset_id = section_audio_asset.id
-                lesson_section.section_code = script_section.section_code
+                lesson_section.section_code = scoped_section_code
                 lesson_section.section_name = script_section.section_name
                 lesson_section.section_summary = _build_section_summary(script_section.section_content)
                 lesson_section.student_visible = True
@@ -521,6 +524,25 @@ def _build_section_summary(content: str | None) -> str:
     if not text:
         return ""
     return text[:120]
+
+
+def _build_lesson_section_code(source_chapter_id: int | None, section_code: str | None) -> str:
+    normalized_section_code = str(section_code or "").strip() or "sec"
+    if source_chapter_id is None:
+        return normalized_section_code
+    return f"ch{source_chapter_id}-{normalized_section_code}"
+
+
+def _extract_script_section_code(stored_section_code: str | None, source_chapter_id: int | None) -> str:
+    normalized = str(stored_section_code or "").strip()
+    if not normalized:
+        return ""
+    if source_chapter_id is None:
+        return normalized
+    prefix = f"ch{source_chapter_id}-"
+    if normalized.startswith(prefix):
+        return normalized[len(prefix):]
+    return normalized
 
 
 def _parse_page_numbers(page_range: str | None) -> list[int]:

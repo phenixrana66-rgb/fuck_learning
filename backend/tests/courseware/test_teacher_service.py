@@ -61,7 +61,9 @@ class TeacherServiceTestCase(unittest.TestCase):
         file_content = base64.b64encode(b"fake pptx content").decode()
         with session_scope() as db:
             teacher = db.query(User).filter(User.user_no == "teacher-001").first()
+            chapter = db.query(CourseChapter).filter(CourseChapter.chapter_name == "压杆稳定").order_by(CourseChapter.id.asc()).first()
             assert teacher is not None
+            assert chapter is not None
             accepted = upload_parse(
                 db,
                 teacher,
@@ -70,6 +72,7 @@ class TeacherServiceTestCase(unittest.TestCase):
                 file_content,
                 chapter_name="压杆稳定",
                 base_url="http://testserver/",
+                target_chapter_id=chapter.id,
             )
 
         parse_id = accepted["parseId"]
@@ -134,6 +137,46 @@ class TeacherServiceTestCase(unittest.TestCase):
             self.assertIsNotNone(task.chapter)
             self.assertEqual(task.chapter.chapter_name, "课程导学")
             self.assertEqual(task.chapter.chapter_code.startswith("chapter-"), True)
+
+    def test_upload_parse_with_same_chapter_name_creates_new_course_chapter_by_default(self) -> None:
+        file_content = base64.b64encode(b"fake pptx content").decode()
+        with session_scope() as db:
+            teacher = db.query(User).filter(User.user_no == "teacher-001").first()
+            assert teacher is not None
+            first = upload_parse(
+                db,
+                teacher,
+                "course-001",
+                "01总论.pptx",
+                file_content,
+                chapter_name="课程导学",
+                base_url="http://testserver/",
+            )
+            second = upload_parse(
+                db,
+                teacher,
+                "course-001",
+                "02绪论.pptx",
+                file_content,
+                chapter_name="课程导学",
+                base_url="http://testserver/",
+            )
+            first_task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == first["parseId"]).first()
+            second_task = db.query(ChapterParseTask).filter(ChapterParseTask.parse_no == second["parseId"]).first()
+            first_task_id = first_task.chapter_id if first_task is not None else None
+            second_task_id = second_task.chapter_id if second_task is not None else None
+            chapter_names = [
+                chapter.chapter_name
+                for chapter in db.query(CourseChapter)
+                .filter(CourseChapter.course_id == first_task.course_id)
+                .order_by(CourseChapter.id.asc())
+                .all()
+            ]
+
+        self.assertIsNotNone(first_task)
+        self.assertIsNotNone(second_task)
+        self.assertNotEqual(first_task_id, second_task_id)
+        self.assertEqual(chapter_names.count("课程导学"), 2)
 
     def _seed_course_and_lesson(self) -> None:
         with session_scope() as db:

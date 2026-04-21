@@ -16,7 +16,7 @@ from backend.app.parser.schemas import ExtractedPresentation, ExtractedSlide, Fi
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
 from backend.app.student_runtime.db_learning_service import get_section_detail
-from backend.chaoxing_db.models import ChapterAudioAsset, ChapterParseTask, ChapterScript, ChapterScriptSection, ChapterSectionAudioAsset, Course, Lesson, LessonSection, LessonSectionPage, LessonUnit
+from backend.chaoxing_db.models import ChapterAudioAsset, ChapterParseTask, ChapterScript, ChapterScriptSection, ChapterSectionAudioAsset, Course, CourseChapter, Lesson, LessonSection, LessonSectionPage, LessonUnit
 
 
 class LessonServiceTestCase(unittest.TestCase):
@@ -460,12 +460,15 @@ class LessonServiceTestCase(unittest.TestCase):
                 else []
             )
             section_codes = {section.section_code for section in sections}
+            stored_script = db.query(ChapterScript).filter(ChapterScript.script_no == script_summary.scriptId).first()
+            expected_chapter_id = stored_script.chapter_id if stored_script is not None else None
+            expected_scoped_section_code = f"ch{expected_chapter_id}-{script_detail.scriptStructure[0].sectionId}" if expected_chapter_id is not None else script_detail.scriptStructure[0].sectionId
 
         self.assertEqual(len(lessons), 1)
         self.assertEqual(publish['lessonId'], 'lesson-existing')
         self.assertIsNotNone(lesson)
         self.assertEqual(lesson_name, expected_course_name)
-        self.assertEqual(section_codes, {'legacy-section', script_detail.scriptStructure[0].sectionId})
+        self.assertEqual(section_codes, {'legacy-section', expected_scoped_section_code})
 
     def test_publish_reuses_section_pages_by_source_page_and_preserves_parse_fields(self) -> None:
         parse_payload = self.parse_payload
@@ -712,6 +715,7 @@ class LessonServiceTestCase(unittest.TestCase):
 
         second_payload = parse_payload.model_copy(update={'fileUrl': 'file:///tmp/demo-b.pptx'})
         second_script = self._create_script_summary(second_payload)
+        self._reassign_script_to_new_chapter(second_script.scriptId, 'chapter-b')
         self._persist_script_section_content(second_script.scriptId, {'sec001': 'chapter two script content'})
         second_script_detail = get_script_detail(second_script.scriptId).model_copy(deep=True)
         second_script_detail.scriptStructure[0].content = 'chapter two script content'
@@ -764,6 +768,7 @@ class LessonServiceTestCase(unittest.TestCase):
                 {
                     'id': str(section.id),
                     'source_chapter_id': section.source_chapter_id,
+                    'section_code': section.section_code,
                     'script_id': section.script_id,
                     'script_no': section.script.script_no if section.script else '',
                 }
@@ -772,6 +777,8 @@ class LessonServiceTestCase(unittest.TestCase):
 
         self.assertEqual(len(lessons), 1)
         self.assertEqual(len(section_rows), 2)
+        self.assertEqual(len({section['section_code'] for section in section_rows}), 2)
+        self.assertTrue(all(section['section_code'].startswith(f"ch{section['source_chapter_id']}-") for section in section_rows))
         self.assertEqual(len({section['script_id'] for section in section_rows}), 2)
         self.assertEqual(len({item['sectionId'] for item in play['scriptRefs']}), 2)
         self.assertEqual({item['sectionId'] for item in play['scriptRefs']}, {section['id'] for section in section_rows})
@@ -829,3 +836,32 @@ class LessonServiceTestCase(unittest.TestCase):
                 if content is None:
                     continue
                 section.section_content = content
+
+    def _reassign_script_to_new_chapter(self, script_id: str, chapter_name: str) -> None:
+        with session_scope() as db:
+            script = db.query(ChapterScript).filter(ChapterScript.script_no == script_id).first()
+            assert script is not None
+            parse_task = script.parse_task
+            assert parse_task is not None
+            next_sort_no = max(
+                [value for (value,) in db.query(CourseChapter.sort_no).filter(CourseChapter.course_id == script.course_id).all()],
+                default=0,
+            ) + 1
+            chapter = CourseChapter(
+                course_id=script.course_id,
+                chapter_code=f'test-chapter-{next_sort_no}',
+                chapter_name=chapter_name,
+                chapter_type='chapter',
+                chapter_level=1,
+                sort_no=next_sort_no,
+                status='draft',
+            )
+            db.add(chapter)
+            db.flush()
+
+            script.chapter_id = chapter.id
+            parse_task.chapter_id = chapter.id
+            if parse_task.ppt_asset is not None:
+                parse_task.ppt_asset.chapter_id = chapter.id
+            if parse_task.parse_result is not None:
+                parse_task.parse_result.chapter_id = chapter.id

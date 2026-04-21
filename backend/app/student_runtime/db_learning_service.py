@@ -341,6 +341,7 @@ def _build_db_chapter(
         "sectionId": str(section.id),
         "chapterTitle": section.section_name,
         "slideName": slide_name or "",
+        "sourceChapterId": str(section.source_chapter_id) if section.source_chapter_id is not None else "",
         "pptAssetId": section.ppt_asset_id,
         "progressPercent": _round_int(progress.progress_percent if progress else 0),
         "masteryPercent": _round_int(progress.mastery_percent if progress else 0),

@@ -1,6 +1,9 @@
 ﻿const SCRIPT_TASK_KEY = 'scriptTask'
 const SCRIPT_RESULT_KEY = 'scriptResult'
 const TEACHER_WORKSPACE_CONTEXT_KEY = 'teacherWorkspaceContexts'
+const TEACHER_PLATFORM_TOKEN_KEY = 'teacherPlatformToken'
+const STUDENT_PLATFORM_TOKEN_KEY = 'studentPlatformToken'
+const LEGACY_PLATFORM_TOKEN_KEY = 'platformToken'
 
 function readJsonStorage(key, fallback) {
   try {
@@ -64,15 +67,61 @@ export function getQueryParams() {
   return params
 }
 
-export function getPlatformToken() {
+function readStoredToken(key) {
+  return sessionStorage.getItem(key) || localStorage.getItem(key) || ''
+}
+
+function writeStoredToken(key, token) {
+  if (token) {
+    sessionStorage.setItem(key, token)
+    localStorage.setItem(key, token)
+  }
+}
+
+export function getTeacherPlatformToken() {
   const query = getQueryParams()
-  return query.token || sessionStorage.getItem('platformToken') || ''
+  if (window.location.pathname.startsWith('/teacher') && query.token) {
+    return query.token
+  }
+  return readStoredToken(TEACHER_PLATFORM_TOKEN_KEY)
+}
+
+export function saveTeacherPlatformToken(token) {
+  writeStoredToken(TEACHER_PLATFORM_TOKEN_KEY, token)
+}
+
+export function getStudentPlatformToken() {
+  const query = getQueryParams()
+  if (window.location.pathname.startsWith('/student') && query.token) {
+    return query.token
+  }
+  return readStoredToken(STUDENT_PLATFORM_TOKEN_KEY)
+}
+
+export function saveStudentPlatformToken(token) {
+  writeStoredToken(STUDENT_PLATFORM_TOKEN_KEY, token)
+}
+
+export function getPlatformToken() {
+  if (window.location.pathname.startsWith('/teacher')) {
+    return getTeacherPlatformToken()
+  }
+  if (window.location.pathname.startsWith('/student')) {
+    return getStudentPlatformToken()
+  }
+  return readStoredToken(TEACHER_PLATFORM_TOKEN_KEY) || readStoredToken(STUDENT_PLATFORM_TOKEN_KEY) || readStoredToken(LEGACY_PLATFORM_TOKEN_KEY)
 }
 
 export function savePlatformToken(token) {
-  if (token) {
-    sessionStorage.setItem('platformToken', token)
+  if (window.location.pathname.startsWith('/teacher')) {
+    saveTeacherPlatformToken(token)
+    return
   }
+  if (window.location.pathname.startsWith('/student')) {
+    saveStudentPlatformToken(token)
+    return
+  }
+  writeStoredToken(LEGACY_PLATFORM_TOKEN_KEY, token)
 }
 
 export function ensurePlatformToken(fallbackToken = '') {

@@ -37,7 +37,7 @@
           <div class="ppt-card-header">
             <div>
               <div class="ppt-card-title">课件学习</div>
-              <div class="ppt-card-subtitle">当前页 {{ activePageNo }} / {{ totalPages }}</div>
+              <div class="ppt-card-subtitle">当前页 {{ activePageDisplayNo }} / {{ totalPages }}</div>
             </div>
             <button
               type="button"
@@ -121,7 +121,7 @@
                       <path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
                   </button>
-                  <div class="viewer-page-indicator">{{ activePageNo }} / {{ totalPages }}</div>
+                  <div class="viewer-page-indicator">{{ activePageDisplayNo }} / {{ totalPages }}</div>
                   <button
                     type="button"
                     class="viewer-tool-button"
@@ -365,9 +365,18 @@ const restorePageNo = computed(() => Number(route.query.pageNo || 0))
 const sectionId = computed(() => routeSectionId.value || String(detail.value.sectionId || ''))
 const pages = computed(() => detail.value.pages || [])
 const totalPages = computed(() => pages.value.length)
-const activePage = computed(() => pages.value.find((page) => Number(page.pageNo) === Number(activePageNo.value)) || pages.value[0] || null)
-const hasPrevPage = computed(() => activePageNo.value > 1)
-const hasNextPage = computed(() => activePageNo.value < totalPages.value)
+const activePageIndex = computed(() => pages.value.findIndex((page) => Number(page.pageNo) === Number(activePageNo.value)))
+const normalizedActivePageIndex = computed(() => {
+  if (!pages.value.length) return -1
+  return activePageIndex.value >= 0 ? activePageIndex.value : 0
+})
+const activePage = computed(() => {
+  if (normalizedActivePageIndex.value < 0) return null
+  return pages.value[normalizedActivePageIndex.value] || null
+})
+const activePageDisplayNo = computed(() => (normalizedActivePageIndex.value >= 0 ? normalizedActivePageIndex.value + 1 : 0))
+const hasPrevPage = computed(() => normalizedActivePageIndex.value > 0)
+const hasNextPage = computed(() => normalizedActivePageIndex.value >= 0 && normalizedActivePageIndex.value < totalPages.value - 1)
 const lessonUnits = computed(() => {
   const cachedLesson = getStudentLessonListCache().find((item) => String(item.lessonId) === String(lessonId.value))
     || findFrontendTestLesson(lessonId.value)
@@ -639,7 +648,7 @@ function setThumbnailRef(pageNo, element) {
 
 function keepThumbnailVisible() {
   const container = thumbnailRailRef.value
-  const target = thumbnailRefs.value[activePageNo.value]
+  const target = thumbnailRefs.value[activePage.value?.pageNo]
   if (!container || !target) return
   const top = target.offsetTop
   const bottom = top + target.offsetHeight
@@ -734,12 +743,16 @@ function setActivePage(pageNo) {
 
 function goPrevPage() {
   if (!hasPrevPage.value) return
-  activePageNo.value -= 1
+  const targetPage = pages.value[normalizedActivePageIndex.value - 1]
+  if (!targetPage) return
+  activePageNo.value = Number(targetPage.pageNo)
 }
 
 function goNextPage() {
   if (!hasNextPage.value) return
-  activePageNo.value += 1
+  const targetPage = pages.value[normalizedActivePageIndex.value + 1]
+  if (!targetPage) return
+  activePageNo.value = Number(targetPage.pageNo)
 }
 
 async function goNextSection() {
@@ -1422,7 +1435,7 @@ onBeforeRouteLeave(() => {
   min-width: 0;
   height: 100%;
   min-height: 0;
-  padding: 8px 8px 8px 12px;
+  padding: 4px 4px 4px 6px;
   overflow: hidden;
   background: #eaf2ff;
 }
@@ -1436,7 +1449,7 @@ onBeforeRouteLeave(() => {
   justify-content: center;
   background: #eaf2ff;
   overflow: hidden;
-  padding: 14px 14px 56px;
+  padding: 6px 6px 48px;
   box-sizing: border-box;
 }
 
@@ -1898,7 +1911,7 @@ onBeforeRouteLeave(() => {
 
   .viewer-shell {
     min-height: 340px;
-    padding: 10px;
+    padding: 6px;
   }
 
   .thumbnail-rail {

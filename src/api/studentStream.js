@@ -1,5 +1,5 @@
 import { buildSignedPayload } from '@/utils/sign'
-import { getPlatformToken } from '@/utils/platform'
+import { getStudentPlatformToken } from '@/utils/platform'
 
 function buildStudentApiUrl(path) {
   const apiBase = import.meta.env.VITE_STUDENT_API_BASE || '/student-api'
@@ -72,7 +72,7 @@ function dispatchStreamEvent(event, { onStart, onDelta, onDone, setDonePayload }
 
 export async function streamLessonInteraction(payload, handlers = {}) {
   const { signal, onStart, onDelta, onDone } = handlers
-  const token = getPlatformToken()
+  const token = getStudentPlatformToken()
   const response = await fetch(buildStudentApiUrl('/api/v1/qa/interact/stream'), {
     method: 'POST',
     headers: {

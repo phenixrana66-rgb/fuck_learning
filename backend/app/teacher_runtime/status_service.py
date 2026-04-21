@@ -168,8 +168,8 @@ def list_courseware_assets(db: Session, course_id: str, chapter_id: str | int | 
     if not course:
         raise LookupError("courseId not found")
 
-    chapter = _resolve_target_chapter(db, course.id, chapter_id)
-    if chapter is None:
+    chapter = _resolve_target_chapter(db, course.id, chapter_id) if chapter_id not in (None, "") else None
+    if chapter_id not in (None, "") and chapter is None:
         return {
             "courseId": course_id,
             "chapterId": "",
@@ -177,12 +177,10 @@ def list_courseware_assets(db: Session, course_id: str, chapter_id: str | int | 
             "assets": [],
         }
 
-    assets = (
-        db.query(ChapterPptAsset)
-        .filter(ChapterPptAsset.course_id == course.id, ChapterPptAsset.chapter_id == chapter.id)
-        .order_by(ChapterPptAsset.version_no.desc(), ChapterPptAsset.id.desc())
-        .all()
-    )
+    assets_query = db.query(ChapterPptAsset).filter(ChapterPptAsset.course_id == course.id)
+    if chapter is not None:
+        assets_query = assets_query.filter(ChapterPptAsset.chapter_id == chapter.id)
+    assets = assets_query.order_by(ChapterPptAsset.id.desc()).all()
     asset_ids = [asset.id for asset in assets]
     parse_tasks = (
         db.query(ChapterParseTask)
@@ -234,6 +232,7 @@ def list_courseware_assets(db: Session, course_id: str, chapter_id: str | int | 
     serialized_assets = []
     latest_asset_id = assets[0].id if assets else None
     for asset in assets:
+        asset_chapter = asset.chapter
         serialized_parse_tasks = []
         for task in parse_tasks_by_asset_id.get(asset.id, []):
             task_scripts = scripts_by_parse_task_id.get(task.id, [])
@@ -264,6 +263,8 @@ def list_courseware_assets(db: Session, course_id: str, chapter_id: str | int | 
         serialized_assets.append(
             {
                 "assetId": str(asset.id),
+                "chapterId": str(asset.chapter_id) if asset.chapter_id is not None else "",
+                "chapterName": asset_chapter.chapter_name if asset_chapter else "",
                 "versionNo": asset.version_no,
                 "fileName": asset.file_name,
                 "fileType": asset.file_type,
@@ -280,8 +281,8 @@ def list_courseware_assets(db: Session, course_id: str, chapter_id: str | int | 
 
     return {
         "courseId": course_id,
-        "chapterId": str(chapter.id),
-        "chapterName": chapter.chapter_name,
+        "chapterId": str(chapter.id) if chapter is not None else "",
+        "chapterName": chapter.chapter_name if chapter is not None else "",
         "assets": serialized_assets,
     }
 

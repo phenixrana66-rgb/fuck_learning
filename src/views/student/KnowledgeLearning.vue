@@ -33,7 +33,7 @@
             <h1>{{ currentAggregatedChapter.chapterTitle || '章节学习' }}</h1>
           </div>
           <div class="knowledge-chapter-header-meta">
-            {{ completedSectionCount }}/{{ chapterSections.length || 0 }} 已完成
+            {{ currentPageDisplay }}/{{ totalPageCount }} 页
           </div>
         </div>
 
@@ -133,12 +133,28 @@ const chapterSections = computed(() => getSectionsForAggregatedChapter(
   currentAggregatedChapter.value.chapterId || chapterId.value || ''
 ))
 const completedSectionCount = computed(() => chapterSections.value.filter((section) => Number(section.progressPercent || 0) >= 100).length)
+const totalPageCount = computed(() => chapterSections.value.length || 0)
 const currentLearningSectionId = computed(() => {
   const currentSection = chapterSections.value.find((section) => {
     const progress = Number(section?.progressPercent || 0)
     return progress > 0 && progress < 100
   })
   return String(currentSection?.sectionId || '')
+})
+const currentPageDisplay = computed(() => {
+  if (!totalPageCount.value) return 0
+
+  const routePageNo = Number(route.query.pageNo || 0)
+  if (Number.isFinite(routePageNo) && routePageNo > 0) {
+    return Math.min(routePageNo, totalPageCount.value)
+  }
+
+  const currentIndex = chapterSections.value.findIndex((section) => String(section?.sectionId || '') === currentLearningSectionId.value)
+  if (currentIndex >= 0) {
+    return currentIndex + 1
+  }
+
+  return 1
 })
 
 function syncLessonCache(nextLesson) {

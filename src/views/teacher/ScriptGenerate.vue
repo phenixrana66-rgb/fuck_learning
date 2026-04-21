@@ -151,10 +151,11 @@ const router = useRouter()
 const currentCourse = getCurrentCourse()
 const parseResult = getParseResult()
 const cachedTask = getScriptTask()
-const workspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
+const initialWorkspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
+const readWorkspaceContext = () => getTeacherWorkspaceContext(currentCourse.courseId)
 
 const form = ref({
-  parseId: workspaceContext.parseId || cachedTask.parseId || parseResult.parseId || '',
+  parseId: initialWorkspaceContext.parseId || cachedTask.parseId || parseResult.parseId || '',
   teachingStyle: cachedTask.teachingStyle || 'standard',
   speechSpeed: cachedTask.speechSpeed || 'normal',
   customOpening: cachedTask.customOpening || ''
@@ -167,8 +168,8 @@ const errorMsg = ref('')
 const taskSnapshot = ref({ ...cachedTask, parseId: form.value.parseId })
 const elapsedSeconds = ref(0)
 const chapterInfo = ref({
-  chapterId: workspaceContext.chapterId || '',
-  chapterName: workspaceContext.chapterName || ''
+  chapterId: initialWorkspaceContext.chapterId || '',
+  chapterName: initialWorkspaceContext.chapterName || ''
 })
 const assetHistory = ref([])
 const parseScripts = ref([])
@@ -180,10 +181,12 @@ const parseOptions = computed(() =>
       parseId: task.parseId,
       taskStatus: task.taskStatus,
       assetId: asset.assetId,
+      chapterId: asset.chapterId || '',
+      chapterName: asset.chapterName || '',
       versionNo: asset.versionNo,
       fileName: asset.fileName,
       fileType: asset.fileType,
-      label: `V${asset.versionNo} · ${asset.fileName} · ${parseStatusText(task.taskStatus)} · ${task.parseId}`,
+      label: `${asset.chapterName || '未命名章节'} · V${asset.versionNo} · ${asset.fileName} · ${parseStatusText(task.taskStatus)} · ${task.parseId}`,
       finishedAt: task.finishedAt || '',
       scriptCount: task.scriptCount || 0,
       audioCount: task.audioCount || 0
@@ -245,19 +248,14 @@ async function loadCoursewareHistory() {
   loadingHistory.value = true
   try {
     const res = await getCoursewareAssets({
-      courseId: currentCourse.courseId,
-      chapterId: chapterInfo.value.chapterId || undefined
+      courseId: currentCourse.courseId
     })
     const data = res.data || {}
-    chapterInfo.value = {
-      chapterId: data.chapterId || chapterInfo.value.chapterId || '',
-      chapterName: data.chapterName || chapterInfo.value.chapterName || ''
-    }
     assetHistory.value = data.assets || []
 
     const preferredParseId = resolvePreferredParseId(
       parseOptions.value,
-      workspaceContext.parseId || cachedTask.parseId || parseResult.parseId || ''
+      readWorkspaceContext().parseId || cachedTask.parseId || parseResult.parseId || ''
     )
     if (preferredParseId) {
       form.value.parseId = preferredParseId
@@ -278,11 +276,16 @@ async function handleParseChange(parseId) {
 async function syncParseSelection(parseId, options = {}) {
   const { preserveScript = false, silent = false } = options
   form.value.parseId = parseId || ''
-  const meta = selectedParseMeta.value
+  const meta = parseOptions.value.find((item) => item.parseId === form.value.parseId) || null
+  chapterInfo.value = {
+    chapterId: meta?.chapterId || '',
+    chapterName: meta?.chapterName || ''
+  }
+  const workspaceContext = readWorkspaceContext()
   const previousScriptId = preserveScript ? workspaceContext.scriptId || taskSnapshot.value.scriptId || '' : ''
   patchTeacherWorkspaceContext(currentCourse.courseId, {
-    chapterId: chapterInfo.value.chapterId,
-    chapterName: chapterInfo.value.chapterName,
+    chapterId: meta?.chapterId || '',
+    chapterName: meta?.chapterName || '',
     parseId: form.value.parseId,
     assetId: meta?.assetId || '',
     fileName: meta?.fileName || '',
@@ -306,9 +309,15 @@ async function loadScriptsForParse(parseId, preferredScriptId = '') {
   try {
     const res = await getParseScripts(parseId)
     const data = res.data || {}
+    chapterInfo.value = {
+      chapterId: data.chapterId || chapterInfo.value.chapterId || '',
+      chapterName: data.chapterName || chapterInfo.value.chapterName || ''
+    }
     parseScripts.value = data.scripts || []
     const matchedScript = parseScripts.value.find((item) => item.scriptId === preferredScriptId)
     patchTeacherWorkspaceContext(currentCourse.courseId, {
+      chapterId: chapterInfo.value.chapterId,
+      chapterName: chapterInfo.value.chapterName,
       scriptId: matchedScript?.scriptId || '',
       audioId: '',
       audioUrl: '',

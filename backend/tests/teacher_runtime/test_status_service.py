@@ -86,10 +86,12 @@ class TeacherRuntimeStatusServiceTestCase(unittest.TestCase):
             data = list_courseware_assets(db, 'course-001')
 
         self.assertEqual(data['courseId'], 'course-001')
-        self.assertTrue(data['chapterId'])
+        self.assertEqual(data['chapterId'], '')
+        self.assertEqual(data['chapterName'], '')
         self.assertEqual(len(data['assets']), 2)
         self.assertEqual([item['versionNo'] for item in data['assets']], [2, 1])
         self.assertEqual(data['assets'][0]['fileName'], 'demo-v2.pdf')
+        self.assertTrue(all('chapterId' in item and 'chapterName' in item for item in data['assets']))
         self.assertEqual(data['assets'][0]['parseTasks'][0]['parseId'], second_parse)
         self.assertEqual(data['assets'][1]['parseTasks'][0]['parseId'], first_parse)
         self.assertEqual(data['assets'][1]['parseTasks'][0]['scriptCount'], 1)

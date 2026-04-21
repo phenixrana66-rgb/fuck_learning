@@ -115,6 +115,7 @@ async def lesson_parse_endpoint(request: Request, db: Session = Depends(get_db))
             payload.get("fileContent"),
             payload.get("chapterName"),
             str(request.base_url),
+            payload.get("chapterId"),
         )
         Thread(target=run_teacher_parse_task, args=(data["parseId"],), daemon=True).start()
         return teacher_response(request, data)

@@ -1,7 +1,7 @@
 ﻿import axios from 'axios'
 import { buildSignedPayload } from '@/utils/sign'
 import { showErrorMessage } from '@/utils/message'
-import { getPlatformToken } from '@/utils/platform'
+import { getStudentPlatformToken } from '@/utils/platform'
 
 const studentService = axios.create({
   baseURL: import.meta.env.VITE_STUDENT_API_BASE || '/student-api',
@@ -15,7 +15,7 @@ let missingEndpointToastShown = false
 
 studentService.interceptors.request.use(
   (config) => {
-    const token = getPlatformToken()
+    const token = getStudentPlatformToken()
     const data = config.data || {}
 
     config.method = 'post'

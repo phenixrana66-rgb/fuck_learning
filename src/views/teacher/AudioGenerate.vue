@@ -192,7 +192,8 @@ const teacherInfo = getTeacherProfile()
 const parseResult = getParseResult()
 const scriptResult = getScriptResult()
 const audioResult = getAudioResult()
-const workspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
+const initialWorkspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
+const readWorkspaceContext = () => getTeacherWorkspaceContext(currentCourse.courseId)
 
 const voiceList = [
   { label: '女声标准', value: 'female_standard', desc: '清晰中性，适合日常教学。' },
@@ -202,17 +203,17 @@ const voiceList = [
 ]
 
 const form = ref({
-  parseId: workspaceContext.parseId || scriptResult.parseId || parseResult.parseId || '',
-  scriptId: workspaceContext.scriptId || scriptResult.scriptId || '',
-  voiceType: workspaceContext.voiceType || audioResult.voiceType || 'female_standard',
-  audioId: workspaceContext.audioId || audioResult.audioId || '',
-  audioUrl: workspaceContext.audioUrl || audioResult.audioUrl || '',
-  status: workspaceContext.audioStatus || audioResult.status || ''
+  parseId: initialWorkspaceContext.parseId || scriptResult.parseId || parseResult.parseId || '',
+  scriptId: initialWorkspaceContext.scriptId || scriptResult.scriptId || '',
+  voiceType: initialWorkspaceContext.voiceType || audioResult.voiceType || 'female_standard',
+  audioId: initialWorkspaceContext.audioId || audioResult.audioId || '',
+  audioUrl: initialWorkspaceContext.audioUrl || audioResult.audioUrl || '',
+  status: initialWorkspaceContext.audioStatus || audioResult.status || ''
 })
 
 const chapterInfo = ref({
-  chapterId: workspaceContext.chapterId || '',
-  chapterName: workspaceContext.chapterName || ''
+  chapterId: initialWorkspaceContext.chapterId || '',
+  chapterName: initialWorkspaceContext.chapterName || ''
 })
 const publishInfo = ref({
   published: Boolean(audioResult.lessonId),
@@ -237,10 +238,12 @@ const parseOptions = computed(() =>
       parseId: task.parseId,
       taskStatus: task.taskStatus,
       assetId: asset.assetId,
+      chapterId: asset.chapterId || '',
+      chapterName: asset.chapterName || '',
       versionNo: asset.versionNo,
       fileName: asset.fileName,
       fileType: asset.fileType,
-      label: `V${asset.versionNo} · ${asset.fileName} · ${parseStatusText(task.taskStatus)} · ${task.parseId}`
+      label: `${asset.chapterName || '未命名章节'} · V${asset.versionNo} · ${asset.fileName} · ${parseStatusText(task.taskStatus)} · ${task.parseId}`
     }))
   )
 )
@@ -268,11 +271,9 @@ async function refreshStatus() {
   try {
     const res = await getLessonStatus({ courseId: currentCourse.courseId })
     const data = res.data || {}
-    chapterInfo.value.chapterId = chapterInfo.value.chapterId || data.chapterId || ''
-    chapterInfo.value.chapterName = chapterInfo.value.chapterName || data.chapterName || ''
     publishInfo.value.status = data.publish?.status || publishInfo.value.status
     publishInfo.value.publishedAt = data.publish?.publishedAt || ''
-    publishInfo.value.chapterName = data.chapterName || ''
+    publishInfo.value.chapterName = data.chapterName || publishInfo.value.chapterName || ''
     publishInfo.value.lessonId = publishInfo.value.lessonId || data.publish?.lessonNo || ''
   } catch (_error) {
     // 保持静默，历史版本接口会继续尝试兜底
@@ -283,19 +284,14 @@ async function loadCoursewareHistory() {
   loadingHistory.value = true
   try {
     const res = await getCoursewareAssets({
-      courseId: currentCourse.courseId,
-      chapterId: chapterInfo.value.chapterId || undefined
+      courseId: currentCourse.courseId
     })
     const data = res.data || {}
-    chapterInfo.value = {
-      chapterId: data.chapterId || chapterInfo.value.chapterId || '',
-      chapterName: data.chapterName || chapterInfo.value.chapterName || ''
-    }
     assetHistory.value = data.assets || []
 
     const preferredParseId = resolvePreferredParseId(
       parseOptions.value,
-      workspaceContext.parseId || form.value.parseId || ''
+      readWorkspaceContext().parseId || form.value.parseId || ''
     )
     if (preferredParseId) {
       form.value.parseId = preferredParseId
@@ -320,15 +316,21 @@ async function handleParseChange(parseId) {
 async function syncParseSelection(parseId, options = {}) {
   const { preserveScript = false, preserveAudio = false, silent = false } = options
   form.value.parseId = parseId || ''
+  const meta = parseOptions.value.find((item) => item.parseId === form.value.parseId) || null
+  chapterInfo.value = {
+    chapterId: meta?.chapterId || '',
+    chapterName: meta?.chapterName || ''
+  }
+  const workspaceContext = readWorkspaceContext()
   const preferredScriptId = preserveScript ? workspaceContext.scriptId || form.value.scriptId || '' : ''
   const preferredAudioId = preserveAudio ? workspaceContext.audioId || form.value.audioId || '' : ''
   patchTeacherWorkspaceContext(currentCourse.courseId, {
-    chapterId: chapterInfo.value.chapterId,
-    chapterName: chapterInfo.value.chapterName,
+    chapterId: meta?.chapterId || '',
+    chapterName: meta?.chapterName || '',
     parseId: form.value.parseId,
-    assetId: selectedParseMeta.value?.assetId || '',
-    fileName: selectedParseMeta.value?.fileName || '',
-    versionNo: selectedParseMeta.value?.versionNo || null,
+    assetId: meta?.assetId || '',
+    fileName: meta?.fileName || '',
+    versionNo: meta?.versionNo || null,
     scriptId: preferredScriptId,
     audioId: preferredAudioId
   })
@@ -349,6 +351,10 @@ async function loadScriptsForParse(parseId, preferredScriptId = '', preferredAud
   try {
     const res = await getParseScripts(parseId)
     const data = res.data || {}
+    chapterInfo.value = {
+      chapterId: data.chapterId || chapterInfo.value.chapterId || '',
+      chapterName: data.chapterName || chapterInfo.value.chapterName || ''
+    }
     parseScripts.value = data.scripts || []
     const nextScriptId = resolvePreferredScriptId(parseScripts.value, preferredScriptId)
     if (nextScriptId) {
@@ -356,6 +362,8 @@ async function loadScriptsForParse(parseId, preferredScriptId = '', preferredAud
       await loadAudiosForScript(nextScriptId, preferredAudioId)
     }
     patchTeacherWorkspaceContext(currentCourse.courseId, {
+      chapterId: chapterInfo.value.chapterId,
+      chapterName: chapterInfo.value.chapterName,
       parseId,
       scriptId: nextScriptId,
       audioId: ''
@@ -592,7 +600,7 @@ async function resolveCoursewareId() {
     return ''
   }
 
-  return workspaceContext.coursewareId || ''
+  return readWorkspaceContext().coursewareId || ''
 }
 
 function resolvePreferredParseId(options, preferredParseId) {

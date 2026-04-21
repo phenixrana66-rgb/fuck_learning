@@ -11,6 +11,10 @@ function getRawSlideName(section) {
   return stripKnownSlideExtension(section?.slideName || '')
 }
 
+function getSourceChapterId(section) {
+  return String(section?.sourceChapterId || '').trim()
+}
+
 function toChineseNumber(value) {
   const safeValue = Math.max(1, Number(value || 1))
   const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九']
@@ -40,8 +44,11 @@ function buildAggregatedUnitState(unit) {
 
   rawSections.forEach((section, index) => {
     const rawSlideName = getRawSlideName(section)
-    const uniqueKey = rawSlideName
-      ? `slide:${rawSlideName}`
+    const sourceChapterId = getSourceChapterId(section)
+    const uniqueKey = sourceChapterId
+      ? `source:${sourceChapterId}`
+      : rawSlideName
+        ? `slide:${rawSlideName}`
       : `generated:${String(section?.sectionId || index + 1)}`
     const pageNo = toSafeNumber(section?.pageNo)
     const progressPercent = toSafeNumber(section?.progressPercent)
@@ -54,6 +61,7 @@ function buildAggregatedUnitState(unit) {
         uniqueKey,
         unitId,
         unitTitle,
+        sourceChapterId,
         rawSlideName,
         hasExplicitSlideName: Boolean(rawSlideName),
         sections: [section],
@@ -89,7 +97,9 @@ function buildAggregatedUnitState(unit) {
 
   const chapters = sortedBuckets.map((bucket, index) => {
     const chapterTitle = bucket.hasExplicitSlideName ? bucket.rawSlideName : buildFallbackChapterTitle(index + 1)
-    const chapterKey = bucket.hasExplicitSlideName
+    const chapterKey = bucket.sourceChapterId
+      ? `source-${bucket.sourceChapterId}`
+      : bucket.hasExplicitSlideName
       ? chapterTitle
       : `generated-${index + 1}-${bucket.representSectionId || index + 1}`
     return {
@@ -98,6 +108,7 @@ function buildAggregatedUnitState(unit) {
       unitTitle: bucket.unitTitle,
       chapterTitle,
       isGeneratedTitle: !bucket.hasExplicitSlideName,
+      sourceChapterId: bucket.sourceChapterId,
       progressPercent: Math.round(bucket.progressPercentSum / bucket.sectionCount),
       masteryPercent: Math.round(bucket.masteryPercentSum / bucket.sectionCount),
       firstPageNo: bucket.firstPageNo,
@@ -129,6 +140,7 @@ export function buildAggregatedUnitChapters(unit) {
     unitTitle: chapter.unitTitle,
     chapterTitle: chapter.chapterTitle,
     isGeneratedTitle: chapter.isGeneratedTitle,
+    sourceChapterId: chapter.sourceChapterId,
     progressPercent: chapter.progressPercent,
     masteryPercent: chapter.masteryPercent,
     firstPageNo: chapter.firstPageNo,

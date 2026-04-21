@@ -23,10 +23,10 @@
           :disabled="submitting || polling"
           accept=".pptx,.pdf"
         >
-          <el-button :loading="submitting">选择文件并解析</el-button>
+          <el-button :loading="submitting">选择文件</el-button>
         </el-upload>
 
-        <el-button type="primary" :loading="submitting" @click="submitParse">上传并解析</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="!parseForm.fileBase64" @click="submitParse">上传并解析</el-button>
         <el-button :disabled="!parseForm.parseId" @click="pollStatus">查询状态</el-button>
       </div>
 
@@ -83,7 +83,7 @@ import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
 import { lessonParse, getParseStatusAPI} from '@/api/teacher'
-import { getCurrentCourse, saveParseResult } from '@/utils/platform'
+import { getCurrentCourse, patchTeacherWorkspaceContext, saveParseResult } from '@/utils/platform'
 
 const router = useRouter()
 const currentCourse = getCurrentCourse()
@@ -158,9 +158,9 @@ function handleSelectedFile(file) {
   parseForm.value.chapterName = deriveChapterName(file.name)
   const reader = new FileReader()
   reader.readAsDataURL(file)
-  reader.onload = async () => {
+  reader.onload = () => {
     parseForm.value.fileBase64 = reader.result
-    await submitParse()
+    ElMessage.success('文件已就绪，可修改章节名后开始解析。')
   }
   reader.onerror = () => {
     ElMessage.error('课件文件读取失败，请重新选择')
@@ -206,6 +206,16 @@ async function submitParse() {
       ...data,
       fileName: parseForm.value.fileName
     })
+    patchTeacherWorkspaceContext(currentCourse.courseId, {
+      chapterId: parseForm.value.chapterId,
+      chapterName: parseForm.value.chapterName,
+      parseId: parseForm.value.parseId,
+      fileName: parseForm.value.fileName,
+      scriptId: '',
+      audioId: '',
+      audioUrl: '',
+      audioStatus: ''
+    })
 
     if (parseForm.value.parseId && parseForm.value.status !== 'success') {
       pollStatus()
@@ -244,6 +254,16 @@ async function pollStatus() {
         ...data,
         parseId: parseForm.value.parseId,
         fileName: parseForm.value.fileName
+      })
+      patchTeacherWorkspaceContext(currentCourse.courseId, {
+        chapterId: parseForm.value.chapterId,
+        chapterName: parseForm.value.chapterName,
+        parseId: parseForm.value.parseId,
+        fileName: parseForm.value.fileName,
+        scriptId: '',
+        audioId: '',
+        audioUrl: '',
+        audioStatus: ''
       })
 
       if (data.status === 'success') {
