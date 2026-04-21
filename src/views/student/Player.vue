@@ -1996,7 +1996,6 @@ onDeactivated(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 420px;
   gap: 14px;
-  min-height: calc(100vh - 300px);
   padding: 16px 22px 20px;
   background:
     radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.86), transparent 28%),
