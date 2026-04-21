@@ -48,360 +48,385 @@
       class="student-player-main app-scrollable"
       :class="{ 'is-progress-view': activeView === 'progress' }"
     >
-      <section v-if="showCourseOverview" class="student-course-overview">
-        <div class="student-course-overview-main">
-          <h1>{{ lesson.courseName || lesson.lessonName }}</h1>
-          <h3 class="student-course-overview-teacher">授课教师：{{ lesson.teacherName || '未设置' }}</h3>
-        </div>
-        <div class="student-course-overview-meta">
-          <div class="student-course-overview-metric">
-            <span>课程总进度</span>
-            <strong>{{ overallProgress }}%</strong>
-          </div>
-          <div class="student-course-overview-metric">
-            <span>章节理解度</span>
-            <strong>{{ overallMastery }}%</strong>
-          </div>
-        </div>
-      </section>
-
-      <section v-if="activeView === 'knowledge'" class="student-knowledge-page">
-        <section
-          v-for="unit in aggregatedUnitChapters"
-          :key="unit.unitId"
-          class="student-unit-section"
-        >
-          <div class="student-unit-header">
-            <div class="student-unit-header-main">
-              <div class="student-unit-badge">知识单元</div>
-              <h2>{{ unit.unitTitle }}</h2>
-            </div>
-            <div class="student-unit-header-meta">{{ unit.chapters?.filter((chapter) => Number(chapter.progressPercent || 0) >= 100).length || 0 }}/{{ unit.chapters?.length || 0 }} 已完成</div>
-          </div>
-
-          <div class="student-chapter-grid">
-            <article
-              v-for="chapter in unit.chapters"
-              :key="chapter.chapterId"
-              class="student-chapter-card"
-              :class="{ active: chapter.chapterId === activeKnowledgeChapter.chapterId }"
-              @click="setActiveKnowledgeChapter(chapter)"
-            >
-              <div class="student-chapter-card-head">
-                <div>
-                  <div class="student-chapter-status" :class="getAggregatedChapterStatusClass(chapter)">{{ getAggregatedChapterStatusLabel(chapter) }}</div>
-                  <h3>{{ chapter.chapterTitle }}</h3>
+      <transition :name="playerViewTransitionName" mode="out-in" appear>
+        <div :key="activeView" class="student-player-view-shell">
+          <template v-if="activeView === 'knowledge'">
+            <section class="student-course-overview">
+              <div class="student-course-overview-main">
+                <h1>{{ lesson.courseName || lesson.lessonName }}</h1>
+                <h3 class="student-course-overview-teacher">授课教师：{{ lesson.teacherName || '未设置' }}</h3>
+              </div>
+              <div class="student-course-overview-meta">
+                <div class="student-course-overview-metric">
+                  <span>课程总进度</span>
+                  <strong>{{ overallProgress }}%</strong>
                 </div>
-                <div class="student-chapter-mastery-badge">
-                  <span>掌握度</span>
-                  <strong>{{ Number(chapter.masteryPercent || 0) }}%</strong>
+                <div class="student-course-overview-metric">
+                  <span>章节理解度</span>
+                  <strong>{{ overallMastery }}%</strong>
                 </div>
               </div>
-              <div class="student-chapter-card-footer">
-                <div class="student-chapter-progress-block">
-                  <div class="student-chapter-progress-text">
-                    <span>学习进度</span>
-                    <strong>{{ Number(chapter.progressPercent || 0) }}%</strong>
+            </section>
+
+            <section class="student-knowledge-page">
+              <section
+                v-for="unit in aggregatedUnitChapters"
+                :key="unit.unitId"
+                class="student-unit-section"
+              >
+                <div class="student-unit-header">
+                  <div class="student-unit-header-main">
+                    <div class="student-unit-badge">知识单元</div>
+                    <h2>{{ unit.unitTitle }}</h2>
                   </div>
-                  <el-progress :percentage="Number(chapter.progressPercent || 0)" :stroke-width="8" :show-text="false" />
+                  <div class="student-unit-header-meta">{{ unit.chapters?.filter((chapter) => Number(chapter.progressPercent || 0) >= 100).length || 0 }}/{{ unit.chapters?.length || 0 }} 已完成</div>
                 </div>
-                <div class="student-chapter-footer-row">
-                  <button type="button" class="student-knowledge-action-button" @click.stop="goToKnowledgeLearning(chapter)">
-                    <span class="student-knowledge-action-button-core">
-                      <span class="student-knowledge-action-button-text">进入章节</span>
-                      <span class="student-knowledge-action-button-glow" aria-hidden="true"></span>
-                    </span>
+
+                <div class="student-chapter-grid">
+                  <article
+                    v-for="chapter in unit.chapters"
+                    :key="chapter.chapterId"
+                    class="student-chapter-card"
+                    :class="{ active: chapter.chapterId === activeKnowledgeChapter.chapterId }"
+                    @click="setActiveKnowledgeChapter(chapter)"
+                  >
+                    <div class="student-chapter-card-head">
+                      <div>
+                        <div class="student-chapter-status" :class="getAggregatedChapterStatusClass(chapter)">{{ getAggregatedChapterStatusLabel(chapter) }}</div>
+                        <h3>{{ chapter.chapterTitle }}</h3>
+                      </div>
+                      <div class="student-chapter-mastery-badge">
+                        <span>掌握度</span>
+                        <strong>{{ Number(chapter.masteryPercent || 0) }}%</strong>
+                      </div>
+                    </div>
+                    <div class="student-chapter-card-footer">
+                      <div class="student-chapter-progress-block">
+                        <div class="student-chapter-progress-text">
+                          <span>学习进度</span>
+                          <strong>{{ Number(chapter.progressPercent || 0) }}%</strong>
+                        </div>
+                        <el-progress :percentage="Number(chapter.progressPercent || 0)" :stroke-width="8" :show-text="false" />
+                      </div>
+                      <div class="student-chapter-footer-row">
+                        <button type="button" class="student-knowledge-action-button" @click.stop="goToKnowledgeLearning(chapter)">
+                          <span class="student-knowledge-action-button-core">
+                            <span class="student-knowledge-action-button-text">进入章节</span>
+                            <span class="student-knowledge-action-button-glow" aria-hidden="true"></span>
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              </section>
+            </section>
+          </template>
+
+          <template v-else-if="activeView === 'progress'">
+            <section class="student-course-overview">
+              <div class="student-course-overview-main">
+                <h1>{{ lesson.courseName || lesson.lessonName }}</h1>
+                <h3 class="student-course-overview-teacher">授课教师：{{ lesson.teacherName || '未设置' }}</h3>
+              </div>
+              <div class="student-course-overview-meta">
+                <div class="student-course-overview-metric">
+                  <span>课程总进度</span>
+                  <strong>{{ overallProgress }}%</strong>
+                </div>
+                <div class="student-course-overview-metric">
+                  <span>章节理解度</span>
+                  <strong>{{ overallMastery }}%</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="student-progress-page">
+              <section class="student-progress-hero">
+                <div class="student-progress-hero-main">
+                  <div class="student-progress-hero-copy">
+                    <h2>从上次学习位置继续，按当前状态调整学习节奏。</h2>
+                  </div>
+                  <div class="student-progress-hero-actions">
+                    <button type="button" class="student-resume-button" @click="resumeLearning">
+                      <span class="student-resume-button-core">
+                        <span class="student-resume-button-text">{{ resumeLoading ? '正在续学...' : '继续学习' }}</span>
+                        <span class="student-resume-button-glow" aria-hidden="true"></span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="student-progress-stats">
+                  <div class="student-progress-stats-top">
+                    <div class="student-progress-stat-card">
+                      <span>章节总数</span>
+                      <strong>{{ chapterCount }} 个</strong>
+                    </div>
+                    <div class="student-progress-stat-card">
+                      <span>最近问答</span>
+                      <strong>{{ qaHistoryCount }} 条</strong>
+                    </div>
+                  </div>
+                  <div class="student-progress-stats-bottom">
+                    <div class="student-progress-stat-card chapter">
+                      <span>当前章节</span>
+                      <strong>{{ recommendedResumeChapter.chapterTitle || '待学习章节' }}</strong>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="student-progress-panel student-course-mastery-panel">
+                <div class="student-progress-panel-head">
+                  <div>
+                    <div class="student-progress-panel-title">课程掌握度</div>
+                  </div>
+                </div>
+
+                <div class="student-course-mastery-card">
+                  <div v-if="courseMasteryChapters.length" class="student-course-mastery-list">
+                    <div
+                      v-for="chapter in courseMasteryChapters"
+                      :key="chapter.chapterId"
+                      class="student-course-mastery-item"
+                      :class="{ expanded: isCourseMasteryExpanded(chapter.chapterId) }"
+                    >
+                      <div class="student-course-mastery-item-shell">
+                        <div class="student-course-mastery-item-head">
+                          <div class="student-course-mastery-item-main">
+                            <div class="student-course-mastery-item-title">{{ chapter.chapterTitle }}</div>
+                          </div>
+                          <div class="student-course-mastery-item-actions">
+                            <strong class="student-course-mastery-item-value">{{ Number(chapter.masteryPercent || 0) }}%</strong>
+                            <button
+                              type="button"
+                              class="student-course-mastery-toggle"
+                              :aria-label="isCourseMasteryExpanded(chapter.chapterId) ? '收起章节内课掌握度' : '展开章节内课掌握度'"
+                              @click="toggleCourseMasteryChapter(chapter.chapterId)"
+                            >
+                              <svg
+                                viewBox="0 0 20 20"
+                                aria-hidden="true"
+                                :class="{ expanded: isCourseMasteryExpanded(chapter.chapterId) }"
+                              >
+                                <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                        <el-progress
+                          :percentage="Number(chapter.masteryPercent || 0)"
+                          :stroke-width="10"
+                          :show-text="false"
+                          class="student-course-mastery-bar"
+                        />
+                        <transition name="student-course-mastery-expand">
+                          <div v-if="isCourseMasteryExpanded(chapter.chapterId)" class="student-course-mastery-section-list">
+                            <div
+                              v-for="section in chapter.sections"
+                              :key="section.sectionId || section.chapterId"
+                              class="student-course-mastery-section-item"
+                            >
+                              <div class="student-course-mastery-section-main">
+                                <div class="student-course-mastery-section-title">{{ section.chapterTitle }}</div>
+                              </div>
+                              <div class="student-course-mastery-section-side">
+                                <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
+                                <el-progress
+                                  :percentage="Number(section.masteryPercent || 0)"
+                                  :stroke-width="8"
+                                  :show-text="false"
+                                  class="student-course-mastery-section-bar"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </transition>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="student-course-mastery-empty">
+                    暂无章节掌握度数据
+                  </div>
+                </div>
+              </section>
+            </section>
+          </template>
+
+          <section v-else class="student-ai-page" :class="{ collapsed: !aiToolsVisible }">
+            <div class="student-ai-chat-card">
+              <div class="student-ai-chat-header compact">
+                <div class="student-ai-chat-header-main">
+                  <div class="student-ai-chat-title">AI实时问答</div>
+                </div>
+                <button type="button" class="student-ai-new-chat-button" @click="startNewConversation">新对话</button>
+              </div>
+
+              <div class="student-ai-chat-body app-scrollable" :class="{ empty: chatList.length === 0 }">
+                <div v-if="chatList.length" class="student-chat-list">
+                  <div
+                    v-for="item in chatList"
+                    :key="item.id"
+                    class="student-chat-item"
+                    :class="`is-${item.role}`"
+                  >
+                    <div class="student-chat-role">{{ item.role === 'user' ? '我' : 'AI 学伴' }}</div>
+                    <div class="student-chat-bubble">
+                      <div class="student-chat-content">{{ item.content }}</div>
+                      <div v-if="item.relatedPoints?.length" class="student-chat-points">
+                        <span v-for="point in item.relatedPoints" :key="point" class="student-chat-point-tag">{{ point }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="asking && !assistantStreamingStarted" class="student-chat-item is-assistant pending">
+                    <div class="student-chat-role">AI 学伴</div>
+                    <div class="student-chat-loading">
+                      <span class="student-inline-loading" aria-hidden="true"></span>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="student-ai-welcome">
+                  <div class="student-ai-welcome-suggestions">
+                    <button
+                      v-for="question in aiSuggestedQuestions"
+                      :key="question"
+                      type="button"
+                      class="student-ai-suggestion-chip"
+                      @click="submitSuggestedQuestion(question)"
+                    >
+                      {{ question }}
+                    </button>
+                  </div>
+                  <div class="student-ai-welcome-spacer"></div>
+                </div>
+              </div>
+
+              <div class="student-ai-input-area">
+                <el-input
+                  v-model="questionText"
+                  type="textarea"
+                  :rows="4"
+                  resize="none"
+                  placeholder="输入你的问题"
+                  @keydown.enter.exact.prevent="submitTextQuestion"
+                />
+                <div class="student-ai-input-actions">
+                  <div v-if="isRecording" class="student-ai-voice-status">
+                    <span class="student-ai-voice-timer">{{ formatRecordingDuration(recordingSeconds) }}</span>
+                    <button
+                      type="button"
+                      class="student-ai-icon-button voice stop"
+                      aria-label="结束录音"
+                      @click="toggleRecording"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="7" y="7" width="10" height="10" rx="2" />
+                      </svg>
+                    </button>
+                  </div>
+                  <button
+                    v-else
+                    type="button"
+                    class="student-ai-icon-button voice"
+                    :class="{ loading: voiceLoading }"
+                    :disabled="voiceLoading"
+                    :aria-label="voiceLoading ? '语音识别中' : '语音输入'"
+                    @click="!voiceLoading ? toggleRecording() : undefined"
+                  >
+                    <span v-if="voiceLoading" class="student-inline-loading" aria-hidden="true"></span>
+                    <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 3.5a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 12 3.5Z" />
+                      <path d="M7.5 10.5a4.5 4.5 0 0 0 9 0" />
+                      <path d="M12 15v5" />
+                      <path d="M9 20.5h6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="student-ai-icon-button send"
+                    :class="{ 'is-stop': asking }"
+                    :disabled="!asking && !questionText.trim()"
+                    :aria-label="asking ? '终止回答' : '发送问题'"
+                    @click="asking ? stopStreamingAnswer() : submitTextQuestion()"
+                  >
+                    <svg v-if="!asking" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 4v12" />
+                      <path d="m7 9 5-5 5 5" />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="7" y="7" width="10" height="10" rx="2" />
+                    </svg>
                   </button>
                 </div>
               </div>
-            </article>
-          </div>
-        </section>
-      </section>
+            </div>
 
-      <section v-else-if="activeView === 'progress'" class="student-progress-page">
-        <section class="student-progress-hero">
-          <div class="student-progress-hero-main">
-            <div class="student-progress-hero-copy">
-              <h2>从上次学习位置继续，按当前状态调整学习节奏。</h2>
-            </div>
-            <div class="student-progress-hero-actions">
-              <button type="button" class="student-resume-button" @click="resumeLearning">
-                <span class="student-resume-button-core">
-                  <span class="student-resume-button-text">{{ resumeLoading ? '正在续学...' : '继续学习' }}</span>
-                  <span class="student-resume-button-glow" aria-hidden="true"></span>
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div class="student-progress-stats">
-            <div class="student-progress-stats-top">
-              <div class="student-progress-stat-card">
-                <span>章节总数</span>
-                <strong>{{ chapterCount }} 个</strong>
-              </div>
-              <div class="student-progress-stat-card">
-                <span>最近问答</span>
-                <strong>{{ qaHistoryCount }} 条</strong>
-              </div>
-            </div>
-            <div class="student-progress-stats-bottom">
-              <div class="student-progress-stat-card chapter">
-                <span>当前章节</span>
-                <strong>{{ recommendedResumeChapter.chapterTitle || '待学习章节' }}</strong>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="student-progress-panel student-course-mastery-panel">
-          <div class="student-progress-panel-head">
-            <div>
-              <div class="student-progress-panel-title">课程掌握度</div>
-            </div>
-          </div>
-
-          <div class="student-course-mastery-card">
-            <div v-if="courseMasteryChapters.length" class="student-course-mastery-list">
-              <div
-                v-for="chapter in courseMasteryChapters"
-                :key="chapter.chapterId"
-                class="student-course-mastery-item"
-                :class="{ expanded: isCourseMasteryExpanded(chapter.chapterId) }"
+            <div class="student-ai-sidebar-shell" :class="{ collapsed: !aiToolsVisible }">
+              <button
+                type="button"
+                class="student-ai-sidebar-toggle"
+                :class="{ collapsed: !aiToolsVisible }"
+                @click="toggleAiTools"
               >
-                <div class="student-course-mastery-item-shell">
-                  <div class="student-course-mastery-item-head">
-                    <div class="student-course-mastery-item-main">
-                      <div class="student-course-mastery-item-title">{{ chapter.chapterTitle }}</div>
-                    </div>
-                    <div class="student-course-mastery-item-actions">
-                      <strong class="student-course-mastery-item-value">{{ Number(chapter.masteryPercent || 0) }}%</strong>
-                      <button
-                        type="button"
-                        class="student-course-mastery-toggle"
-                        :aria-label="isCourseMasteryExpanded(chapter.chapterId) ? '收起章节内课掌握度' : '展开章节内课掌握度'"
-                        @click="toggleCourseMasteryChapter(chapter.chapterId)"
-                      >
-                        <svg
-                          viewBox="0 0 20 20"
-                          aria-hidden="true"
-                          :class="{ expanded: isCourseMasteryExpanded(chapter.chapterId) }"
-                        >
-                          <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <el-icon><ArrowRight /></el-icon>
+              </button>
+
+              <aside v-if="aiToolsVisible" class="student-ai-sidebar-card">
+                <section class="student-ai-sidebar-section">
+                  <div class="student-ai-tools-title">AI工具</div>
+                  <div class="student-ai-tool-stack">
+                    <button
+                      v-for="tool in filteredAiTools"
+                      :key="tool.id"
+                      type="button"
+                      class="student-ai-tool-tile"
+                    >
+                      <span class="student-ai-tool-icon" :class="`is-${tool.id}`">{{ tool.name.slice(0, 1) }}</span>
+                      <span class="student-ai-tool-name">{{ tool.name }}</span>
+                      <el-icon><ArrowRight /></el-icon>
+                    </button>
+                  </div>
+                </section>
+
+                <section class="student-ai-sidebar-section history">
+                  <div class="student-ai-tools-title">历史问答</div>
+                  <div v-if="qaSessions.length" class="student-ai-history-list app-scrollable">
+                    <button
+                      v-for="session in qaSessions"
+                      :key="session.sessionId"
+                      type="button"
+                      class="student-ai-history-item"
+                      :class="{ active: session.sessionId === activeSessionId }"
+                      @click="openQaSession(session.sessionId)"
+                      @dblclick.stop="startSessionTitleEdit(session)"
+                    >
+                      <span class="student-ai-history-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                          <path d="M6.5 7.5h11a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H11l-3.5 3v-3H6.5a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3Z" />
+                          <path d="M9 11h6" />
                         </svg>
-                      </button>
-                    </div>
+                      </span>
+                      <input
+                        v-if="editingSessionId === session.sessionId"
+                        v-model="editingSessionTitle"
+                        class="student-ai-history-input"
+                        maxlength="24"
+                        @click.stop
+                        @blur="commitSessionTitleEdit(session.sessionId)"
+                        @keydown.enter.prevent="commitSessionTitleEdit(session.sessionId)"
+                        @keydown.esc.prevent="cancelSessionTitleEdit"
+                      />
+                      <span v-else class="student-ai-history-title">{{ getSessionDisplayTitle(session) }}</span>
+                    </button>
                   </div>
-                  <el-progress
-                    :percentage="Number(chapter.masteryPercent || 0)"
-                    :stroke-width="10"
-                    :show-text="false"
-                    class="student-course-mastery-bar"
-                  />
-                  <transition name="student-course-mastery-expand">
-                    <div v-if="isCourseMasteryExpanded(chapter.chapterId)" class="student-course-mastery-section-list">
-                      <div
-                        v-for="section in chapter.sections"
-                        :key="section.sectionId || section.chapterId"
-                        class="student-course-mastery-section-item"
-                      >
-                        <div class="student-course-mastery-section-main">
-                          <div class="student-course-mastery-section-title">{{ section.chapterTitle }}</div>
-                        </div>
-                        <div class="student-course-mastery-section-side">
-                          <strong>{{ Number(section.masteryPercent || 0) }}%</strong>
-                          <el-progress
-                            :percentage="Number(section.masteryPercent || 0)"
-                            :stroke-width="8"
-                            :show-text="false"
-                            class="student-course-mastery-section-bar"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </transition>
-                </div>
-              </div>
+                  <div v-else class="student-ai-history-empty">暂无历史问答</div>
+                </section>
+              </aside>
             </div>
-            <div v-else class="student-course-mastery-empty">
-              暂无章节掌握度数据
-            </div>
-          </div>
-        </section>
-      </section>
-
-      <section v-else-if="activeView === 'ai'" class="student-ai-page" :class="{ collapsed: !aiToolsVisible }">
-        <div class="student-ai-chat-card">
-          <div class="student-ai-chat-header compact">
-            <div class="student-ai-chat-header-main">
-              <div class="student-ai-chat-title">AI实时问答</div>
-            </div>
-            <button type="button" class="student-ai-new-chat-button" @click="startNewConversation">新对话</button>
-          </div>
-
-          <div class="student-ai-chat-body app-scrollable" :class="{ empty: chatList.length === 0 }">
-            <div v-if="chatList.length" class="student-chat-list">
-              <div
-                v-for="item in chatList"
-                :key="item.id"
-                class="student-chat-item"
-                :class="`is-${item.role}`"
-              >
-                <div class="student-chat-role">{{ item.role === 'user' ? '我' : 'AI 学伴' }}</div>
-                <div class="student-chat-bubble">
-                  <div class="student-chat-content">{{ item.content }}</div>
-                  <div v-if="item.relatedPoints?.length" class="student-chat-points">
-                    <span v-for="point in item.relatedPoints" :key="point" class="student-chat-point-tag">{{ point }}</span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="asking && !assistantStreamingStarted" class="student-chat-item is-assistant pending">
-                <div class="student-chat-role">AI 学伴</div>
-                <div class="student-chat-loading">
-                  <span class="student-inline-loading" aria-hidden="true"></span>
-                </div>
-              </div>
-            </div>
-            <div v-else class="student-ai-welcome">
-              <div class="student-ai-welcome-suggestions">
-                <button
-                  v-for="question in aiSuggestedQuestions"
-                  :key="question"
-                  type="button"
-                  class="student-ai-suggestion-chip"
-                  @click="submitSuggestedQuestion(question)"
-                >
-                  {{ question }}
-                </button>
-              </div>
-              <div class="student-ai-welcome-spacer"></div>
-            </div>
-          </div>
-
-          <div class="student-ai-input-area">
-            <el-input
-              v-model="questionText"
-              type="textarea"
-              :rows="4"
-              resize="none"
-              placeholder="输入你的问题"
-              @keydown.enter.exact.prevent="submitTextQuestion"
-            />
-            <div class="student-ai-input-actions">
-              <div v-if="isRecording" class="student-ai-voice-status">
-                <span class="student-ai-voice-timer">{{ formatRecordingDuration(recordingSeconds) }}</span>
-                <button
-                  type="button"
-                  class="student-ai-icon-button voice stop"
-                  aria-label="结束录音"
-                  @click="toggleRecording"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="7" y="7" width="10" height="10" rx="2" />
-                  </svg>
-                </button>
-              </div>
-              <button
-                v-else
-                type="button"
-                class="student-ai-icon-button voice"
-                :class="{ loading: voiceLoading }"
-                :disabled="voiceLoading"
-                :aria-label="voiceLoading ? '语音识别中' : '语音输入'"
-                @click="!voiceLoading ? toggleRecording() : undefined"
-              >
-                <span v-if="voiceLoading" class="student-inline-loading" aria-hidden="true"></span>
-                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3.5a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 12 3.5Z" />
-                  <path d="M7.5 10.5a4.5 4.5 0 0 0 9 0" />
-                  <path d="M12 15v5" />
-                  <path d="M9 20.5h6" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="student-ai-icon-button send"
-                :class="{ 'is-stop': asking }"
-                :disabled="!asking && !questionText.trim()"
-                :aria-label="asking ? '终止回答' : '发送问题'"
-                @click="asking ? stopStreamingAnswer() : submitTextQuestion()"
-              >
-                <svg v-if="!asking" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 4v12" />
-                  <path d="m7 9 5-5 5 5" />
-                </svg>
-                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="7" y="7" width="10" height="10" rx="2" />
-                </svg>
-              </button>
-            </div>
-          </div>
+          </section>
         </div>
-
-        <div class="student-ai-sidebar-shell" :class="{ collapsed: !aiToolsVisible }">
-          <button
-            type="button"
-            class="student-ai-sidebar-toggle"
-            :class="{ collapsed: !aiToolsVisible }"
-            @click="toggleAiTools"
-          >
-            <el-icon><ArrowRight /></el-icon>
-          </button>
-
-          <aside v-if="aiToolsVisible" class="student-ai-sidebar-card">
-            <section class="student-ai-sidebar-section">
-              <div class="student-ai-tools-title">AI工具</div>
-              <div class="student-ai-tool-stack">
-                <button
-                  v-for="tool in filteredAiTools"
-                  :key="tool.id"
-                  type="button"
-                  class="student-ai-tool-tile"
-                >
-                  <span class="student-ai-tool-icon" :class="`is-${tool.id}`">{{ tool.name.slice(0, 1) }}</span>
-                  <span class="student-ai-tool-name">{{ tool.name }}</span>
-                  <el-icon><ArrowRight /></el-icon>
-                </button>
-              </div>
-            </section>
-
-            <section class="student-ai-sidebar-section history">
-              <div class="student-ai-tools-title">历史问答</div>
-              <div v-if="qaSessions.length" class="student-ai-history-list app-scrollable">
-                <button
-                  v-for="session in qaSessions"
-                  :key="session.sessionId"
-                  type="button"
-                  class="student-ai-history-item"
-                  :class="{ active: session.sessionId === activeSessionId }"
-                  @click="openQaSession(session.sessionId)"
-                  @dblclick.stop="startSessionTitleEdit(session)"
-                >
-                  <span class="student-ai-history-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24">
-                      <path d="M6.5 7.5h11a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H11l-3.5 3v-3H6.5a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3Z" />
-                      <path d="M9 11h6" />
-                    </svg>
-                  </span>
-                  <input
-                    v-if="editingSessionId === session.sessionId"
-                    v-model="editingSessionTitle"
-                    class="student-ai-history-input"
-                    maxlength="24"
-                    @click.stop
-                    @blur="commitSessionTitleEdit(session.sessionId)"
-                    @keydown.enter.prevent="commitSessionTitleEdit(session.sessionId)"
-                    @keydown.esc.prevent="cancelSessionTitleEdit"
-                  />
-                  <span v-else class="student-ai-history-title">{{ getSessionDisplayTitle(session) }}</span>
-                </button>
-              </div>
-              <div v-else class="student-ai-history-empty">暂无历史问答</div>
-            </section>
-          </aside>
-        </div>
-      </section>
+      </transition>
     </main>
   </div>
 </template>
@@ -475,6 +500,7 @@ const editingSessionId = ref('')
 const editingSessionTitle = ref('')
 const primaryNavRefs = ref({})
 const navIndicator = ref({ width: 0, left: 0, opacity: 0 })
+const playerViewTransitionName = ref('student-player-view-fade')
 const userMenuOpen = ref(false)
 const progressFallbackNote = ref('若服务端节奏接口暂不可用，系统会自动回退为本地建议。')
 const rhythmSuggestion = ref('建议先完成当前章节，再根据掌握度决定是否进入下一章。')
@@ -487,6 +513,11 @@ const primaryNavItems = [
   { label: '智课讲授', value: 'knowledge' },
   { label: 'AI实时问答', value: 'ai' }
 ]
+const playerViewOrder = {
+  progress: 0,
+  knowledge: 1,
+  ai: 2
+}
 
 const lessonId = computed(() => route.params.lessonId)
 const allChapters = computed(() => (lesson.value.units || []).flatMap((unit) => unit.chapters || []))
@@ -568,7 +599,6 @@ const overallMastery = computed(() => {
   if (!allChapters.value.length) return 0
   return Math.round(allChapters.value.reduce((sum, chapter) => sum + Number(chapter.masteryPercent || 0), 0) / allChapters.value.length)
 })
-const showCourseOverview = computed(() => activeView.value === 'progress' || activeView.value === 'knowledge')
 const chapterCount = computed(() => allChapters.value.length)
 const filteredAiTools = computed(() => {
   const fallbackTools = [
@@ -891,6 +921,16 @@ function updateNavIndicator() {
     left: target.offsetLeft,
     opacity: 1
   }
+}
+
+function resolvePlayerViewTransitionName(nextView, prevView) {
+  if (!prevView || nextView === prevView) return 'student-player-view-fade'
+  const nextOrder = playerViewOrder[nextView]
+  const prevOrder = playerViewOrder[prevView]
+  if (!Number.isFinite(nextOrder) || !Number.isFinite(prevOrder)) return 'student-player-view-fade'
+  if (nextOrder > prevOrder) return 'student-player-view-forward'
+  if (nextOrder < prevOrder) return 'student-player-view-backward'
+  return 'student-player-view-fade'
 }
 
 function switchView(value) {
@@ -1338,7 +1378,8 @@ onActivated(async () => {
   pageMainRef.value?.addEventListener('scroll', handlePlayerScroll, { passive: true })
 })
 
-watch(activeView, async () => {
+watch(activeView, async (nextView, prevView) => {
+  playerViewTransitionName.value = resolvePlayerViewTransitionName(nextView, prevView)
   await nextTick()
   updateNavIndicator()
 })
@@ -1604,6 +1645,45 @@ onDeactivated(() => {
   overflow-x: hidden;
   padding-top: 18px;
   padding-bottom: 28px;
+}
+
+.student-player-view-shell {
+  display: grid;
+  gap: 0;
+}
+
+.student-player-view-fade-enter-active,
+.student-player-view-fade-leave-active,
+.student-player-view-forward-enter-active,
+.student-player-view-forward-leave-active,
+.student-player-view-backward-enter-active,
+.student-player-view-backward-leave-active {
+  transition:
+    opacity 0.34s ease,
+    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.42s ease;
+  will-change: opacity, transform, filter;
+}
+
+.student-player-view-fade-enter-from,
+.student-player-view-fade-leave-to {
+  opacity: 0;
+  transform: translateY(16px) scale(0.992);
+  filter: blur(8px);
+}
+
+.student-player-view-forward-enter-from,
+.student-player-view-backward-leave-to {
+  opacity: 0;
+  transform: translateX(26px) translateY(10px) scale(0.992);
+  filter: blur(9px);
+}
+
+.student-player-view-forward-leave-to,
+.student-player-view-backward-enter-from {
+  opacity: 0;
+  transform: translateX(-26px) translateY(10px) scale(0.992);
+  filter: blur(9px);
 }
 
 .student-course-overview {
