@@ -71,26 +71,34 @@ def _has_real_page_payload(section_name: str | None, page: LessonSectionPage) ->
 def _load_primary_script_content(db: Session, section: LessonSection) -> str:
     if not section.script_id:
         return ""
-    section_code = _clean_text(section.section_code)
-    candidate_codes = [section_code] if section_code else []
-    # 发布后 lesson section code 可能带有 ch{chapterId}- 前缀，这里补一个无前缀候选。
-    if section_code and section_code.startswith("ch") and "-" in section_code:
-        candidate_codes.append(section_code.split("-", 1)[1])
-
-    for code in candidate_codes:
-        row = (
-            db.query(ChapterScriptSection)
-            .filter(
-                ChapterScriptSection.script_id == section.script_id,
-                ChapterScriptSection.section_code == code,
-            )
-            .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
-            .first()
+    section_codes = _candidate_script_section_codes(section.section_code, section.source_chapter_id)
+    row = (
+        db.query(ChapterScriptSection)
+        .filter(
+            ChapterScriptSection.script_id == section.script_id,
+            ChapterScriptSection.section_code.in_(section_codes),
         )
-        content = _clean_text(row.section_content if row else None)
-        if content:
-            return content
-    return ""
+        .order_by(ChapterScriptSection.sort_no.asc(), ChapterScriptSection.id.asc())
+        .first()
+    )
+    content = _clean_text(row.section_content if row else None)
+    if content:
+        return content
+    return _clean_text(section.section_summary)
+
+
+def _candidate_script_section_codes(section_code: str | None, source_chapter_id: int | None) -> list[str]:
+    normalized = _clean_text(section_code)
+    if not normalized:
+        return []
+    candidates = [normalized]
+    if source_chapter_id is not None:
+        prefix = f"ch{source_chapter_id}-"
+        if normalized.startswith(prefix):
+            raw_code = normalized[len(prefix):].strip()
+            if raw_code and raw_code not in candidates:
+                candidates.append(raw_code)
+    return candidates
 
 
 def _build_section_chapter_context(db: Session, section: LessonSection) -> dict[str, str]:

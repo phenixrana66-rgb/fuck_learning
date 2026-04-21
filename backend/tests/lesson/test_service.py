@@ -16,7 +16,7 @@ from backend.app.parser.schemas import ExtractedPresentation, ExtractedSlide, Fi
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
 from backend.app.student_runtime.db_learning_service import get_section_detail
-from backend.chaoxing_db.models import ChapterAudioAsset, ChapterParseTask, ChapterScript, ChapterScriptSection, ChapterSectionAudioAsset, Course, CourseChapter, Lesson, LessonSection, LessonSectionPage, LessonUnit
+from backend.chaoxing_db.models import ChapterAudioAsset, ChapterParseTask, ChapterPptAsset, ChapterScript, ChapterScriptSection, ChapterSectionAudioAsset, Course, CourseChapter, Lesson, LessonSection, LessonSectionPage, LessonUnit
 
 
 class LessonServiceTestCase(unittest.TestCase):
@@ -800,6 +800,109 @@ class LessonServiceTestCase(unittest.TestCase):
                 enc='demo-signature',
             )
         )
+
+    def test_student_detail_reads_full_script_content_from_scoped_lesson_section_code(self) -> None:
+        long_script = "这是一个用于验证学生端全文消费能力的超长讲稿。" * 20
+
+        with session_scope() as db:
+            course = Course(course_code="COURSE-LONG-SCRIPT", course_name="测试课程", school_id=1)
+            chapter = CourseChapter(course=course, chapter_code="CH-LONG-001", chapter_name="第一章", sort_no=1)
+            db.add_all([course, chapter])
+            db.flush()
+            course_id = course.id
+            chapter_id = chapter.id
+            ppt_asset = ChapterPptAsset(
+                course_id=course_id,
+                chapter_id=chapter_id,
+                uploader_id=1,
+                file_name="demo.pptx",
+                file_type="pptx",
+                file_url="/uploads/demo.pptx",
+                upload_status="parsed",
+                version_no=1,
+            )
+            db.add(ppt_asset)
+            db.flush()
+            parse_task = ChapterParseTask(
+                parse_no="parse-long-script",
+                course_id=course_id,
+                chapter_id=chapter_id,
+                ppt_asset_id=ppt_asset.id,
+                teacher_id=1,
+                task_status="completed",
+            )
+            script = ChapterScript(
+                course_id=course_id,
+                chapter=chapter,
+                parse_task=parse_task,
+                teacher_id=1,
+                script_no="script-long-content",
+                teaching_style="standard",
+                speech_speed="normal",
+                script_status="published",
+            )
+            db.add_all([parse_task, script])
+            db.flush()
+
+            db.add(
+                ChapterScriptSection(
+                    script_id=script.id,
+                    section_code="sec001",
+                    section_name="长讲稿章节",
+                    section_content=long_script,
+                    sort_no=0,
+                )
+            )
+
+            lesson = Lesson(
+                lesson_no="lesson-long-script",
+                course_id=course.id,
+                teacher_id=1,
+                lesson_name=course.course_name,
+                publish_status="published",
+                publish_version=1,
+            )
+            db.add(lesson)
+            db.flush()
+
+            unit = LessonUnit(
+                lesson_id=lesson.id,
+                course_id=course_id,
+                source_chapter_id=chapter_id,
+                unit_code="unit001",
+                unit_title="第一章",
+                sort_no=0,
+            )
+            db.add(unit)
+            db.flush()
+
+            db.add(
+                LessonSection(
+                    lesson_id=lesson.id,
+                    course_id=course_id,
+                    unit_id=unit.id,
+                    source_chapter_id=chapter_id,
+                    script_id=script.id,
+                    section_code=f"ch{chapter_id}-sec001",
+                    section_name="长讲稿章节",
+                    section_summary=long_script[:120],
+                    student_visible=True,
+                    sort_no=0,
+                )
+            )
+            db.commit()
+
+        with session_scope() as db:
+            detail = get_section_detail(
+                db=db,
+                student_id=None,
+                lesson_identifier="lesson-long-script",
+                section_identifier=f"ch{chapter_id}-sec001",
+            )
+
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["scriptContent"], long_script)
 
     def _build_slide(
         self,

@@ -3,6 +3,57 @@
     <div class="page-card">
       <div class="page-title">脚本编辑</div>
 
+      <div class="toolbar version-toolbar">
+        <el-form inline class="version-form">
+          <el-form-item label="解析版本" class="version-form-item">
+            <el-select
+              v-model="form.parseId"
+              class="version-select"
+              placeholder="请选择解析版本"
+              clearable
+              filterable
+              :loading="loadingHistory"
+              @change="handleParseChange"
+            >
+              <el-option
+                v-for="item in parseOptions"
+                :key="item.parseId"
+                :label="item.label"
+                :value="item.parseId"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="脚本版本" class="version-form-item">
+            <el-select
+              v-model="form.scriptId"
+              class="version-select"
+              placeholder="请选择已有脚本"
+              clearable
+              filterable
+              :disabled="!form.parseId || !parseScripts.length"
+              @change="handleScriptChange"
+            >
+              <el-option
+                v-for="item in parseScripts"
+                :key="item.scriptId"
+                :label="`${item.scriptId} · ${scriptStatusText(item.scriptStatus)}${item.updatedAt ? ` · ${item.updatedAt}` : ''}`"
+                :value="item.scriptId"
+              />
+            </el-select>
+          </el-form-item>
+        </el-form>
+
+        <div v-if="selectedParseMeta || selectedScriptMeta" class="version-summary">
+          <span v-if="selectedParseMeta">
+            课件：{{ selectedParseMeta.chapterName || '未命名章节' }} · V{{ selectedParseMeta.versionNo }}
+          </span>
+          <span v-if="selectedScriptMeta">
+            当前脚本状态：{{ scriptStatusText(selectedScriptMeta.scriptStatus) }}
+          </span>
+        </div>
+      </div>
+
       <div class="toolbar top-actions">
         <el-button :loading="restoring" @click="loadLastResult({ forceRemote: true })">刷新</el-button>
         <el-button v-if="form.scriptId" type="primary" :disabled="!canSave" :loading="saving" @click="handleSave">
@@ -86,7 +137,7 @@
           type="textarea"
           :rows="8"
           resize="vertical"
-          :disabled="!section.content"
+          :disabled="isRunning"
           :placeholder="sectionPlaceholder(section)"
         />
       </div>
@@ -99,7 +150,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
-import { getScript, updateScript } from '@/api/teacher'
+import { getCoursewareAssets, getParseScripts, getScript, updateScript } from '@/api/teacher'
 import { getCurrentCourse, getScriptResult, getScriptTask, getTeacherWorkspaceContext, patchTeacherWorkspaceContext, patchScriptTask, saveScriptResult } from '@/utils/platform'
 
 const TASK_PAGE = 'script-edit'
@@ -109,13 +160,21 @@ const router = useRouter()
 const currentCourse = getCurrentCourse()
 const cachedResult = getScriptResult()
 const cachedTask = getScriptTask()
-const workspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
+const initialWorkspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
+const readWorkspaceContext = () => getTeacherWorkspaceContext(currentCourse.courseId)
 
-const form = reactive(createFormState(cachedResult.scriptId ? cachedResult : cachedTask))
+const form = reactive(createFormState(cachedResult.scriptId ? cachedResult : { ...cachedTask, parseId: initialWorkspaceContext.parseId || cachedTask.parseId || '' }))
 const saving = ref(false)
 const restoring = ref(false)
+const loadingHistory = ref(false)
 const bootstrapped = ref(false)
 const elapsedSeconds = ref(0)
+const assetHistory = ref([])
+const parseScripts = ref([])
+const chapterInfo = ref({
+  chapterId: initialWorkspaceContext.chapterId || '',
+  chapterName: initialWorkspaceContext.chapterName || ''
+})
 let pollTimerId = null
 let elapsedTimerId = null
 
@@ -143,6 +202,25 @@ const generationStatusLabel = computed(() => {
   return statusMap[form.generationStatus] || '待开始'
 })
 const elapsedLabel = computed(() => formatElapsed(elapsedSeconds.value))
+const parseOptions = computed(() =>
+  assetHistory.value.flatMap((asset) =>
+    (asset.parseTasks || []).map((task) => ({
+      parseId: task.parseId,
+      taskStatus: task.taskStatus,
+      assetId: asset.assetId,
+      chapterId: asset.chapterId || '',
+      chapterName: asset.chapterName || '',
+      versionNo: asset.versionNo,
+      fileName: asset.fileName,
+      fileType: asset.fileType,
+      label: `${asset.chapterName || '未命名章节'} · V${asset.versionNo} · ${asset.fileName} · ${parseStatusText(task.taskStatus)} · ${task.parseId}`,
+      finishedAt: task.finishedAt || '',
+      scriptCount: task.scriptCount || 0
+    }))
+  )
+)
+const selectedParseMeta = computed(() => parseOptions.value.find((item) => item.parseId === form.parseId) || null)
+const selectedScriptMeta = computed(() => parseScripts.value.find((item) => item.scriptId === form.scriptId) || null)
 
 watch(
   form,
@@ -173,7 +251,14 @@ watch(
 onMounted(async () => {
   patchScriptTask({ lastPage: TASK_PAGE })
   const routeScriptId = typeof route.query.scriptId === 'string' ? route.query.scriptId : ''
-  await loadLastResult({ silent: true, forceRemote: hasRemoteScriptSource() || Boolean(routeScriptId), scriptId: routeScriptId || workspaceContext.scriptId || '' })
+  const routeParseId = typeof route.query.parseId === 'string' ? route.query.parseId : ''
+  await loadCoursewareHistory({
+    preferredParseId: routeParseId || initialWorkspaceContext.parseId || cachedResult.parseId || cachedTask.parseId || '',
+    preferredScriptId: routeScriptId || initialWorkspaceContext.scriptId || cachedResult.scriptId || cachedTask.scriptId || ''
+  })
+  if (!form.scriptId && (hasRemoteScriptSource() || Boolean(routeScriptId))) {
+    await loadLastResult({ silent: true, forceRemote: true, scriptId: routeScriptId || initialWorkspaceContext.scriptId || '' })
+  }
   bootstrapped.value = true
   window.addEventListener('beforeunload', persistDraft)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -200,10 +285,12 @@ async function handleSave() {
 
   saving.value = true
   try {
-    const res = await updateScript(form.scriptId, {
+    const activeScriptId = form.scriptId
+    const res = await updateScript(activeScriptId, {
       scriptStructure: cloneSections(form.scriptStructure),
       versionRemark: 'teacher-edit'
     })
+    await loadLastResult({ silent: true, forceRemote: true, scriptId: activeScriptId })
 
     const data = res.data || {}
     const nextResult = {
@@ -220,6 +307,12 @@ async function handleSave() {
       status: 'completed',
       lastPage: TASK_PAGE
     })
+    patchTeacherWorkspaceContext(currentCourse.courseId, {
+      parseId: form.parseId,
+      scriptId: activeScriptId,
+      chapterId: chapterInfo.value.chapterId,
+      chapterName: chapterInfo.value.chapterName
+    })
     ElMessage.success('脚本已保存')
   } catch (error) {
     ElMessage.error(error.msg || '保存脚本失败')
@@ -228,13 +321,123 @@ async function handleSave() {
   }
 }
 
+async function loadCoursewareHistory(options = {}) {
+  if (!currentCourse.courseId) {
+    return
+  }
+
+  const { preferredParseId = '', preferredScriptId = '' } = options
+  loadingHistory.value = true
+  try {
+    const res = await getCoursewareAssets({
+      courseId: currentCourse.courseId
+    })
+    const data = res.data || {}
+    assetHistory.value = data.assets || []
+
+    const nextParseId = resolvePreferredParseId(
+      parseOptions.value,
+      preferredParseId || readWorkspaceContext().parseId || form.parseId || ''
+    )
+    if (nextParseId) {
+      await syncParseSelection(nextParseId, {
+        preserveScript: true,
+        preferredScriptId,
+        silent: true
+      })
+    }
+  } catch (error) {
+    ElMessage.error(error.msg || '读取历史课件版本失败')
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
+async function handleParseChange(parseId) {
+  await syncParseSelection(parseId, { preserveScript: false })
+}
+
+async function syncParseSelection(parseId, options = {}) {
+  const { preserveScript = false, preferredScriptId = '', silent = false } = options
+  form.parseId = parseId || ''
+  const meta = parseOptions.value.find((item) => item.parseId === form.parseId) || null
+  chapterInfo.value = {
+    chapterId: meta?.chapterId || '',
+    chapterName: meta?.chapterName || ''
+  }
+  const workspaceContext = readWorkspaceContext()
+  const nextPreferredScriptId = preferredScriptId || (preserveScript ? workspaceContext.scriptId || form.scriptId || '' : '')
+  patchTeacherWorkspaceContext(currentCourse.courseId, {
+    chapterId: meta?.chapterId || '',
+    chapterName: meta?.chapterName || '',
+    parseId: form.parseId,
+    assetId: meta?.assetId || '',
+    fileName: meta?.fileName || '',
+    versionNo: meta?.versionNo || null,
+    scriptId: nextPreferredScriptId
+  })
+  await loadScriptsForParse(form.parseId, nextPreferredScriptId)
+  if (!silent && meta) {
+    ElMessage.success(`已切换到课件 V${meta.versionNo}`)
+  }
+}
+
+async function loadScriptsForParse(parseId, preferredScriptId = '') {
+  parseScripts.value = []
+  form.scriptId = ''
+  if (!parseId) {
+    applyForm(createFormState({ parseId: '', scriptId: '', scriptStructure: [] }))
+    return
+  }
+  try {
+    const res = await getParseScripts(parseId)
+    const data = res.data || {}
+    chapterInfo.value = {
+      chapterId: data.chapterId || chapterInfo.value.chapterId || '',
+      chapterName: data.chapterName || chapterInfo.value.chapterName || ''
+    }
+    parseScripts.value = data.scripts || []
+    const nextScriptId = resolvePreferredScriptId(parseScripts.value, preferredScriptId)
+    patchTeacherWorkspaceContext(currentCourse.courseId, {
+      chapterId: chapterInfo.value.chapterId,
+      chapterName: chapterInfo.value.chapterName,
+      parseId,
+      scriptId: nextScriptId
+    })
+    if (nextScriptId) {
+      form.scriptId = nextScriptId
+      await loadLastResult({ silent: true, forceRemote: true, scriptId: nextScriptId })
+      return
+    }
+    applyForm(createFormState({ parseId, scriptId: '', scriptStructure: [] }))
+  } catch (error) {
+    ElMessage.error(error.msg || '读取脚本列表失败')
+  }
+}
+
+async function handleScriptChange(scriptId) {
+  patchTeacherWorkspaceContext(currentCourse.courseId, {
+    parseId: form.parseId,
+    scriptId,
+    chapterId: chapterInfo.value.chapterId,
+    chapterName: chapterInfo.value.chapterName
+  })
+  if (!scriptId) {
+    applyForm(createFormState({ parseId: form.parseId, scriptId: '', scriptStructure: [] }))
+    return
+  }
+  await loadLastResult({ silent: true, forceRemote: true, scriptId })
+  ElMessage.success('已切换为历史脚本版本')
+}
+
 async function loadLastResult(options = {}) {
   const { silent = false, forceRemote = false, scriptId: targetScriptId = '' } = options
   const latestResult = getScriptResult()
   const latestTask = getScriptTask()
   const scriptId = targetScriptId || latestResult.scriptId || latestTask.scriptId || form.scriptId
+  const matchesTargetScript = !targetScriptId || latestResult.scriptId === targetScriptId
 
-  if (!forceRemote && hasScriptStructure(latestResult) && latestResult.generationStatus !== 'running') {
+  if (!forceRemote && matchesTargetScript && hasScriptStructure(latestResult) && latestResult.generationStatus !== 'running') {
     applyForm(latestResult)
     patchScriptTask({
       ...latestResult,
@@ -406,7 +609,7 @@ function hasScriptStructure(value) {
 }
 
 function hasRemoteScriptSource() {
-  return Boolean(getScriptTask().scriptId || getScriptResult().scriptId)
+  return Boolean(getScriptTask().scriptId || getScriptResult().scriptId || getScriptTask().parseId || getScriptResult().parseId)
 }
 
 function countCompletedSections(sections = []) {
@@ -452,13 +655,55 @@ function sectionTagType(section) {
 }
 
 function sectionPlaceholder(section) {
-  if (section.content && section.content.trim()) {
+  if (isRunning.value && section.content && section.content.trim()) {
     return ''
   }
   if (isRunning.value && section.sectionId === form.currentSectionId) {
     return '当前章节正在生成中...'
   }
-  return '等待生成进入当前章节。'
+  return isRunning.value ? '等待生成进入当前章节。' : '请输入或修改当前章节讲稿内容。'
+}
+
+function resolvePreferredParseId(options, preferredParseId) {
+  if (!Array.isArray(options) || !options.length) {
+    return ''
+  }
+  if (preferredParseId && options.some((item) => item.parseId === preferredParseId && item.taskStatus === 'completed')) {
+    return preferredParseId
+  }
+  return options.find((item) => item.taskStatus === 'completed' && item.scriptCount > 0)?.parseId
+    || options.find((item) => item.taskStatus === 'completed')?.parseId
+    || ''
+}
+
+function resolvePreferredScriptId(options, preferredScriptId) {
+  if (!Array.isArray(options) || !options.length) {
+    return ''
+  }
+  if (preferredScriptId && options.some((item) => item.scriptId === preferredScriptId)) {
+    return preferredScriptId
+  }
+  return options[0]?.scriptId || ''
+}
+
+function parseStatusText(status) {
+  const map = {
+    pending: '待开始',
+    running: '解析中',
+    completed: '已完成',
+    failed: '失败',
+    interrupted: '已中断'
+  }
+  return map[status] || '未知状态'
+}
+
+function scriptStatusText(status) {
+  const map = {
+    generated: '已生成',
+    edited: '已编辑',
+    published: '已发布'
+  }
+  return map[status] || status || '未知状态'
 }
 
 function startPolling() {
@@ -535,6 +780,45 @@ function formatElapsed(totalSeconds) {
 .top-actions {
   margin-top: 0;
   margin-bottom: 16px;
+}
+
+.version-toolbar {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.version-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  width: 100%;
+}
+
+.version-form :deep(.el-form-item) {
+  margin-right: 0;
+  margin-bottom: 0;
+}
+
+.version-form-item {
+  flex: 1 1 420px;
+  min-width: 320px;
+}
+
+.version-form-item :deep(.el-form-item__content) {
+  width: min(100%, 620px);
+}
+
+.version-select {
+  width: 100%;
+}
+
+.version-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  color: #606266;
+  font-size: 13px;
 }
 
 .status-alert {
