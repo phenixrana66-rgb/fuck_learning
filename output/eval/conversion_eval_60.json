@@ -1,0 +1,66 @@
+{
+  "metric": "page_to_student_learning_content_conversion",
+  "definition": "A sampled courseware page is counted as converted if it belongs to a published lesson, its section is visible to students, and parsed_content is meaningful (>=20 chars, not just a placeholder page label).",
+  "sampleSize": 60,
+  "populationSize": 75,
+  "randomSeed": 20260423,
+  "convertedCount": 55,
+  "failedCount": 5,
+  "conversionRate": 0.9167,
+  "conversionPercent": 91.67,
+  "allPopulationConvertedCount": 68,
+  "allPopulationConversionRate": 0.9067,
+  "failedSamples": [
+    {
+      "pageId": 272,
+      "sectionId": 80,
+      "pageNo": 1,
+      "pageTitle": "机体组",
+      "reasons": [
+        "parsed_content_not_meaningful"
+      ],
+      "contentChars": 18
+    },
+    {
+      "pageId": 166,
+      "sectionId": 52,
+      "pageNo": 18,
+      "pageTitle": "END",
+      "reasons": [
+        "parsed_content_not_meaningful"
+      ],
+      "contentChars": 15
+    },
+    {
+      "pageId": 311,
+      "sectionId": 88,
+      "pageNo": 40,
+      "pageTitle": "图2-32    V8型发动机曲轴",
+      "reasons": [
+        "parsed_content_not_meaningful"
+      ],
+      "contentChars": 17
+    },
+    {
+      "pageId": 332,
+      "sectionId": 92,
+      "pageNo": 61,
+      "pageTitle": "END",
+      "reasons": [
+        "parsed_content_not_meaningful"
+      ],
+      "contentChars": 15
+    },
+    {
+      "pageId": 292,
+      "sectionId": 84,
+      "pageNo": 21,
+      "pageTitle": "图2-16   双金属活塞",
+      "reasons": [
+        "parsed_content_not_meaningful"
+      ],
+      "contentChars": 13
+    }
+  ],
+  "generatedAt": "2026-04-23T17:11:29"
+}
