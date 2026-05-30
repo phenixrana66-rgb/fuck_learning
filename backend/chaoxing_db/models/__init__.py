@@ -12,7 +12,7 @@ from .progress import (
     StudentSectionMasteryLog,
     StudentSectionProgress,
 )
-from .qa import QAAnswer, QAMessage, QAMessageKnowledgeRef, QASession, VoiceTranscript
+from .qa import QAAnswer, QAMessage, QAMessageAttachment, QAMessageKnowledgeRef, QASession, VoiceTranscript
 from .qa_retrieval import QAAnswerTrace, QAFaqItem, QAFaqVariant
 from .teacher_content import (
     ChapterAudioAsset,
@@ -58,6 +58,7 @@ __all__ = [
     "QAAnswer",
     "QAAnswerTrace",
     "QAMessage",
+    "QAMessageAttachment",
     "QAMessageKnowledgeRef",
     "QASession",
     "ResumeRecord",

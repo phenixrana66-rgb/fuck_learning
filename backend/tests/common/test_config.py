@@ -40,14 +40,26 @@ class ConfigSettingsTestCase(unittest.TestCase):
         self.assertFalse(settings.debug)
         self.assertEqual(settings.llm_api_key, "local-key")
 
+    def test_local_config_reads_multimodal_model_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            local_config = Path(tmp) / "config.local.py"
+            local_config.write_text(
+                "qa_multimodal_model = 'qwen3.5-plus'\n",
+                encoding="utf-8",
+            )
+            with patch("backend.app.common.config._LOCAL_CONFIG_PATH", local_config):
+                settings = get_settings()
+
+        self.assertEqual(settings.qa_multimodal_model, "qwen3.5-plus")
+
     def test_local_config_reads_new_uppercase_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             local_config = Path(tmp) / "config.local.py"
             local_config.write_text(
                 "APPID = 'voice-app-id'\n"
                 "ACCESS_TOKEN = 'voice-access-token'\n"
-                "CLUSTER = 'volcano_tts'\n"
-                "VOICE_TYPE = 'zh_male_M392_conversation_wvae_bigtts'\n",
+                "TTS_CLUSTER = 'volcano_tts'\n"
+                "TTS_VOICE_TYPE = 'zh_male_M392_conversation_wvae_bigtts'\n",
                 encoding="utf-8",
             )
             with patch("backend.app.common.config._LOCAL_CONFIG_PATH", local_config):
@@ -55,8 +67,8 @@ class ConfigSettingsTestCase(unittest.TestCase):
 
         self.assertEqual(settings.APPID, "voice-app-id")
         self.assertEqual(settings.ACCESS_TOKEN, "voice-access-token")
-        self.assertEqual(settings.CLUSTER, "volcano_tts")
-        self.assertEqual(settings.VOICE_TYPE, "zh_male_M392_conversation_wvae_bigtts")
+        self.assertEqual(settings.TTS_CLUSTER, "volcano_tts")
+        self.assertEqual(settings.TTS_VOICE_TYPE, "zh_male_M392_conversation_wvae_bigtts")
 
     def test_unknown_local_config_keys_are_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

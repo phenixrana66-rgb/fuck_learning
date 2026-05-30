@@ -48,6 +48,7 @@ ASR_CLUSTER = "从火山引擎控制台获取"
 # 通义千问（DashScope）配置
 qa_llm_provider = "dashscope"
 qa_llm_model = "qwen-max"
+qa_multimodal_model = "qwen3.5-plus"
 qa_embedding_model = "text-embedding-v4"
 qa_embedding_dimensions = 1024
 dashscope_api_key = "你的阿里云API Key"

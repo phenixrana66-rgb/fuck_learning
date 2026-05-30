@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DECIMAL, DateTime, Enum, ForeignKey, JSON, String, Text, func
+from sqlalchemy import DECIMAL, DateTime, Enum, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy.dialects.mysql import BIGINT as MYSQL_BIGINT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
 
 JsonValue = dict[str, Any] | list[Any]
+UnsignedBigInt = Integer().with_variant(MYSQL_BIGINT(unsigned=True), "mysql")
 
 
 class QASession(Base):
@@ -37,11 +39,12 @@ class QAMessage(Base):
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), nullable=False)
     section_id: Mapped[int | None] = mapped_column(ForeignKey("lesson_sections.id"))
     role: Mapped[str] = mapped_column(Enum("user", "assistant", name="qa_message_role"), nullable=False)
-    question_type: Mapped[str | None] = mapped_column(Enum("text", "voice", name="qa_question_type"))
+    question_type: Mapped[str | None] = mapped_column(Enum("text", "voice", "image", "mixed", name="qa_question_type"))
     message_content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     session: Mapped["QASession"] = relationship(back_populates="messages")
+    attachments: Mapped[list["QAMessageAttachment"]] = relationship(back_populates="message")
     question_answer: Mapped["QAAnswer | None"] = relationship(
         back_populates="question_message", foreign_keys="QAAnswer.question_message_id"
     )
@@ -84,6 +87,26 @@ class QAMessageKnowledgeRef(Base):
     sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
 
     answer: Mapped["QAAnswer"] = relationship(back_populates="knowledge_refs")
+
+
+class QAMessageAttachment(Base):
+    __tablename__ = "qa_message_attachments"
+
+    id: Mapped[int] = mapped_column(UnsignedBigInt, primary_key=True, autoincrement=True)
+    message_id: Mapped[int] = mapped_column(UnsignedBigInt, ForeignKey("qa_messages.id"), nullable=False)
+    session_id: Mapped[int] = mapped_column(UnsignedBigInt, ForeignKey("qa_sessions.id"), nullable=False)
+    lesson_id: Mapped[int] = mapped_column(UnsignedBigInt, ForeignKey("lessons.id"), nullable=False)
+    attachment_type: Mapped[str] = mapped_column(Enum("image", name="qa_message_attachment_type"), default="image", nullable=False)
+    storage_provider: Mapped[str] = mapped_column(String(32), default="local", nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_url: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    file_size: Mapped[int | None] = mapped_column(UnsignedBigInt, nullable=True)
+    sort_no: Mapped[int] = mapped_column(default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+    message: Mapped["QAMessage"] = relationship(back_populates="attachments")
 
 
 class VoiceTranscript(Base):

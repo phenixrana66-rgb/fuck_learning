@@ -273,6 +273,18 @@
                   >
                     <div class="student-chat-role">{{ item.role === 'user' ? '我' : 'AI 学伴' }}</div>
                     <div class="student-chat-bubble">
+                      <div v-if="item.attachments?.length" class="student-chat-attachments">
+                        <a
+                          v-for="attachment in item.attachments"
+                          :key="attachment.id || attachment.storageKey || attachment.url || attachment.name"
+                          class="student-chat-attachment"
+                          :href="attachment.url || attachment.dataUrl || '#'"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <img :src="attachment.url || attachment.dataUrl" :alt="attachment.name || '提问图片'" loading="lazy" />
+                        </a>
+                      </div>
                       <div class="student-chat-content">{{ item.content }}</div>
                       <div v-if="item.relatedPoints?.length" class="student-chat-points">
                         <span v-for="point in item.relatedPoints" :key="point" class="student-chat-point-tag">{{ point }}</span>
@@ -303,6 +315,15 @@
               </div>
 
               <div class="student-ai-input-area">
+                <input
+                  :key="qaImagePickerKey"
+                  ref="qaImageInputRef"
+                  class="student-ai-file-input"
+                  type="file"
+                  :accept="QA_IMAGE_ACCEPT"
+                  multiple
+                  @change="handleQaImageChange"
+                />
                 <el-input
                   v-model="questionText"
                   type="textarea"
@@ -311,7 +332,44 @@
                   placeholder="输入你的问题"
                   @keydown.enter.exact.prevent="submitTextQuestion"
                 />
+                <div v-if="draftQaAttachments.length" class="student-ai-attachment-strip">
+                  <div
+                    v-for="attachment in draftQaAttachments"
+                    :key="attachment.id"
+                    class="student-ai-attachment-chip"
+                  >
+                    <a
+                      class="student-ai-attachment-link"
+                      :href="attachment.url || attachment.dataUrl || '#'"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <img :src="attachment.previewUrl" :alt="attachment.name || '提问图片'" loading="lazy" />
+                    </a>
+                    <button
+                      type="button"
+                      class="student-ai-attachment-remove"
+                      aria-label="移除图片"
+                      @click.stop.prevent="removeQaAttachment(attachment.id)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <button type="button" class="student-ai-attachment-clear" @click="clearQaAttachments">清空图片</button>
+                </div>
                 <div class="student-ai-input-actions">
+                  <button
+                    type="button"
+                    class="student-ai-icon-button image"
+                    aria-label="添加图片"
+                    @click="openQaImagePicker"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="4" y="5" width="16" height="14" rx="3" />
+                      <circle cx="9" cy="10" r="1.5" />
+                      <path d="m8 16 3.5-3.5 2.5 2.5 2-2 2 3" />
+                    </svg>
+                  </button>
                   <div v-if="isRecording" class="student-ai-voice-status">
                     <span class="student-ai-voice-timer">{{ formatRecordingDuration(recordingSeconds) }}</span>
                     <button
@@ -346,7 +404,7 @@
                     type="button"
                     class="student-ai-icon-button send"
                     :class="{ 'is-stop': asking }"
-                    :disabled="!asking && !questionText.trim()"
+                    :disabled="!asking && !questionText.trim() && !draftQaAttachments.length"
                     :aria-label="asking ? '终止回答' : '发送问题'"
                     @click="asking ? stopStreamingAnswer() : submitTextQuestion()"
                   >
@@ -448,6 +506,7 @@ import {
   verifyStudentAuth
 } from '@/api/student'
 import { findFrontendTestLesson, getFrontendTestLessons } from '@/mock/studentLessons'
+import { buildQaImageAttachmentPayloads, cloneQaImageAttachments, QA_IMAGE_ACCEPT, useQaImageAttachments } from '@/composables/useQaImageAttachments'
 import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
 import {
   ensurePlatformToken,
@@ -487,6 +546,7 @@ const aiToolsVisible = ref(true)
 const questionText = ref('')
 const asking = ref(false)
 const activeAnswerController = ref(null)
+const qaImageInputRef = ref(null)
 const voiceDraftPrefix = ref('')
 const assistantStreamingStarted = ref(false)
 const resumeLoading = ref(false)
@@ -507,6 +567,14 @@ const rhythmSuggestion = ref('建议先完成当前章节，再根据掌握度�
 const hasLoadedLesson = ref(false)
 const hasActivatedOnce = ref(false)
 const expandedCourseMasteryMap = ref({})
+const {
+  draftAttachments: draftQaAttachments,
+  pickerKey: qaImagePickerKey,
+  handleFileChange: handleQaImageChange,
+  removeAttachment: removeQaAttachment,
+  clearAttachments: clearQaAttachments,
+  replaceAttachments: replaceQaAttachments
+} = useQaImageAttachments()
 
 const primaryNavItems = [
   { label: '学习进度', value: 'progress' },
@@ -620,6 +688,9 @@ const aiSuggestedQuestions = computed(() => {
   ]
 })
 const latestAssistantMessage = computed(() => [...chatList.value].reverse().find((item) => item.role === 'assistant') || null)
+const latestUserAttachmentMessage = computed(() => (
+  [...chatList.value].reverse().find((item) => item.role === 'user' && item.attachments?.length) || null
+))
 const latestResumePoint = computed(() => ({
   anchorTitle: latestAssistantMessage.value?.anchorTitle || progressState.value.anchorTitle || activeChapter.value.chapterTitle || '',
   pageNo: latestAssistantMessage.value?.resumePageNo || progressState.value.pageNo || activeChapter.value.pageNo || 1
@@ -643,7 +714,7 @@ const navIndicatorStyle = computed(() => ({
 
 function buildCachedConversation(history) {
   return history.flatMap((item, index) => ([
-    { id: `history-q-${index}`, role: 'user', content: item.question },
+    { id: `history-q-${index}`, role: 'user', content: item.question, attachments: cloneQaImageAttachments(item.attachments || []) },
     {
       id: item.id || `history-a-${index}`,
       role: 'assistant',
@@ -656,22 +727,26 @@ function buildCachedConversation(history) {
   ]))
 }
 
-function createSessionTitle(question = '') {
+function createSessionTitle(question = '', attachments = []) {
   const normalized = `${question || ''}`.replace(/\s+/g, ' ').trim()
-  if (!normalized) return '未命名问答'
+  if (!normalized) return attachments.length ? '图片提问' : '未命名问答'
   return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized
 }
 
 function cloneMessages(messages = []) {
-  return messages.map((item) => ({ ...item }))
+  return messages.map((item) => ({
+    ...item,
+    attachments: cloneQaImageAttachments(item?.attachments || [])
+  }))
 }
 
 function normalizeSession(rawSession, index = 0) {
   const messages = cloneMessages(rawSession?.messages || [])
-  const firstQuestion = messages.find((item) => item.role === 'user')?.content || ''
+  const firstQuestionMessage = messages.find((item) => item.role === 'user') || {}
+  const firstQuestion = firstQuestionMessage?.content || ''
   return {
     sessionId: rawSession?.sessionId || `session-${Date.now()}-${index}`,
-    title: rawSession?.title || createSessionTitle(firstQuestion),
+    title: rawSession?.title || createSessionTitle(firstQuestion, firstQuestionMessage?.attachments || []),
     messages,
     createdAt: rawSession?.createdAt || Date.now(),
     updatedAt: rawSession?.updatedAt || Date.now()
@@ -699,6 +774,7 @@ function buildHistoryPairsFromMessages(messages) {
       id: answerItem.id,
       question: questionItem.content,
       answer: answerItem.content,
+      attachments: cloneQaImageAttachments(questionItem.attachments || []),
       anchorTitle: answerItem.anchorTitle,
       resumePageNo: answerItem.resumePageNo,
       understandingLabel: answerItem.understandingLabel,
@@ -706,6 +782,15 @@ function buildHistoryPairsFromMessages(messages) {
     })
   }
   return historyPairs
+}
+
+function getLatestImageAttachments(messages = []) {
+  const latestMessage = [...messages].reverse().find((item) => item.role === 'user' && item.attachments?.length)
+  return cloneQaImageAttachments(latestMessage?.attachments || [])
+}
+
+function openQaImagePicker() {
+  qaImageInputRef.value?.click()
 }
 
 function getSessionDisplayTitle(session) {
@@ -722,12 +807,28 @@ async function persistQaSessions(targetSessionId = activeSessionId.value) {
   saveStudentQaHistory(lessonId.value, buildHistoryPairsFromMessages(currentSession?.messages || []))
   if (!currentSession) return
   try {
-    await persistStudentQaSession({
+    const res = await persistStudentQaSession({
       studentId: studentProfile.value.studentId,
       lessonId: lessonId.value,
       sectionId: aiContextChapter.value.sectionId || progressState.value.sectionId || '',
       session: currentSession
     })
+    const persistedSession = res.data?.session
+    if (persistedSession?.sessionId) {
+      const normalizedSession = normalizeSession(persistedSession)
+      const targetIndex = qaSessions.value.findIndex((session) => session.sessionId === normalizedSession.sessionId)
+      if (targetIndex >= 0) {
+        qaSessions.value.splice(targetIndex, 1, normalizedSession)
+      } else {
+        qaSessions.value.unshift(normalizedSession)
+      }
+      if (normalizedSession.sessionId === activeSessionId.value) {
+        chatList.value = cloneMessages(normalizedSession.messages || [])
+        replaceQaAttachments(latestUserAttachmentMessage.value?.attachments || [])
+      }
+      saveStudentQaSessions(lessonId.value, qaSessions.value)
+      saveStudentQaHistory(lessonId.value, buildHistoryPairsFromMessages(normalizedSession.messages || []))
+    }
   } catch {
     // use local cache as non-blocking fallback
   }
@@ -736,12 +837,13 @@ async function persistQaSessions(targetSessionId = activeSessionId.value) {
 async function syncActiveSessionFromChatList() {
   if (!chatList.value.length) return
   const now = Date.now()
-  const firstQuestion = chatList.value.find((item) => item.role === 'user')?.content || ''
+  const firstQuestionMessage = chatList.value.find((item) => item.role === 'user') || {}
+  const firstQuestion = firstQuestionMessage?.content || ''
   const nextSessionId = activeSessionId.value || `session-${now}`
   const existingIndex = qaSessions.value.findIndex((session) => session.sessionId === nextSessionId)
   const nextSession = normalizeSession({
     sessionId: nextSessionId,
-    title: qaSessions.value[existingIndex]?.title || createSessionTitle(firstQuestion),
+    title: qaSessions.value[existingIndex]?.title || createSessionTitle(firstQuestion, firstQuestionMessage?.attachments || []),
     messages: chatList.value,
     createdAt: qaSessions.value[existingIndex]?.createdAt || now,
     updatedAt: now
@@ -758,6 +860,7 @@ async function syncActiveSessionFromChatList() {
 function loadSessionIntoChat(session) {
   activeSessionId.value = session?.sessionId || ''
   chatList.value = cloneMessages(session?.messages || [])
+  replaceQaAttachments(getLatestImageAttachments(session?.messages || []))
 }
 
 async function openQaSession(sessionId) {
@@ -1227,6 +1330,7 @@ async function loadLesson() {
   }
   activeSessionId.value = ''
   chatList.value = []
+  clearQaAttachments()
   hasLoadedLesson.value = true
   await restorePlayerViewState()
 
@@ -1241,11 +1345,18 @@ async function askQuestion(question, source = 'text') {
       ElMessage.warning('当前章节尚未完成定位，请先进入具体章节后再提问')
       return
     }
+    const normalizedQuestion = `${question || ''}`.trim()
+    const outboundAttachments = cloneQaImageAttachments(draftQaAttachments.value)
+    const sentQuestionType = outboundAttachments.length
+      ? (normalizedQuestion ? 'mixed' : 'image')
+      : source
 
     const userMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: question
+      content: normalizedQuestion,
+      questionType: sentQuestionType,
+      attachments: outboundAttachments
     }
     const assistantMessage = {
       id: `ai-${Date.now()}`,
@@ -1270,7 +1381,8 @@ async function askQuestion(question, source = 'text') {
       lessonId: lessonId.value,
       sectionId: currentSectionId,
       source,
-      question,
+      question: normalizedQuestion,
+      attachments: buildQaImageAttachmentPayloads(outboundAttachments),
       anchorId: progressState.value.anchorId,
       anchorTitle: aiContextChapter.value.chapterTitle,
       pageNo: aiContextChapter.value.pageNo || progressState.value.pageNo,
@@ -1319,8 +1431,8 @@ async function askQuestion(question, source = 'text') {
 }
 
 async function submitTextQuestion() {
-  if (!questionText.value.trim()) {
-    ElMessage.warning('请输入问题内容')
+  if (!questionText.value.trim() && !draftQaAttachments.value.length) {
+    ElMessage.warning('请输入问题内容或上传图片')
     return
   }
   await askQuestion(questionText.value.trim(), 'text')
@@ -1347,6 +1459,7 @@ async function startNewConversation() {
   activeSessionId.value = ''
   chatList.value = []
   questionText.value = ''
+  clearQaAttachments()
   editingSessionId.value = ''
   editingSessionTitle.value = ''
 }
@@ -2766,6 +2879,29 @@ onDeactivated(() => {
   overflow-wrap: anywhere;
 }
 
+.student-chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.student-chat-attachment {
+  width: 88px;
+  height: 88px;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(162, 182, 222, 0.45);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.student-chat-attachment img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .student-chat-item.is-user {
   justify-items: end;
 }
@@ -2816,6 +2952,63 @@ onDeactivated(() => {
   gap: 12px;
 }
 
+.student-ai-file-input {
+  display: none;
+}
+
+.student-ai-attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.student-ai-attachment-chip {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(167, 182, 218, 0.55);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 18px rgba(123, 145, 186, 0.12);
+}
+
+.student-ai-attachment-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.student-ai-attachment-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.student-ai-attachment-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(16, 20, 24, 0.78);
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.student-ai-attachment-clear {
+  border: none;
+  background: transparent;
+  color: #5b74a8;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .student-ai-input-actions {
   display: flex;
   justify-content: flex-end;
@@ -2862,6 +3055,11 @@ onDeactivated(() => {
   box-shadow: 0 8px 18px rgba(140, 158, 196, 0.14);
 }
 
+.student-ai-icon-button.image {
+  color: #35568f;
+  box-shadow: 0 8px 18px rgba(123, 146, 187, 0.14);
+}
+
 .student-ai-icon-button.voice.loading {
   background: rgba(255, 255, 255, 0.82);
 }
@@ -2882,6 +3080,11 @@ onDeactivated(() => {
 }
 
 .student-ai-icon-button.voice:hover:not(:disabled) {
+  background: #f6f9ff;
+  border-color: #c6d6ef;
+}
+
+.student-ai-icon-button.image:hover:not(:disabled) {
   background: #f6f9ff;
   border-color: #c6d6ef;
 }

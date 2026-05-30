@@ -51,6 +51,7 @@ class Settings(BaseModel):
     llm_timeout_seconds: float = 60.0
     qa_llm_provider: str = "dashscope"
     qa_llm_model: str = "qwen-max"
+    qa_multimodal_model: str = "qwen3.5-plus"
     qa_embedding_model: str = "text-embedding-v4"
     qa_embedding_dimensions: int = 1024
     qa_asr_model: str = "qwen3-asr-flash"

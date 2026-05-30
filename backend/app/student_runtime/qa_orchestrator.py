@@ -11,7 +11,13 @@ from backend.app.common.config import get_settings
 from backend.app.student_runtime.db_learning_service import interact_with_section_context
 from backend.app.student_runtime.db_qa_service import record_qa_answer_trace
 from backend.app.student_runtime.qa_dashscope_client import DashScopeClient
-from backend.app.student_runtime.qa_prompt_builder import PROMPT_VERSION, build_prompt, build_system_prompt
+from backend.app.student_runtime.qa_image_storage import load_qa_image_as_data_url, storage_key_from_url
+from backend.app.student_runtime.qa_prompt_builder import (
+    DEFAULT_IMAGE_ONLY_QUESTION,
+    PROMPT_VERSION,
+    build_prompt,
+    build_system_prompt,
+)
 from backend.app.student_runtime.qa_retrieval_service import build_qa_context_bundle
 
 
@@ -22,26 +28,34 @@ def answer_question(
     section_id: str | int | None,
     page_no: int | None,
     question: str,
+    attachments: list[dict[str, Any]] | None = None,
     history: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     if not section_id:
         return None
-    bundle = build_qa_context_bundle(db, lesson_id, section_id, page_no, question)
+    image_data_urls = _collect_multimodal_image_data_urls(attachments or [])
+    effective_question = (question or "").strip() or (DEFAULT_IMAGE_ONLY_QUESTION if image_data_urls else "")
+    bundle = build_qa_context_bundle(db, lesson_id, section_id, page_no, effective_question)
     settings = get_settings()
-    if bundle.get("questionIntent") == "definition" and bundle.get("faq_candidates"):
+    if effective_question and bundle.get("questionIntent") == "definition" and bundle.get("faq_candidates") and not image_data_urls:
         return _build_direct_faq_answer(bundle)
     if not settings.dashscope_api_key:
-        return interact_with_section_context(db, lesson_id, section_id, question, page_no)
+        return interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
 
-    prompt = build_prompt(bundle, question, history=history)
+    prompt = build_prompt(bundle, effective_question, history=history)
     started = time.perf_counter()
     try:
-        raw = DashScopeClient().chat_completion(prompt=prompt, system_prompt=build_system_prompt())
+        client = DashScopeClient()
+        raw = (
+            client.chat_multimodal_completion(prompt=prompt, image_data_urls=image_data_urls, system_prompt=build_system_prompt())
+            if image_data_urls
+            else client.chat_completion(prompt=prompt, system_prompt=build_system_prompt())
+        )
         latency_ms = int((time.perf_counter() - started) * 1000)
         parsed = _parse_model_payload(raw["text"])
         result = _normalize_model_payload(parsed, bundle)
         if _should_fallback_to_context_answer(result["answer"], bundle):
-            return interact_with_section_context(db, lesson_id, section_id, question, page_no)
+            return interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
         record_qa_answer_trace(
             db,
             {
@@ -67,7 +81,7 @@ def answer_question(
             "weakPoints": result["weakPoints"],
         }
     except Exception:
-        return interact_with_section_context(db, lesson_id, section_id, question, page_no)
+        return interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
 
 
 def _build_direct_faq_answer(bundle: dict[str, Any]) -> dict[str, Any]:
@@ -163,3 +177,22 @@ def _should_fallback_to_context_answer(answer: str, bundle: dict[str, Any]) -> b
     if section.get("chapterContextText"):
         return True
     return bool(bundle.get("context_chunks"))
+
+
+def _collect_multimodal_image_data_urls(attachments: list[dict[str, Any]]) -> list[str]:
+    image_data_urls: list[str] = []
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        if str(attachment.get("type") or "image") != "image":
+            continue
+        data_url = str(attachment.get("dataUrl") or "").strip()
+        if data_url:
+            image_data_urls.append(data_url)
+            continue
+        storage_key = str(attachment.get("storageKey") or "").strip()
+        if not storage_key:
+            storage_key = storage_key_from_url(str(attachment.get("url") or "").strip()) or ""
+        if storage_key:
+            image_data_urls.append(load_qa_image_as_data_url(storage_key, mime_type=str(attachment.get("mimeType") or "")))
+    return image_data_urls

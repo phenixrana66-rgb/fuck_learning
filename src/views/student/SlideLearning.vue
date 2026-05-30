@@ -232,7 +232,21 @@
               :class="message.role"
             >
               <div class="ai-message-role">{{ message.role === 'user' ? '我' : 'AI 学伴' }}</div>
-              <div class="ai-message-bubble">{{ message.content }}</div>
+              <div class="ai-message-bubble">
+                <div v-if="message.attachments?.length" class="ai-message-attachments">
+                  <a
+                    v-for="attachment in message.attachments"
+                    :key="attachment.id || attachment.storageKey || attachment.url || attachment.name"
+                    class="ai-message-attachment"
+                    :href="attachment.url || attachment.dataUrl || '#'"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <img :src="attachment.url || attachment.dataUrl" :alt="attachment.name || '提问图片'" loading="lazy" />
+                  </a>
+                </div>
+                {{ message.content }}
+              </div>
             </article>
             <article v-if="asking && !assistantStreamingStarted" class="ai-message assistant pending">
               <div class="ai-message-role">AI 学伴</div>
@@ -243,6 +257,15 @@
           </div>
 
           <form class="ai-input-box" @submit.prevent="submitQuestion">
+            <input
+              :key="qaImagePickerKey"
+              ref="qaImageInputRef"
+              class="ai-file-input"
+              type="file"
+              :accept="QA_IMAGE_ACCEPT"
+              multiple
+              @change="handleQaImageChange"
+            />
             <textarea
               v-model="questionText"
               class="ai-textarea app-scrollable"
@@ -250,7 +273,44 @@
               rows="3"
               @keydown.enter.exact.prevent="submitQuestion"
             ></textarea>
+            <div v-if="draftQaAttachments.length" class="ai-attachment-strip">
+              <div
+                v-for="attachment in draftQaAttachments"
+                :key="attachment.id"
+                class="ai-attachment-chip"
+              >
+                <a
+                  class="ai-attachment-link"
+                  :href="attachment.url || attachment.dataUrl || '#'"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img :src="attachment.previewUrl" :alt="attachment.name || '提问图片'" loading="lazy" />
+                </a>
+                <button
+                  type="button"
+                  class="ai-attachment-remove"
+                  aria-label="移除图片"
+                  @click.stop.prevent="removeQaAttachment(attachment.id)"
+                >
+                  ×
+                </button>
+              </div>
+              <button type="button" class="ai-attachment-clear" @click="clearQaAttachments">清空图片</button>
+            </div>
             <div class="ai-input-actions">
+              <button
+                type="button"
+                class="ai-icon-button image"
+                aria-label="添加图片"
+                @click="openQaImagePicker"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="5" width="16" height="14" rx="3" />
+                  <circle cx="9" cy="10" r="1.5" />
+                  <path d="m8 16 3.5-3.5 2.5 2.5 2-2 2 3" />
+                </svg>
+              </button>
               <div v-if="isRecording" class="ai-voice-status">
                 <span class="ai-voice-timer">{{ formatRecordingDuration(recordingSeconds) }}</span>
                 <button
@@ -285,7 +345,7 @@
                 type="button"
                 class="ai-icon-button send"
                 :class="{ 'is-stop': asking }"
-                :disabled="!asking && !questionText.trim()"
+                :disabled="!asking && !questionText.trim() && !draftQaAttachments.length"
                 :aria-label="asking ? '终止回答' : '发送问题'"
                 @click.prevent="asking ? stopStreamingAnswer() : submitQuestion()"
               >
@@ -316,6 +376,7 @@ import {
   markStudentPageRead,
   saveStudentRecentChapter
 } from '@/api/student'
+import { buildQaImageAttachmentPayloads, cloneQaImageAttachments, QA_IMAGE_ACCEPT, useQaImageAttachments } from '@/composables/useQaImageAttachments'
 import { findFrontendTestLesson } from '@/mock/studentLessons'
 import { getStudentLessonListCache, getStudentProfile, getStudentViewState, saveStudentViewState } from '@/utils/platform'
 import { findAggregatedChapterForSection, getSectionsForAggregatedChapter } from '@/utils/studentKnowledge'
@@ -355,8 +416,17 @@ const questionText = ref('')
 const asking = ref(false)
 const chatList = ref([])
 const activeAnswerController = ref(null)
+const qaImageInputRef = ref(null)
 const voiceDraftPrefix = ref('')
 const assistantStreamingStarted = ref(false)
+const {
+  draftAttachments: draftQaAttachments,
+  pickerKey: qaImagePickerKey,
+  handleFileChange: handleQaImageChange,
+  removeAttachment: removeQaAttachment,
+  clearAttachments: clearQaAttachments,
+  replaceAttachments: replaceQaAttachments
+} = useQaImageAttachments()
 const isAudioPlaying = ref(false)
 const audioCurrentTime = ref(0)
 const audioDuration = ref(0)
@@ -944,11 +1014,16 @@ function persistRecentVisit() {
   })
 }
 
+function openQaImagePicker() {
+  qaImageInputRef.value?.click()
+}
+
 async function submitQuestion() {
   const question = questionText.value.trim()
-  if (!question || asking.value) return
+  if ((!question && !draftQaAttachments.value.length) || asking.value) return
 
   const page = activePage.value
+  const outboundAttachments = cloneQaImageAttachments(draftQaAttachments.value)
   const assistantMessage = {
     id: `assistant-${Date.now()}`,
     role: 'assistant',
@@ -958,7 +1033,9 @@ async function submitQuestion() {
   chatList.value.push({
     id: `user-${Date.now()}`,
     role: 'user',
-    content: question
+    content: question,
+    questionType: outboundAttachments.length ? (question ? 'mixed' : 'image') : 'text',
+    attachments: outboundAttachments
   })
   questionText.value = ''
   asking.value = true
@@ -979,7 +1056,8 @@ async function submitQuestion() {
       sectionId: sectionId.value,
       anchorId: page?.anchorId || '',
       pageNo: page?.pageNo || activePageNo.value,
-      question
+      question,
+      attachments: buildQaImageAttachmentPayloads(outboundAttachments)
     }, {
       signal: controller.signal,
       onDelta: (delta) => {
@@ -991,6 +1069,7 @@ async function submitQuestion() {
     assistantStreamingStarted.value = true
     ensureAssistantVisible()
     assistantMessage.content = donePayload?.answer || assistantMessage.content || '当前内容暂无更多解读。'
+    replaceQaAttachments(outboundAttachments)
   } catch (error) {
     if (error?.name === 'AbortError') {
       assistantStreamingStarted.value = true
@@ -1862,6 +1941,29 @@ onBeforeRouteLeave(() => {
   overflow-wrap: anywhere;
 }
 
+.ai-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ai-message-attachment {
+  width: 84px;
+  height: 84px;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(162, 182, 222, 0.45);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.ai-message-attachment img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .ai-message.user .ai-message-bubble {
   align-self: flex-end;
   background: linear-gradient(135deg, #5880ef 0%, #6f8fff 100%);
@@ -1884,6 +1986,63 @@ onBeforeRouteLeave(() => {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   margin-top: 0;
+}
+
+.ai-file-input {
+  display: none;
+}
+
+.ai-attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-attachment-chip {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(167, 182, 218, 0.55);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 18px rgba(123, 145, 186, 0.12);
+}
+
+.ai-attachment-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ai-attachment-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ai-attachment-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(16, 20, 24, 0.78);
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ai-attachment-clear {
+  border: none;
+  background: transparent;
+  color: #5b74a8;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .ai-textarea {
@@ -1953,6 +2112,11 @@ onBeforeRouteLeave(() => {
   box-shadow: 0 8px 18px rgba(140, 158, 196, 0.14);
 }
 
+.ai-icon-button.image {
+  color: #35568f;
+  box-shadow: 0 8px 18px rgba(123, 146, 187, 0.14);
+}
+
 .ai-icon-button.voice.loading {
   background: rgba(255, 255, 255, 0.82);
 }
@@ -1977,6 +2141,11 @@ onBeforeRouteLeave(() => {
 }
 
 .ai-icon-button.voice:hover:not(:disabled) {
+  background: #f6f9ff;
+  border-color: #c6d6ef;
+}
+
+.ai-icon-button.image:hover:not(:disabled) {
   background: #f6f9ff;
   border-color: #c6d6ef;
 }

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.cir.schemas import CIR, CirChapter, LessonNode
 from backend.app.common.config import get_settings
-from backend.app.common.db import configure_database_url, reset_database_url
+from backend.app.common.db import configure_database_url, reset_database_url, session_scope
 from backend.app.common.security import generate_signature
 from backend.app.courseware.schemas import ParseRequest
 from backend.app.courseware.service import clear_parse_tasks, create_parse_task, run_parse_task
@@ -18,6 +18,7 @@ from backend.app.main import create_app
 from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
+from backend.chaoxing_db.models import Lesson, LessonSection, School, User
 
 
 class StudentRouterTestCase(unittest.TestCase):
@@ -50,6 +51,153 @@ class StudentRouterTestCase(unittest.TestCase):
         mock_synthesize_speech,
         mock_get_voice_cache_dir,
     ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+
+        response = self.client.post(
+            "/student-api/auth/verify",
+            json=self._signed_payload(
+                {
+                    "token": "student_demo_token_001",
+                    "studentId": "S2026001",
+                }
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        lessons = payload["data"]["lessons"]
+        self.assertEqual(len(lessons), 1)
+        self.assertEqual(lessons[0]["lessonId"], publish["lessonId"])
+        self.assertNotIn("L10001", [item["lessonId"] for item in lessons])
+        self.assertNotIn("L10002", [item["lessonId"] for item in lessons])
+
+    @patch("backend.app.student_runtime.router.answer_question")
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_qa_stream_accepts_image_only_payload(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+        mock_answer_question,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        mock_answer_question.return_value = {
+            "answer": "已结合图片完成解读。",
+            "relatedKnowledgePoints": ["k1"],
+            "understandingLevel": "partial",
+            "understandingLabel": "部分理解",
+            "resumeAnchor": {"anchorTitle": "课程导学", "pageNo": 1},
+            "weakPoints": [],
+        }
+
+        response = self.client.post(
+            "/student-api/api/v1/qa/interact/stream",
+            json=self._signed_payload(
+                {
+                    "studentId": "S2026001",
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "attachments": [self._demo_image_attachment()],
+                }
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"type": "done"', response.text)
+        self.assertIn("已结合图片完成解读。", response.text)
+        called_attachments = mock_answer_question.call_args.kwargs["attachments"]
+        self.assertEqual(called_attachments[0]["mimeType"], "image/png")
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_qa_sessions_save_and_list_preserve_image_attachments(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+
+        save_response = self.client.post(
+            "/student-api/api/v1/qa/sessions/save",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "session": {
+                        "sessionId": "session-image-only",
+                        "messages": [
+                            {
+                                "id": "user-1",
+                                "role": "user",
+                                "content": "",
+                                "questionType": "image",
+                                "attachments": [self._demo_image_attachment()],
+                            },
+                            {
+                                "id": "assistant-1",
+                                "role": "assistant",
+                                "content": "图像问答已保存",
+                                "relatedPoints": ["k1"],
+                                "understandingLevel": "partial",
+                                "resumePageNo": 1,
+                            },
+                        ],
+                    },
+                }
+            ),
+        )
+
+        self.assertEqual(save_response.status_code, 200)
+        saved_session = save_response.json()["data"]["session"]
+        self.assertEqual(saved_session["title"], "图片提问")
+        saved_attachment = saved_session["messages"][0]["attachments"][0]
+        self.assertTrue(saved_attachment["url"].startswith("/cache/qa-images/"))
+        self.assertTrue(saved_attachment["storageKey"])
+
+        list_response = self.client.post(
+            "/student-api/api/v1/qa/sessions/list",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                }
+            ),
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        listed_session = list_response.json()["data"]["sessions"][0]
+        self.assertEqual(listed_session["title"], "图片提问")
+        self.assertEqual(listed_session["messages"][0]["questionType"], "image")
+        self.assertTrue(listed_session["messages"][0]["attachments"][0]["url"].startswith("/cache/qa-images/"))
+
+    def _publish_demo_lesson(self, mock_parse_courseware, mock_build_cir, mock_synthesize_speech, mock_get_voice_cache_dir):
         assert self.temp_dir is not None
         mock_get_voice_cache_dir.return_value = Path(self.temp_dir.name) / "voice-cache"
         mock_synthesize_speech.return_value = TtsSynthesisResult(
@@ -120,23 +268,46 @@ class StudentRouterTestCase(unittest.TestCase):
                 )
             )
 
-        response = self.client.post(
-            "/student-api/auth/verify",
-            json=self._signed_payload(
-                {
-                    "token": "student_demo_token_001",
-                    "studentId": "S2026001",
-                }
-            ),
-        )
+        return publish
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        lessons = payload["data"]["lessons"]
-        self.assertEqual(len(lessons), 1)
-        self.assertEqual(lessons[0]["lessonId"], publish["lessonId"])
-        self.assertNotIn("L10001", [item["lessonId"] for item in lessons])
-        self.assertNotIn("L10002", [item["lessonId"] for item in lessons])
+    def _get_first_section_id(self, lesson_id: str) -> str:
+        with session_scope() as db:
+            row = (
+                db.query(LessonSection.section_code)
+                .join(Lesson, LessonSection.lesson_id == Lesson.id)
+                .filter(Lesson.lesson_no == lesson_id)
+                .order_by(LessonSection.sort_no.asc(), LessonSection.id.asc())
+                .first()
+            )
+        if row and row[0]:
+            return row[0]
+        self.fail("Expected at least one section_code for the published lesson")
+
+    def _demo_image_attachment(self) -> dict[str, object]:
+        return {
+            "type": "image",
+            "name": "demo.png",
+            "mimeType": "image/png",
+            "dataUrl": (
+                "data:image/png;base64,"
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6nL9sAAAAASUVORK5CYII="
+            ),
+        }
+
+    def _get_student_identifier(self) -> str:
+        with session_scope() as db:
+            row = db.query(User.user_no).filter(User.role == "student").order_by(User.id.asc()).first()
+            if row and row[0]:
+                return row[0]
+            school = db.query(School).order_by(School.id.asc()).first()
+            if school is None:
+                school = School(school_code="school-demo", school_name="测试学校", status=True)
+                db.add(school)
+                db.flush()
+            student = User(user_no="student-router-001", user_name="测试学生", role="student", school_id=school.id, status=True)
+            db.add(student)
+            db.flush()
+            return student.user_no
 
     def _signed_payload(self, payload: dict[str, object]) -> dict[str, object]:
         timestamp = "1713513600000"

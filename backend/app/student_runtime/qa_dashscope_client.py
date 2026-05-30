@@ -52,6 +52,51 @@ class DashScopeClient:
         except Exception as exc:
             raise RuntimeError(f"Unexpected DashScope chat response: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
 
+    def chat_multimodal_completion(
+        self,
+        *,
+        prompt: str,
+        image_data_urls: list[str],
+        system_prompt: str | None = None,
+    ) -> dict[str, Any]:
+        self.ensure_ready()
+        if not image_data_urls:
+            return self.chat_completion(prompt=prompt, system_prompt=system_prompt)
+
+        content: list[dict[str, Any]] = []
+        for image_url in image_data_urls:
+            content.append({"type": "image_url", "image_url": {"url": image_url}})
+        content.append({"type": "text", "text": prompt})
+
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content})
+
+        payload = {
+            "model": self.settings.qa_multimodal_model or self.settings.qa_llm_model,
+            "messages": messages,
+            "temperature": 0.2,
+        }
+        url = self.settings.dashscope_base_url.rstrip("/") + "/compatible-mode/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.settings.dashscope_api_key}",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=self.settings.llm_timeout_seconds, trust_env=False) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        try:
+            return {
+                "raw": data,
+                "text": _extract_openai_compatible_message_text(data["choices"][0]["message"]["content"]),
+                "usage": data.get("usage") or {},
+                "request_id": data.get("id") or data.get("request_id") or data.get("requestId"),
+            }
+        except Exception as exc:
+            raise RuntimeError(f"Unexpected DashScope multimodal response: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
+
     def embed_texts(self, texts: list[str], *, text_type: str = 'document') -> list[list[float]]:
         self.ensure_ready()
         if not texts:
@@ -178,3 +223,17 @@ def _extract_text_from_asr_json(payload: Any) -> str:
             seen.add(item)
             deduped.append(item)
     return '\n'.join(deduped).strip()
+
+
+def _extract_openai_compatible_message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text" and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts).strip()
+    raise RuntimeError(f"Unsupported multimodal content payload: {json.dumps(content, ensure_ascii=False)[:300]}")

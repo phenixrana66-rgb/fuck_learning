@@ -10,6 +10,7 @@ from backend.app.compat.router import router as compat_router
 from backend.app.lesson.voice_storage import get_voice_cache_dir
 from backend.app.progress.router import router as progress_router
 from backend.app.qa.router import router as qa_router
+from backend.app.student_runtime.qa_image_storage import get_qa_image_cache_dir
 from backend.app.student_runtime.router import router as student_router
 from backend.app.teacher_runtime.extra_router import router as teacher_extra_router
 
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.mount("/mock-remote/examples", StaticFiles(directory=str(PROJECT_ROOT / "examples")), name="mock-remote-examples")
     app.mount("/cache/voice", StaticFiles(directory=str(get_voice_cache_dir())), name="lesson-audio-cache")
+    app.mount("/cache/qa-images", StaticFiles(directory=str(get_qa_image_cache_dir())), name="qa-image-cache")
     app.mount("/courseware-previews", StaticFiles(directory=str(COURSEWARE_PREVIEW_ROOT)), name="courseware-previews")
 
     app.include_router(teacher_extra_router, prefix=settings.api_prefix)

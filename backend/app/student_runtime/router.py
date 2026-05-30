@@ -23,6 +23,7 @@ from backend.app.student_runtime.db_learning_service import (
     save_recent_chapter_visit,
 )
 from backend.app.student_runtime.db_qa_service import get_qa_sessions, save_qa_session
+from backend.app.student_runtime.qa_image_storage import normalize_qa_image_attachments
 from backend.app.student_runtime.learning_service import LearningService
 from backend.app.student_runtime.qa_asr_service import AudioPayloadError, transcribe_audio_payload
 from backend.app.student_runtime.qa_asr_realtime_service import handle_realtime_asr_message
@@ -215,7 +216,10 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
     question = (payload.get("question") or "").strip()
     page_no = payload.get("pageNo")
     lesson_id = payload.get("lessonId")
+    attachments = normalize_qa_image_attachments(payload.get("attachments") or [])
     request_id = getattr(request.state, "request_id", None)
+    if not question and not attachments:
+        raise ApiError(400, "请输入问题或上传图片", status_code=400)
 
     async def event_stream():
         def emit(data: dict) -> str:
@@ -224,8 +228,15 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
         yield emit({"type": "start", "requestId": request_id})
 
         try:
-            if section_id and question:
-                data = answer_question(db, lesson_id=lesson_id, section_id=section_id, page_no=page_no, question=question)
+            if section_id and (question or attachments):
+                data = answer_question(
+                    db,
+                    lesson_id=lesson_id,
+                    section_id=section_id,
+                    page_no=page_no,
+                    question=question,
+                    attachments=attachments,
+                )
                 if not data:
                     data = interact_with_section_context(db, lesson_id, section_id, question, page_no)
             else:

@@ -39,6 +39,7 @@ from backend.chaoxing_db.models import (
     QAAnswer,
     QAAnswerTrace,
     QAMessage,
+    QAMessageAttachment,
     QAMessageKnowledgeRef,
     QASession,
     ResumeRecord,
@@ -243,6 +244,9 @@ def cleanup_course(*, course_id: int, course_code: str, course_name: str, apply:
         counts["qa_sessions"] = len(context.qa_session_ids)
         counts["qa_messages"] = len(context.qa_message_ids)
         counts["qa_answers"] = len(context.qa_answer_ids)
+        counts["qa_message_attachments"] = _count_by_ids(
+            db, QAMessageAttachment, QAMessageAttachment.message_id, context.qa_message_ids
+        )
         counts["qa_message_knowledge_refs"] = _count_by_ids(
             db, QAMessageKnowledgeRef, QAMessageKnowledgeRef.answer_id, context.qa_answer_ids
         )
@@ -332,6 +336,9 @@ def cleanup_course(*, course_id: int, course_code: str, course_name: str, apply:
         )
         deleted["qa_message_knowledge_refs"] = _delete_by_ids(
             db, QAMessageKnowledgeRef, QAMessageKnowledgeRef.answer_id, context.qa_answer_ids
+        )
+        deleted["qa_message_attachments"] = _delete_by_ids(
+            db, QAMessageAttachment, QAMessageAttachment.message_id, context.qa_message_ids
         )
         deleted["voice_transcripts"] = (
             db.query(VoiceTranscript)

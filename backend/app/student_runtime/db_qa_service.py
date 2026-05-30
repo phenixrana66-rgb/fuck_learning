@@ -16,10 +16,12 @@ from backend.chaoxing_db.models import (
     QAAnswer,
     QAAnswerTrace,
     QAMessage,
+    QAMessageAttachment,
     QAMessageKnowledgeRef,
     QASession,
     VoiceTranscript,
 )
+from backend.app.student_runtime.qa_image_storage import normalize_qa_image_attachments, store_qa_image_from_data_url
 
 QA_UNDERSTANDING_LEVEL_MAP = {
     "未理解": "none",
@@ -57,10 +59,10 @@ def _datetime_from_maybe_ms(value: Any) -> datetime:
         return datetime.now()
 
 
-def _create_session_title(question: str = "") -> str:
+def _create_session_title(question: str = "", *, has_attachments: bool = False) -> str:
     normalized = " ".join((question or "").split()).strip()
     if not normalized:
-        return "未命名问答"
+        return "图片提问" if has_attachments else "未命名问答"
     return f"{normalized[:24]}..." if len(normalized) > 24 else normalized
 
 
@@ -84,7 +86,7 @@ def get_qa_sessions(db: Session, student_identifier: str | int | None, lesson_id
     sessions = (
         db.query(QASession)
         .options(
-            joinedload(QASession.messages),
+            joinedload(QASession.messages).joinedload(QAMessage.attachments),
             joinedload(QASession.answers).joinedload(QAAnswer.knowledge_refs),
         )
         .filter(QASession.student_id == student_db_id, QASession.lesson_id == lesson.id)
@@ -97,7 +99,8 @@ def get_qa_sessions(db: Session, student_identifier: str | int | None, lesson_id
         section_name = current_section.section_name if current_section else (lesson.course.course_name if lesson.course else "")
         messages = sorted(session.messages or [], key=lambda item: (item.created_at or datetime.min, item.id))
         answers_by_message_id = {answer.assistant_message_id: answer for answer in (session.answers or [])}
-        first_question = next((item.message_content for item in messages if item.role == "user"), "")
+        first_user_message = next((item for item in messages if item.role == "user"), None)
+        first_question = first_user_message.message_content if first_user_message else ""
         payload_messages: list[JsonDict] = []
         for message in messages:
             item: JsonDict = {
@@ -106,6 +109,12 @@ def get_qa_sessions(db: Session, student_identifier: str | int | None, lesson_id
                 "content": message.message_content,
                 "createdAt": _timestamp_ms(message.created_at),
             }
+            if message.role == "user":
+                item["questionType"] = message.question_type or "text"
+                item["attachments"] = [
+                    _serialize_attachment_payload(row)
+                    for row in sorted(message.attachments or [], key=lambda row: (row.sort_no, row.id))
+                ]
             if message.role == "assistant":
                 answer = answers_by_message_id.get(message.id)
                 item["relatedPoints"] = [
@@ -124,7 +133,7 @@ def get_qa_sessions(db: Session, student_identifier: str | int | None, lesson_id
         result.append(
             {
                 "sessionId": session.session_no,
-                "title": session.session_title or _create_session_title(first_question),
+                "title": session.session_title or _create_session_title(first_question, has_attachments=bool(first_user_message and first_user_message.attachments)),
                 "messages": payload_messages,
                 "createdAt": _timestamp_ms(session.created_at),
                 "updatedAt": _timestamp_ms(session.updated_at),
@@ -159,7 +168,8 @@ def save_qa_session(
 
     session_no = session_payload.get("sessionId") or f"session-{uuid4().hex[:16]}"
     messages_payload = session_payload.get("messages") or []
-    first_question = next((item.get("content", "") for item in messages_payload if item.get("role") == "user"), "")
+    first_user_payload = next((item for item in messages_payload if item.get("role") == "user"), {})
+    first_question = first_user_payload.get("content", "")
     now = datetime.now()
 
     session = (
@@ -187,10 +197,14 @@ def save_qa_session(
         if answer_ids:
             db.query(QAMessageKnowledgeRef).filter(QAMessageKnowledgeRef.answer_id.in_(answer_ids)).delete(synchronize_session=False)
             db.query(QAAnswer).filter(QAAnswer.id.in_(answer_ids)).delete(synchronize_session=False)
+        db.query(QAMessageAttachment).filter(QAMessageAttachment.session_id == session.id).delete(synchronize_session=False)
         db.query(QAMessage).filter(QAMessage.session_id == session.id).delete(synchronize_session=False)
 
     session.current_section_id = section.id
-    session.session_title = session_payload.get("title") or _create_session_title(first_question)
+    session.session_title = session_payload.get("title") or _create_session_title(
+        first_question,
+        has_attachments=bool(first_user_payload.get("attachments")),
+    )
     session.status = "active"
     session.updated_at = now
     db.flush()
@@ -199,17 +213,37 @@ def save_qa_session(
     for item in messages_payload:
         role = "assistant" if item.get("role") == "assistant" else "user"
         created_at = _datetime_from_maybe_ms(item.get("createdAt"))
+        attachments_payload = normalize_qa_image_attachments(item.get("attachments") or []) if role == "user" else []
         message = QAMessage(
             session_id=session.id,
             lesson_id=lesson.id,
             section_id=section.id,
             role=role,
-            question_type=(item.get("questionType") or "text") if role == "user" else None,
+            question_type=_resolve_question_type(item.get("questionType"), attachments_payload, item.get("content")) if role == "user" else None,
             message_content=item.get("content") or "",
             created_at=created_at,
         )
         db.add(message)
         db.flush()
+        if role == "user":
+            for attachment_index, attachment_payload in enumerate(attachments_payload):
+                stored = _store_attachment_payload(attachment_payload)
+                db.add(
+                    QAMessageAttachment(
+                        message_id=message.id,
+                        session_id=session.id,
+                        lesson_id=lesson.id,
+                        attachment_type="image",
+                        storage_provider=str(stored.get("storageProvider") or "local"),
+                        storage_key=str(stored.get("storageKey") or ""),
+                        file_url=str(stored.get("url") or ""),
+                        file_name=str(stored.get("name") or "image"),
+                        mime_type=str(stored.get("mimeType") or "image/jpeg"),
+                        file_size=stored.get("size"),
+                        sort_no=attachment_index,
+                        created_at=created_at,
+                    )
+                )
         if role == "user":
             pending_question = message
             continue
@@ -240,7 +274,17 @@ def save_qa_session(
             db.add(QAMessageKnowledgeRef(answer_id=answer.id, knowledge_name=point, sort_no=point_index))
         pending_question = None
     db.commit()
-    return {"sessionId": session.session_no, "title": session.session_title or _create_session_title(first_question)}
+    db.refresh(session)
+    reloaded = get_qa_sessions(db, student_identifier, lesson_identifier)
+    normalized_session = next((item for item in reloaded if item.get("sessionId") == session.session_no), None)
+    return {
+        "sessionId": session.session_no,
+        "title": session.session_title or _create_session_title(
+            first_question,
+            has_attachments=bool(first_user_payload.get("attachments")),
+        ),
+        "session": normalized_session,
+    }
 
 
 def save_voice_transcript(
@@ -299,3 +343,46 @@ def record_qa_answer_trace(db: Session, trace_payload: JsonDict) -> JsonDict:
     db.add(trace)
     db.commit()
     return {"traceId": trace.id}
+
+
+def _serialize_attachment_payload(row: QAMessageAttachment) -> JsonDict:
+    return {
+        "type": row.attachment_type,
+        "storageProvider": row.storage_provider,
+        "storageKey": row.storage_key,
+        "url": row.file_url,
+        "name": row.file_name,
+        "mimeType": row.mime_type,
+        "size": row.file_size,
+    }
+def _resolve_question_type(question_type: Any, attachments: list[JsonDict], content: Any) -> str:
+    normalized_content = str(content or "").strip()
+    if attachments and normalized_content:
+        return "mixed"
+    if attachments:
+        return "image"
+    normalized = str(question_type or "").strip().lower()
+    if normalized == "voice":
+        return "voice"
+    return "text"
+
+
+def _store_attachment_payload(attachment_payload: JsonDict) -> JsonDict:
+    storage_key = str(attachment_payload.get("storageKey") or "").strip()
+    file_url = str(attachment_payload.get("url") or "").strip()
+    if storage_key and file_url:
+        return {
+            "type": "image",
+            "storageProvider": attachment_payload.get("storageProvider") or "local",
+            "storageKey": storage_key,
+            "url": file_url,
+            "name": attachment_payload.get("name") or "image",
+            "mimeType": attachment_payload.get("mimeType") or "image/jpeg",
+            "size": attachment_payload.get("size"),
+        }
+    stored = store_qa_image_from_data_url(
+        data_url=str(attachment_payload.get("dataUrl") or ""),
+        file_name=str(attachment_payload.get("name") or "image"),
+        mime_type=str(attachment_payload.get("mimeType") or "") or None,
+    )
+    return stored.to_payload()

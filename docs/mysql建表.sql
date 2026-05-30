@@ -12,6 +12,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS `api_call_logs`;
 DROP TABLE IF EXISTS `voice_transcripts`;
+DROP TABLE IF EXISTS `qa_message_attachments`;
 DROP TABLE IF EXISTS `qa_message_knowledge_refs`;
 DROP TABLE IF EXISTS `qa_answers`;
 DROP TABLE IF EXISTS `qa_messages`;
@@ -599,7 +600,7 @@ CREATE TABLE `qa_messages` (
   `lesson_id` BIGINT UNSIGNED NOT NULL,
   `section_id` BIGINT UNSIGNED DEFAULT NULL,
   `role` ENUM('user', 'assistant') NOT NULL,
-  `question_type` ENUM('text', 'voice') DEFAULT NULL,
+  `question_type` ENUM('text', 'voice', 'image', 'mixed') DEFAULT NULL,
   `message_content` LONGTEXT NOT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -609,6 +610,28 @@ CREATE TABLE `qa_messages` (
   CONSTRAINT `fk_qa_messages_lesson` FOREIGN KEY (`lesson_id`) REFERENCES `lessons` (`id`),
   CONSTRAINT `fk_qa_messages_section` FOREIGN KEY (`section_id`) REFERENCES `lesson_sections` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问答消息流';
+
+CREATE TABLE `qa_message_attachments` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `message_id` BIGINT UNSIGNED NOT NULL,
+  `session_id` BIGINT UNSIGNED NOT NULL,
+  `lesson_id` BIGINT UNSIGNED NOT NULL,
+  `attachment_type` ENUM('image') NOT NULL DEFAULT 'image',
+  `storage_provider` VARCHAR(32) NOT NULL DEFAULT 'local',
+  `storage_key` VARCHAR(255) NOT NULL,
+  `file_url` VARCHAR(255) NOT NULL,
+  `file_name` VARCHAR(255) NOT NULL,
+  `mime_type` VARCHAR(64) NOT NULL,
+  `file_size` BIGINT UNSIGNED DEFAULT NULL,
+  `sort_no` INT NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_qa_message_attachments_message` (`message_id`, `sort_no`),
+  KEY `idx_qa_message_attachments_session` (`session_id`, `created_at`),
+  CONSTRAINT `fk_qa_message_attachments_message` FOREIGN KEY (`message_id`) REFERENCES `qa_messages` (`id`),
+  CONSTRAINT `fk_qa_message_attachments_session` FOREIGN KEY (`session_id`) REFERENCES `qa_sessions` (`id`),
+  CONSTRAINT `fk_qa_message_attachments_lesson` FOREIGN KEY (`lesson_id`) REFERENCES `lessons` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问答消息附件';
 
 CREATE TABLE `qa_answers` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
