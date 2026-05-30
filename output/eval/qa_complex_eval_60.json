@@ -1,0 +1,2067 @@
+{
+  "metric": "complex_faq_retrieval_accuracy",
+  "definition": "Complex query is correct if the expected FAQ item id reconstructed from the Excel dataset appears in the retrieved FAQ item ids. Top-1 is the primary accuracy metric.",
+  "datasetPath": "D:\\BaiduNetdiskDownload\\课件资料\\a12基于泛雅平台的AI互动智课生成与实时问答\\教学问答数据集.xlsx",
+  "itemCount": 3115,
+  "variantCount": 9703,
+  "sampleSize": 60,
+  "randomSeed": 20260423,
+  "queryTypes": [
+    "synonym",
+    "paraphrase",
+    "distractor",
+    "vague_contextual"
+  ],
+  "top1HitRate": 0.9167,
+  "top3HitRate": 0.9833,
+  "top5HitRate": 0.9833,
+  "top1AccuracyPercent": 91.67,
+  "top3AccuracyPercent": 98.33,
+  "top5AccuracyPercent": 98.33,
+  "avgRetrievalLatencyMs": 8.74,
+  "embeddingLatencyMs": 5972.79,
+  "byQueryType": {
+    "distractor": {
+      "sampleSize": 15,
+      "top1HitRate": 0.9333,
+      "top3HitRate": 0.9333,
+      "top5HitRate": 0.9333
+    },
+    "paraphrase": {
+      "sampleSize": 15,
+      "top1HitRate": 0.8667,
+      "top3HitRate": 1.0,
+      "top5HitRate": 1.0
+    },
+    "synonym": {
+      "sampleSize": 15,
+      "top1HitRate": 0.9333,
+      "top3HitRate": 1.0,
+      "top5HitRate": 1.0
+    },
+    "vague_contextual": {
+      "sampleSize": 15,
+      "top1HitRate": 0.9333,
+      "top3HitRate": 1.0,
+      "top5HitRate": 1.0
+    }
+  },
+  "badCases": [
+    {
+      "caseId": 19,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：什么是应力？",
+      "expectedItemId": 29,
+      "canonical": "什么是应力？",
+      "category": "基础概念与解析",
+      "retrievedVariantIds": [
+        165,
+        166,
+        6874,
+        168,
+        6687
+      ],
+      "retrievedItemIds": [
+        42,
+        42,
+        1743,
+        42,
+        1696
+      ],
+      "retrievedTexts": [
+        "什么是应力?",
+        "如何理解应力?",
+        "应力的定义与计算?",
+        "应力的定义是什么?",
+        "如何分析应力？"
+      ],
+      "top1Hit": false,
+      "top3Hit": false,
+      "top5Hit": false,
+      "latencyMs": 8.98
+    }
+  ],
+  "caseResults": [
+    {
+      "caseId": 1,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：非线性和线性的区别",
+      "expectedItemId": 2571,
+      "canonical": "非线性和线性的区别",
+      "category": "第六章",
+      "retrievedVariantIds": [
+        9156,
+        9234,
+        9111,
+        9360,
+        9303
+      ],
+      "retrievedItemIds": [
+        2571,
+        2649,
+        2526,
+        2775,
+        2718
+      ],
+      "retrievedTexts": [
+        "非线性和线性的区别",
+        "线性系统和非线性系统的区别是什么",
+        "22.非线性系统和线性系统的比较？",
+        "非线性系统和线性系统相比，有哪些特点",
+        "列举3种非线性系统与线性系统特性的不同之处"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 16.56
+    },
+    {
+      "caseId": 2,
+      "queryType": "paraphrase",
+      "query": "解释应变能密度概念这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 1524,
+      "canonical": "解释应变能密度概念？",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        6018,
+        3909,
+        1101,
+        1104,
+        1102
+      ],
+      "retrievedItemIds": [
+        1524,
+        990,
+        281,
+        281,
+        281
+      ],
+      "retrievedTexts": [
+        "解释应变能密度概念？",
+        "解释应变能密度的定义",
+        "什么是应变能密度？",
+        "应变能密度含义？",
+        "应变能密度定义？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.06
+    },
+    {
+      "caseId": 3,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：采样周期对系统稳定性有没有影响？",
+      "expectedItemId": 2639,
+      "canonical": "采样周期对系统稳定性有没有影响？",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9224,
+        9223,
+        9275,
+        9274,
+        9225
+      ],
+      "retrievedItemIds": [
+        2639,
+        2638,
+        2690,
+        2689,
+        2640
+      ],
+      "retrievedTexts": [
+        "采样周期对系统稳定性有没有影响？",
+        "采样系统稳态误差怎样求解？",
+        "7.系统的稳定性与什么有关？",
+        "8.系统的稳定误差与哪些因素有关？",
+        "离散系统的稳定性与什么因素有关？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 12.13
+    },
+    {
+      "caseId": 4,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“求作轴线垂直相交的大圆柱和小圆柱的相贯线”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 2507,
+      "canonical": "求作轴线垂直相交的大圆柱和小圆柱的相贯线。",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9074,
+        9075,
+        9076,
+        9044,
+        9042
+      ],
+      "retrievedItemIds": [
+        2507,
+        2507,
+        2507,
+        2494,
+        2494
+      ],
+      "retrievedTexts": [
+        "求作轴线垂直相交的大圆柱和小圆柱的相贯线。",
+        "怎么做出轴线垂直相交的大圆柱和小圆柱的相贯线？",
+        "求作圆柱与圆锥正交（轴线垂直相交）时的相贯线。",
+        "两轴线垂直相交的圆柱体相贯线的投影的画法是什么？",
+        "如何绘制两轴线垂直相交的圆柱体相贯线的投影？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.0
+    },
+    {
+      "caseId": 5,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：多温度场处理",
+      "expectedItemId": 337,
+      "canonical": "温度应力成因",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1326,
+        5838,
+        5473,
+        5416,
+        6267
+      ],
+      "retrievedItemIds": [
+        337,
+        1478,
+        1387,
+        1373,
+        1586
+      ],
+      "retrievedTexts": [
+        "多温度场处理",
+        "如何监测温度场？",
+        "瞬态温度场对应力影响？",
+        "高温管道多场耦合设计？",
+        "温度场测试方法"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 8.64
+    },
+    {
+      "caseId": 6,
+      "queryType": "paraphrase",
+      "query": "海底管道铺设时的动态弯曲应力这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 458,
+      "canonical": "海底管道铺设时的动态弯曲应力？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1808,
+        6860,
+        860,
+        4424,
+        6966
+      ],
+      "retrievedItemIds": [
+        458,
+        1740,
+        220,
+        1123,
+        1766
+      ],
+      "retrievedTexts": [
+        "海底管道铺设时的动态弯曲应力？",
+        "材料的弯曲应力如何计算?",
+        "流体载荷对管道的弯曲影响？",
+        "几何参数对弯曲应力的影响？",
+        "如何求材料的弯曲应力?"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 10.05
+    },
+    {
+      "caseId": 7,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：智能电网复合材料横担设计",
+      "expectedItemId": 929,
+      "canonical": "智能电网复合材料横担设计",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        3665,
+        5319,
+        4495,
+        5577,
+        5223
+      ],
+      "retrievedItemIds": [
+        929,
+        1349,
+        1143,
+        1413,
+        1325
+      ],
+      "retrievedTexts": [
+        "智能电网复合材料横担设计",
+        "智能电网碳纤维复合压杆设计？",
+        "输电塔横担结构弯曲疲劳优化？",
+        "新型横担力学优化",
+        "智能电网碳纳米管混凝土压杆？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.5
+    },
+    {
+      "caseId": 8,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“组合变形中主应力与主方向的关系”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 441,
+      "canonical": "组合变形中主应力与主方向的关系？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1740,
+        5451,
+        72,
+        3557,
+        393
+      ],
+      "retrievedItemIds": [
+        441,
+        1382,
+        18,
+        902,
+        99
+      ],
+      "retrievedTexts": [
+        "组合变形中主应力与主方向的关系？",
+        "组合变形中主应力迹线的作用？",
+        "如何理解主应力？",
+        "什么是组合变形？",
+        "主平面与主应力的定义？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.8
+    },
+    {
+      "caseId": 9,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：设备基础共振诊断",
+      "expectedItemId": 1580,
+      "canonical": "如何分析井下破碎机基础螺栓断裂？",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        6241,
+        5203,
+        5109,
+        4969,
+        3544
+      ],
+      "retrievedItemIds": [
+        1580,
+        1320,
+        1296,
+        1261,
+        898
+      ],
+      "retrievedTexts": [
+        "设备基础共振诊断",
+        "压杆屈曲声学共振检测？",
+        "如何防止结构共振？",
+        "共振频率避免",
+        "非接触式振动分析原理？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.43
+    },
+    {
+      "caseId": 10,
+      "queryType": "paraphrase",
+      "query": "复合材料轴的各向异性扭转特性这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 732,
+      "canonical": "复合材料轴的各向异性扭转特性？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        2877,
+        1027,
+        2857,
+        8590,
+        4552
+      ],
+      "retrievedItemIds": [
+        732,
+        262,
+        727,
+        2179,
+        1157
+      ],
+      "retrievedTexts": [
+        "复合材料轴的各向异性扭转特性？",
+        "复合材料轴的扭转特性",
+        "复合材料层合轴各向异性扭转刚度？",
+        "各向异性材料圆轴扭转的应力特点？",
+        "正交各向异性轴的扭转刚度？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.76
+    },
+    {
+      "caseId": 11,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：如何进行抗拉试验的标准化?",
+      "expectedItemId": 777,
+      "canonical": "如何进行抗拉试验的标准化?",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        3060,
+        3057,
+        2997,
+        3012,
+        3058
+      ],
+      "retrievedItemIds": [
+        777,
+        777,
+        762,
+        765,
+        777
+      ],
+      "retrievedTexts": [
+        "如何进行抗拉试验标准化?",
+        "如何进行抗拉试验的标准化?",
+        "如何进行拉伸试验的标准化?",
+        "如何实施抗拉测试?",
+        "抗拉试验的标准是什么?"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.42
+    },
+    {
+      "caseId": 12,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“空间可展开天线肋条的弯曲稳定性”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 688,
+      "canonical": "空间可展开天线肋条的弯曲稳定性？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        2701,
+        7403,
+        5369,
+        1990,
+        5654
+      ],
+      "retrievedItemIds": [
+        688,
+        1876,
+        1361,
+        504,
+        1432
+      ],
+      "retrievedTexts": [
+        "空间可展开天线肋条的弯曲稳定性？",
+        "太空可展天线弯扭组合变形控制？",
+        "天线多自由度展开变形分析？",
+        "空间可展开天线铰链力学优化",
+        "可展天线动态特性分析"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 8.13
+    },
+    {
+      "caseId": 13,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：如何快速绘制弯矩图？",
+      "expectedItemId": 1155,
+      "canonical": "船舶甲板纵骨弯曲强度评估？",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        4544,
+        6764,
+        7904,
+        8631,
+        8630
+      ],
+      "retrievedItemIds": [
+        1155,
+        1716,
+        2001,
+        2194,
+        2194
+      ],
+      "retrievedTexts": [
+        "如何快速绘制弯矩图？",
+        "如何绘制剪力图和弯矩图？",
+        "弯矩图绘制方法",
+        "如何绘制剪力图和弯矩图",
+        "剪力图和弯矩图的绘制方法"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.58
+    },
+    {
+      "caseId": 14,
+      "queryType": "paraphrase",
+      "query": "非线性系统的分析设计方法有哪些这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 2655,
+      "canonical": "非线性系统的分析设计方法有哪些？",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9240,
+        9158,
+        9109,
+        9238,
+        9233
+      ],
+      "retrievedItemIds": [
+        2655,
+        2573,
+        2524,
+        2653,
+        2648
+      ],
+      "retrievedTexts": [
+        "非线性系统的分析设计方法有哪些？",
+        "非线性系统的分析设计方法有哪些",
+        "24.非线性系统分析方法？",
+        "分析非线性系统方法有哪些",
+        "非线性可以用描述函数法分析的前提是什么"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 12.52
+    },
+    {
+      "caseId": 15,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：什么是疲劳极限？",
+      "expectedItemId": 294,
+      "canonical": "什么是疲劳极限？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1153,
+        6961,
+        1156,
+        1154,
+        1155
+      ],
+      "retrievedItemIds": [
+        294,
+        1765,
+        294,
+        294,
+        294
+      ],
+      "retrievedTexts": [
+        "什么是疲劳极限？",
+        "如何理解疲劳极限?",
+        "如何确定疲劳极限？",
+        "疲劳极限表示什么？",
+        "疲劳极限的定义？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.92
+    },
+    {
+      "caseId": 16,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“如何分析带式输送机断带抓捕失效”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 2064,
+      "canonical": "如何分析带式输送机断带抓捕失效？",
+      "category": "核心计算与分析",
+      "retrievedVariantIds": [
+        8151,
+        6186,
+        8595,
+        632,
+        6333
+      ],
+      "retrievedItemIds": [
+        2064,
+        1566,
+        2180,
+        159,
+        1603
+      ],
+      "retrievedTexts": [
+        "如何分析带式输送机断带抓捕失效？",
+        "断带抓捕力学分析",
+        "如何通过断口分析失效类型？",
+        "如何计算带式输送机传动轴的疲劳寿命？",
+        "如何通过断口判断失效类型？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.33
+    },
+    {
+      "caseId": 17,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：安全系数与经济效益的平衡",
+      "expectedItemId": 97,
+      "canonical": "许用应力与安全系数的关系？",
+      "category": "基础概念与解析",
+      "retrievedVariantIds": [
+        386,
+        6730,
+        4812,
+        7996,
+        6728
+      ],
+      "retrievedItemIds": [
+        97,
+        1707,
+        1222,
+        2025,
+        1707
+      ],
+      "retrievedTexts": [
+        "安全系数与经济效益的平衡",
+        "如何定安全系数？",
+        "为什么需要安全系数？",
+        "如何确定安全系数？",
+        "安全系数如何选取？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.82
+    },
+    {
+      "caseId": 18,
+      "queryType": "paraphrase",
+      "query": "螺栓组连接载荷分配计算这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 520,
+      "canonical": "螺栓组连接载荷分配计算",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        2054,
+        8128,
+        7693,
+        7694,
+        7068
+      ],
+      "retrievedItemIds": [
+        520,
+        2058,
+        1948,
+        1948,
+        1792
+      ],
+      "retrievedTexts": [
+        "螺栓组连接载荷分配计算",
+        "螺栓群受力计算",
+        "多螺栓载荷分布分析",
+        "紧固件组受力分配原则",
+        "螺栓连接计算"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 10.61
+    },
+    {
+      "caseId": 19,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：什么是应力？",
+      "expectedItemId": 29,
+      "canonical": "什么是应力？",
+      "category": "基础概念与解析",
+      "retrievedVariantIds": [
+        165,
+        166,
+        6874,
+        168,
+        6687
+      ],
+      "retrievedItemIds": [
+        42,
+        42,
+        1743,
+        42,
+        1696
+      ],
+      "retrievedTexts": [
+        "什么是应力?",
+        "如何理解应力?",
+        "应力的定义与计算?",
+        "应力的定义是什么?",
+        "如何分析应力？"
+      ],
+      "top1Hit": false,
+      "top3Hit": false,
+      "top5Hit": false,
+      "latencyMs": 8.98
+    },
+    {
+      "caseId": 20,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“照明负载三相不对称，必须采用哪种供电方式”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 2825,
+      "canonical": "照明负载三相不对称，必须采用哪种供电方式",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9410,
+        9421,
+        9420,
+        9422,
+        9418
+      ],
+      "retrievedItemIds": [
+        2825,
+        2836,
+        2835,
+        2837,
+        2833
+      ],
+      "retrievedTexts": [
+        "照明负载三相不对称，必须采用哪种供电方式",
+        "对称的三相负载是指？",
+        "有单相负载组成的三相负载是否对称？",
+        "三相负载分为？",
+        "三相负载采用哪种接法，应遵循的原则是什么？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.87
+    },
+    {
+      "caseId": 21,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：超薄板多向变形控制？",
+      "expectedItemId": 1359,
+      "canonical": "压杆初弯曲缺陷的测量方法？",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        5360,
+        5494,
+        2147,
+        351,
+        7524
+      ],
+      "retrievedItemIds": [
+        1359,
+        1392,
+        543,
+        88,
+        1906
+      ],
+      "retrievedTexts": [
+        "超薄板多向变形控制？",
+        "超薄结构稳定性设计？",
+        "如何控制预变形？",
+        "厚板结构的变形特征",
+        "厚板问题z向应力确定？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.46
+    },
+    {
+      "caseId": 22,
+      "queryType": "paraphrase",
+      "query": "增压压力的调节方式有哪些这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 2305,
+      "canonical": "增压压力的调节方式有哪些？",
+      "category": "第9章 增压系统",
+      "retrievedVariantIds": [
+        8744,
+        8749,
+        7523,
+        1579,
+        2159
+      ],
+      "retrievedItemIds": [
+        2305,
+        2310,
+        1906,
+        400,
+        546
+      ],
+      "retrievedTexts": [
+        "增压压力的调节方式有哪些？",
+        "常见的增压方式有哪两种？",
+        "体积应力与形状改变能关系？",
+        "环境响应压杆自调节？",
+        "让压装置力学特性"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 19.83
+    },
+    {
+      "caseId": 23,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：负载对称时,中性线有无电流,是否可以省掉中性线。",
+      "expectedItemId": 2828,
+      "canonical": "负载对称时,中性线有无电流,是否可以省掉中性线。",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9413,
+        9411,
+        9412,
+        9420,
+        9421
+      ],
+      "retrievedItemIds": [
+        2828,
+        2826,
+        2827,
+        2835,
+        2836
+      ],
+      "retrievedTexts": [
+        "负载对称时,中性线有无电流,是否可以省掉中性线。",
+        "中性线的作用是什么？",
+        "不对称负载Y联结又未接中性线时，负载电压如何变化？",
+        "有单相负载组成的三相负载是否对称？",
+        "对称的三相负载是指？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 12.37
+    },
+    {
+      "caseId": 24,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“金属玻璃剪切带形成原子尺度机理”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 1440,
+      "canonical": "金属玻璃剪切带形成原子尺度机理",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        5683,
+        7491,
+        3769,
+        1821,
+        5559
+      ],
+      "retrievedItemIds": [
+        1440,
+        1898,
+        955,
+        461,
+        1409
+      ],
+      "retrievedTexts": [
+        "金属玻璃剪切带形成原子尺度机理",
+        "金属玻璃的剪切带形成机理？",
+        "金属玻璃剪切带形成机理",
+        "金属玻璃失效机理？",
+        "金属玻璃的非晶态强度特性？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 13.01
+    },
+    {
+      "caseId": 25,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：材料抗腐蚀性如何评估?",
+      "expectedItemId": 1253,
+      "canonical": "如何评估材料的抗腐蚀性能?",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        4859,
+        4935,
+        4936,
+        4860,
+        4938
+      ],
+      "retrievedItemIds": [
+        1234,
+        1253,
+        1253,
+        1234,
+        1253
+      ],
+      "retrievedTexts": [
+        "如何评估材料的抗腐蚀性?",
+        "如何评估材料的抗腐蚀性能?",
+        "材料抗腐蚀性如何评估?",
+        "如何测量抗腐蚀性?",
+        "评估抗腐蚀性能的步骤?"
+      ],
+      "top1Hit": false,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 12.1
+    },
+    {
+      "caseId": 26,
+      "queryType": "paraphrase",
+      "query": "解释塑性铰的形成条件这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 1482,
+      "canonical": "解释塑性铰的形成条件",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        7402,
+        5851,
+        7029,
+        874,
+        479
+      ],
+      "retrievedItemIds": [
+        1875,
+        1482,
+        1782,
+        224,
+        120
+      ],
+      "retrievedTexts": [
+        "塑性铰形成条件分析？",
+        "解释塑性铰的形成条件",
+        "塑性铰形成条件",
+        "动态塑性铰形成过程？",
+        "塑性铰理论依据"
+      ],
+      "top1Hit": false,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.22
+    },
+    {
+      "caseId": 27,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：2.闭环极点和闭环零点对系统性能的影响？",
+      "expectedItemId": 2557,
+      "canonical": "2.闭环极点和闭环零点对系统性能的影响？",
+      "category": "自动控制原理3",
+      "retrievedVariantIds": [
+        9142,
+        9123,
+        9345,
+        9179,
+        9267
+      ],
+      "retrievedItemIds": [
+        2557,
+        2538,
+        2760,
+        2594,
+        2682
+      ],
+      "retrievedTexts": [
+        "2.闭环极点和闭环零点对系统性能的影响？",
+        "10.闭环极点和闭环零点对系统性能的影响？",
+        "系统闭环零点、极点和性能指标的关系。",
+        "为什么可以利用系统开环零点和开环极点绘制闭环系统的根轨迹",
+        "系统的开环零点、极点对根轨迹形状有什么影响"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.07
+    },
+    {
+      "caseId": 28,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“材料的疲劳门槛值”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 1515,
+      "canonical": "什么是材料的疲劳门槛值？",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        5982,
+        656,
+        1257,
+        772,
+        6959
+      ],
+      "retrievedItemIds": [
+        1515,
+        165,
+        320,
+        194,
+        1765
+      ],
+      "retrievedTexts": [
+        "什么是材料的疲劳门槛值？",
+        "什么是材料的疲劳裂纹扩展门槛值？",
+        "如何理解材料的疲劳强度?",
+        "什么是材料的疲劳极限？",
+        "材料的疲劳极限是什么?"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 4.7
+    },
+    {
+      "caseId": 29,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：27.线性定常系统常用反馈结构及其对系统特性的影响？",
+      "expectedItemId": 2521,
+      "canonical": "27.线性定常系统常用反馈结构及其对系统特性的影响？",
+      "category": "复试问题汇总",
+      "retrievedVariantIds": [
+        9106,
+        9251,
+        9243,
+        9163,
+        9296
+      ],
+      "retrievedItemIds": [
+        2521,
+        2666,
+        2658,
+        2578,
+        2711
+      ],
+      "retrievedTexts": [
+        "27.线性定常系统常用反馈结构及其对系统特性的影响？",
+        "试说明系统局部反馈对系统产生哪些主要影响",
+        "简述前馈校正可以改善线性控制系统的哪些方面，对线性控制系统稳定性有 什么影响",
+        "说明系统局部反馈对系统产生哪些主要影响",
+        "6.试述正反馈控制系统的特点"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.14
+    },
+    {
+      "caseId": 30,
+      "queryType": "paraphrase",
+      "query": "应变能密度如何分解为体积改变能和畸变能这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 461,
+      "canonical": "应变能密度如何分解为体积改变能和畸变能？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1820,
+        6018,
+        1104,
+        1102,
+        1101
+      ],
+      "retrievedItemIds": [
+        461,
+        1524,
+        281,
+        281,
+        281
+      ],
+      "retrievedTexts": [
+        "应变能密度如何分解为体积改变能和畸变能？",
+        "解释应变能密度概念？",
+        "应变能密度含义？",
+        "应变能密度定义？",
+        "什么是应变能密度？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.93
+    },
+    {
+      "caseId": 31,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：什么是系统的动态结构图？它的等效变换的原则是什么？系统的动态结构图有哪几种典型的连接？",
+      "expectedItemId": 2612,
+      "canonical": "什么是系统的动态结构图？它的等效变换的原则是什么？系统的动态结构图有哪几种典型的连接？",
+      "category": "第二章",
+      "retrievedVariantIds": [
+        9197,
+        9284,
+        9344,
+        9280,
+        9282
+      ],
+      "retrievedItemIds": [
+        2612,
+        2699,
+        2759,
+        2695,
+        2697
+      ],
+      "retrievedTexts": [
+        "什么是系统的动态结构图？它的等效变换的原则是什么？系统的动态结构图有哪几种典型的连接？",
+        "7.什么是系统的动态结构图？它等效变换的原则是什么？系统的动态结构图有 哪几种典型的连接？将它们用图形的形式表示出来，并列写出典型连接的传递函数。",
+        "方块图变换要遵守什么原则，举例说明",
+        "2.系统的动态过程与系统的极点有什么对应关系？",
+        "9.对于一个确定的自动控制系统，它的微分方程、传递函数和结构图的形式都 将是唯一的。这种说法对么吗？为什么？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.6
+    },
+    {
+      "caseId": 32,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“断裂力学中应力强度因子K的物理意义”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 377,
+      "canonical": "断裂力学中应力强度因子K的物理意义？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1485,
+        5507,
+        53,
+        1120,
+        56
+      ],
+      "retrievedItemIds": [
+        377,
+        1396,
+        14,
+        285,
+        14
+      ],
+      "retrievedTexts": [
+        "断裂力学中应力强度因子K的物理意义？",
+        "应力强度因子K_I的物理意义？",
+        "什么是应力强度因子？",
+        "如何理解应力强度？",
+        "应力强度因子的意义？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.67
+    },
+    {
+      "caseId": 33,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：蒸气压缩式制冷系统中常用的节流器有哪几种？",
+      "expectedItemId": 2948,
+      "canonical": "蒸气压缩式制冷系统中常用的节流器有哪几种？",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9536,
+        9694,
+        9693,
+        9692,
+        9691
+      ],
+      "retrievedItemIds": [
+        2948,
+        3106,
+        3105,
+        3104,
+        3103
+      ],
+      "retrievedTexts": [
+        "蒸气压缩式制冷系统中常用的节流器有哪几种？",
+        "蒸汽压缩式制冷系统中节流器有什么作用？",
+        "蒸汽压缩式制冷系统中节流器工作时进行怎样的热力过程？",
+        "蒸汽压缩式制冷系统中经节流器节流后的制冷剂的热力参数如何变化？",
+        "蒸汽压缩式制冷系统中制冷剂节流前后的状态如何？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 3.92
+    },
+    {
+      "caseId": 34,
+      "queryType": "paraphrase",
+      "query": "二阶振荡环节的阻尼比取=较好，请说明理由这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 2743,
+      "canonical": "为什么二阶振荡环节的阻尼比取=较好，请说明理由。",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9328,
+        9199,
+        9285,
+        9117,
+        9278
+      ],
+      "retrievedItemIds": [
+        2743,
+        2614,
+        2700,
+        2532,
+        2693
+      ],
+      "retrievedTexts": [
+        "为什么二阶振荡环节的阻尼比取=较好，请说明理由。",
+        "二阶系统是一个震荡环节，这种说法对么？为什么",
+        "6.二阶系统是一个振荡环节，这种说法对么？为什么？",
+        "16.振荡环节和二阶微分缓解的谐振频率和谐振峰值？",
+        "4.提高系统的阻尼比对系统有什么影响？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.48
+    },
+    {
+      "caseId": 35,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：磁浮列车悬浮架压杆气动优化？",
+      "expectedItemId": 1352,
+      "canonical": "磁浮列车悬浮架压杆气动优化？",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        5331,
+        1562,
+        5295,
+        5294,
+        1616
+      ],
+      "retrievedItemIds": [
+        1352,
+        396,
+        1343,
+        1342,
+        410
+      ],
+      "retrievedTexts": [
+        "磁浮列车悬浮架压杆气动优化？",
+        "磁悬浮压杆测试优势？",
+        "超导悬浮压杆零摩擦约束？",
+        "磁浮系统动力学优化？",
+        "高铁受电弓碳纤维压杆优化？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.03
+    },
+    {
+      "caseId": 36,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“如何测定弹性模量E”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 827,
+      "canonical": "如何测定弹性模量E？",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        3257,
+        6708,
+        6710,
+        6711,
+        6709
+      ],
+      "retrievedItemIds": [
+        827,
+        1702,
+        1702,
+        1702,
+        1702
+      ],
+      "retrievedTexts": [
+        "如何测定弹性模量E？",
+        "如何测定弹性模量？",
+        "如何求弹性模量？",
+        "弹性模量的测定方法？",
+        "弹性模量怎么测？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 4.77
+    },
+    {
+      "caseId": 37,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：内部变形全场测量技术",
+      "expectedItemId": 946,
+      "canonical": "微机电系统（MEMS）梁谐振频率计算",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        3734,
+        3688,
+        4550,
+        6491,
+        3739
+      ],
+      "retrievedItemIds": [
+        946,
+        934,
+        1156,
+        1647,
+        947
+      ],
+      "retrievedTexts": [
+        "内部变形全场测量技术",
+        "内部变形全场测量",
+        "非接触式全场变形测量？",
+        "DIC技术全场变形测量流程？",
+        "温度-变形同步检测技术"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.43
+    },
+    {
+      "caseId": 38,
+      "queryType": "paraphrase",
+      "query": "驱动桥由哪几部分组成这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 2257,
+      "canonical": "驱动桥由哪几部分组成？",
+      "category": "第12章 传动系统",
+      "retrievedVariantIds": [
+        8696,
+        8695,
+        5104,
+        8660,
+        8820
+      ],
+      "retrievedItemIds": [
+        2257,
+        2256,
+        1295,
+        2221,
+        2381
+      ],
+      "retrievedTexts": [
+        "驱动桥由哪几部分组成？",
+        "驱动桥如何分类？",
+        "材料力学在桥梁中的应用",
+        "汽车转向传动机构由哪几部分组成？",
+        "曲轴由哪几部分组成？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.64
+    },
+    {
+      "caseId": 39,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：MEMS硅梁的尺寸效应弯曲模型？",
+      "expectedItemId": 1139,
+      "canonical": "MEMS硅梁的尺寸效应弯曲模型？",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        4479,
+        3733,
+        917,
+        2789,
+        6375
+      ],
+      "retrievedItemIds": [
+        1139,
+        946,
+        235,
+        710,
+        1616
+      ],
+      "retrievedTexts": [
+        "MEMS硅梁的尺寸效应弯曲模型？",
+        "微机电系统（MEMS）梁谐振频率计算",
+        "纳米梁的尺寸效应弯曲理论？",
+        "纳米压痕法测微梁弯曲刚度？",
+        "尺寸相关的弯曲特性分析？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.41
+    },
+    {
+      "caseId": 40,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“车轮按轮辐的结构不同，如何分类”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 2241,
+      "canonical": "车轮按轮辐的结构不同，如何分类？",
+      "category": "第13章 行驶系统",
+      "retrievedVariantIds": [
+        8680,
+        8679,
+        8681,
+        8688,
+        8690
+      ],
+      "retrievedItemIds": [
+        2241,
+        2240,
+        2242,
+        2249,
+        2251
+      ],
+      "retrievedTexts": [
+        "车轮按轮辐的结构不同，如何分类？",
+        "轮辋的类型有哪些？",
+        "车轮有何功用？有哪些部分组成？",
+        "根据车桥上车轮的作用，车桥如何分类？",
+        "车架的结构形式有哪几种？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.5
+    },
+    {
+      "caseId": 41,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：热冲击载荷下容器强度设计？",
+      "expectedItemId": 1387,
+      "canonical": "圆形截面杆弯扭组合的相当应力？",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        5472,
+        5482,
+        5187,
+        5549,
+        6740
+      ],
+      "retrievedItemIds": [
+        1387,
+        1389,
+        1316,
+        1406,
+        1710
+      ],
+      "retrievedTexts": [
+        "热冲击载荷下容器强度设计？",
+        "瞬态热冲击应力计算？",
+        "高压容器设计中如何选择强度理论？",
+        "复杂载荷下的强度设计？",
+        "如何计算冲击载荷下的应力？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 16.12
+    },
+    {
+      "caseId": 42,
+      "queryType": "paraphrase",
+      "query": "机床导轨弯曲变形补偿设计这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 719,
+      "canonical": "机床导轨弯曲变形补偿设计？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        2825,
+        4507,
+        6380,
+        6507,
+        8406
+      ],
+      "retrievedItemIds": [
+        719,
+        1146,
+        1619,
+        1651,
+        2132
+      ],
+      "retrievedTexts": [
+        "机床导轨弯曲变形补偿设计？",
+        "机床导轨的弯曲变形控制措施？",
+        "机床导轨的许用挠度如何设计？",
+        "精密导轨的预变形设计？",
+        "精密导轨抗弯设计方法？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 14.39
+    },
+    {
+      "caseId": 43,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：数字图像相关法测组合变形全场应变？",
+      "expectedItemId": 899,
+      "canonical": "数字图像相关法测组合变形全场应变？",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        3545,
+        5571,
+        2757,
+        3513,
+        3486
+      ],
+      "retrievedItemIds": [
+        899,
+        1412,
+        702,
+        891,
+        884
+      ],
+      "retrievedTexts": [
+        "数字图像相关法测组合变形全场应变？",
+        "数字图像相关法（DIC）全场应变测量步骤？",
+        "数字图像相关法(DIC)测全场弯曲应变？",
+        "数字图像相关法测冲击组合变形？",
+        "光学法测复合变形全场应变？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 12.16
+    },
+    {
+      "caseId": 44,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“二氧化碳的三相点参数如何，即制冷剂二氧化碳可制取”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 3047,
+      "canonical": "二氧化碳的三相点参数如何，即制冷剂二氧化碳可制取的最低温度是多少？",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9635,
+        9638,
+        9700,
+        9696,
+        9699
+      ],
+      "retrievedItemIds": [
+        3047,
+        3050,
+        3112,
+        3108,
+        3111
+      ],
+      "retrievedTexts": [
+        "二氧化碳的三相点参数如何，即制冷剂二氧化碳可制取的最低温度是多少？",
+        "二氧化碳的临界温度和临界压力是多少，即二氧化碳跨临界制冷循环的温度和压力界线是多少？",
+        "经制冷压缩机压缩后的制冷剂的热力参数如何变化？",
+        "蒸汽压缩式制冷系统中经冷凝器冷凝后的制冷剂的热力参数如何变化？",
+        "制冷剂在制冷压缩机压缩前后的状态如何？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 12.45
+    },
+    {
+      "caseId": 45,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：应力强度表示什么？",
+      "expectedItemId": 285,
+      "canonical": "什么是应力强度？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1120,
+        1117,
+        1118,
+        53,
+        25
+      ],
+      "retrievedItemIds": [
+        285,
+        285,
+        285,
+        14,
+        7
+      ],
+      "retrievedTexts": [
+        "如何理解应力强度？",
+        "什么是应力强度？",
+        "应力强度表示什么？",
+        "什么是应力强度因子？",
+        "什么是应力强度系数？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.78
+    },
+    {
+      "caseId": 46,
+      "queryType": "paraphrase",
+      "query": "横观各向同性材料的扭转本构关系这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 252,
+      "canonical": "横观各向同性材料的扭转本构关系？",
+      "category": "基础概念与辨析",
+      "retrievedVariantIds": [
+        985,
+        2869,
+        355,
+        4552,
+        8590
+      ],
+      "retrievedItemIds": [
+        252,
+        730,
+        89,
+        1157,
+        2179
+      ],
+      "retrievedTexts": [
+        "横观各向同性材料的扭转本构关系？",
+        "各向同性假设在扭转分析中的体现？",
+        "各向同性材料的本构关系",
+        "正交各向异性轴的扭转刚度？",
+        "各向异性材料圆轴扭转的应力特点？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.07
+    },
+    {
+      "caseId": 47,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：弯扭组合圆轴第四强度理论校核？",
+      "expectedItemId": 1914,
+      "canonical": "弯扭组合圆轴第四强度理论校核？",
+      "category": "核心计算与分析",
+      "retrievedVariantIds": [
+        7555,
+        7423,
+        5450,
+        7479,
+        5471
+      ],
+      "retrievedItemIds": [
+        1914,
+        1881,
+        1381,
+        1895,
+        1387
+      ],
+      "retrievedTexts": [
+        "弯扭组合圆轴第四强度理论校核？",
+        "圆轴拉扭组合的第三强度理论校核？",
+        "转轴弯扭组合强度校核步骤？",
+        "弯扭组合变形中第三与第四强度理论的差异？",
+        "圆形截面杆弯扭组合的相当应力？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 6.49
+    },
+    {
+      "caseId": 48,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“电测法测泊松比ν的实验步骤”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 478,
+      "canonical": "电测法测泊松比ν的实验步骤？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1887,
+        507,
+        3607,
+        3606,
+        3281
+      ],
+      "retrievedItemIds": [
+        478,
+        127,
+        914,
+        914,
+        833
+      ],
+      "retrievedTexts": [
+        "电测法测泊松比ν的实验步骤？",
+        "如何测定材料泊松比？",
+        "应变片法测材料泊松比？",
+        "如何通过应变测量求泊松比？",
+        "电测法测量应变的原理是什么？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.98
+    },
+    {
+      "caseId": 49,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：机械设计中常用材料?",
+      "expectedItemId": 1240,
+      "canonical": "在机械设计中，怎样选择材料?",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        4884,
+        4883,
+        4920,
+        4919,
+        4885
+      ],
+      "retrievedItemIds": [
+        1240,
+        1240,
+        1249,
+        1249,
+        1240
+      ],
+      "retrievedTexts": [
+        "机械设计中常用材料?",
+        "在机械设计中，怎样选择材料?",
+        "工程中常用的材料有哪些?",
+        "在土木工程中，常用的结构材料有哪些?",
+        "机械设计材料选择的标准?"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.36
+    },
+    {
+      "caseId": 50,
+      "queryType": "paraphrase",
+      "query": "在经典控制理论中用来分析系统性能的常用工程方法有这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 2770,
+      "canonical": "在经典控制理论中用来分析系统性能的常用工程方法有那些分析内容有那些",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9386,
+        9355,
+        9145,
+        9128,
+        9379
+      ],
+      "retrievedItemIds": [
+        2801,
+        2770,
+        2560,
+        2543,
+        2794
+      ],
+      "retrievedTexts": [
+        "在经典控制理论中用来分析系统性能的常用工程方法有那些？分析内容有那些？",
+        "在经典控制理论中用来分析系统性能的常用工程方法有那些分析内容有那些",
+        "11.分析控制系统的工程方法有哪些？",
+        "5.分析控制系统的工程方法有哪些？",
+        "评价控制系统的优劣的时域性能指标常用的有哪些？每个指标的含义和作用是什么？"
+      ],
+      "top1Hit": false,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 8.78
+    },
+    {
+      "caseId": 51,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：电动机的额定功率是指输出机械功率，还是输人电功率？",
+      "expectedItemId": 2814,
+      "canonical": "电动机的额定功率是指输出机械功率，还是输人电功率？",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9399,
+        9397,
+        9398,
+        4642,
+        7793
+      ],
+      "retrievedItemIds": [
+        2814,
+        2812,
+        2813,
+        1179,
+        1973
+      ],
+      "retrievedTexts": [
+        "电动机的额定功率是指输出机械功率，还是输人电功率？",
+        "电动机的额定电流是指定子绕组的线电流，还是相电流？",
+        "电动机的额定电压是指线电压，还是相电压？",
+        "如何根据转速计算传递功率？",
+        "机械传动功率与扭矩公式"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.29
+    },
+    {
+      "caseId": 52,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“4D打印水凝胶拉扭耦合生物驱动器”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 886,
+      "canonical": "4D打印水凝胶拉扭耦合生物驱动器？",
+      "category": "实验原理与方法",
+      "retrievedVariantIds": [
+        3493,
+        7651,
+        1870,
+        5263,
+        5751
+      ],
+      "retrievedItemIds": [
+        886,
+        1938,
+        473,
+        1335,
+        1457
+      ],
+      "retrievedTexts": [
+        "4D打印水凝胶拉扭耦合生物驱动器？",
+        "4D打印水凝胶可控变形机理",
+        "4D打印驱动变形原理？",
+        "4D打印水凝胶压杆的光致变形？",
+        "4D打印活性水凝胶力学模型"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 13.51
+    },
+    {
+      "caseId": 53,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：欧标精密管材扭转性能指标",
+      "expectedItemId": 735,
+      "canonical": "某轴承受T1=500N·m，T2=300N·m，T3=200N·m，求各段扭矩并绘扭矩图？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        2890,
+        1053,
+        8560,
+        6601,
+        8539
+      ],
+      "retrievedItemIds": [
+        735,
+        269,
+        2171,
+        1675,
+        2166
+      ],
+      "retrievedTexts": [
+        "欧标精密管材扭转性能指标",
+        "EN 10305-4对精密钢管的扭转性能要求？",
+        "管材扭转性能测试国际标准",
+        "如何评估精密钢管的抗扭能力？",
+        "管材扭转试验的尺寸限制"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 16.33
+    },
+    {
+      "caseId": 54,
+      "queryType": "paraphrase",
+      "query": "材料的Bauschinger效应这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 179,
+      "canonical": "什么是材料的Bauschinger效应？",
+      "category": "基础概念与辨析",
+      "retrievedVariantIds": [
+        712,
+        5863,
+        4194,
+        3813,
+        4471
+      ],
+      "retrievedItemIds": [
+        179,
+        1485,
+        1062,
+        966,
+        1137
+      ],
+      "retrievedTexts": [
+        "什么是材料的Bauschinger效应？",
+        "解释Bauschinger效应的工程意义",
+        "什么是材料的Bauschinger效应因子？",
+        "说明“Bauschinger效应”对循环载荷的影响",
+        "弯曲正应力与材料各向异性的关系？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 12.18
+    },
+    {
+      "caseId": 55,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：什么是短路？",
+      "expectedItemId": 2909,
+      "canonical": "什么是短路？",
+      "category": "默认分类",
+      "retrievedVariantIds": [
+        9497,
+        9495,
+        9490,
+        4801,
+        9496
+      ],
+      "retrievedItemIds": [
+        2909,
+        2907,
+        2903,
+        1219,
+        2908
+      ],
+      "retrievedTexts": [
+        "什么是短路？",
+        "什么是断路（开路）？",
+        "什么是回路？",
+        "危险截面在哪里？",
+        "什么是过载？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 7.95
+    },
+    {
+      "caseId": 56,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“对于一个确定的自动控制系统,他的微分方程传递函数”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 2613,
+      "canonical": "对于一个确定的自动控制系统,他的微分方程传递函数结构图的形式是唯一的么",
+      "category": "第二章",
+      "retrievedVariantIds": [
+        9282,
+        9198,
+        9391,
+        9146,
+        9286
+      ],
+      "retrievedItemIds": [
+        2697,
+        2613,
+        2806,
+        2561,
+        2701
+      ],
+      "retrievedTexts": [
+        "9.对于一个确定的自动控制系统，它的微分方程、传递函数和结构图的形式都 将是唯一的。这种说法对么吗？为什么？",
+        "对于一个确定的自动控制系统,他的微分方程传递函数结构图的形式是唯一的么",
+        "传递函数",
+        "开环传递函数、闭环传递函数的定义？",
+        "5.自动控制系统有哪几种典型环节？它们的传递函数是什么样的？"
+      ],
+      "top1Hit": false,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.65
+    },
+    {
+      "caseId": 57,
+      "queryType": "synonym",
+      "query": "请用课堂知识回答：梯度参数对强度的影响规律？",
+      "expectedItemId": 439,
+      "canonical": "负刚度超材料压弯组合吸能特性？",
+      "category": "专业与学科知识",
+      "retrievedVariantIds": [
+        1733,
+        4502,
+        1567,
+        2919,
+        2427
+      ],
+      "retrievedItemIds": [
+        439,
+        1144,
+        397,
+        742,
+        614
+      ],
+      "retrievedTexts": [
+        "梯度参数对强度的影响规律？",
+        "如何优化梯度指数n？",
+        "梯度刚度对稳定性的增益？",
+        "如何考虑环境因素对强度的影响？",
+        "梯度参数优化方法"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.89
+    },
+    {
+      "caseId": 58,
+      "queryType": "paraphrase",
+      "query": "汽车半轴扭转疲劳失效改进措施这个概念在材料力学或本课程里一般怎么理解？",
+      "expectedItemId": 1672,
+      "canonical": "汽车半轴扭转疲劳失效改进措施？",
+      "category": "工程案例与拓展",
+      "retrievedVariantIds": [
+        6588,
+        4593,
+        6334,
+        2847,
+        5080
+      ],
+      "retrievedItemIds": [
+        1672,
+        1167,
+        1603,
+        724,
+        1289
+      ],
+      "retrievedTexts": [
+        "汽车半轴扭转疲劳失效改进措施？",
+        "如何优化半轴抗疲劳性能？",
+        "车轴疲劳失效分析方法",
+        "双材料组合轴扭转分析？",
+        "传动轴疲劳分析"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 4.03
+    },
+    {
+      "caseId": 59,
+      "queryType": "distractor",
+      "query": "不是问作业提交，也不是问平台操作；我想确认一下：请简述复频域条件下的传递函数的特点",
+      "expectedItemId": 2592,
+      "canonical": "请简述复频域条件下的传递函数的特点",
+      "category": "第四章",
+      "retrievedVariantIds": [
+        9177,
+        9148,
+        9210,
+        9287,
+        9149
+      ],
+      "retrievedItemIds": [
+        2592,
+        2563,
+        2625,
+        2702,
+        2564
+      ],
+      "retrievedTexts": [
+        "请简述复频域条件下的传递函数的特点",
+        "8.传递函数有哪些特点？",
+        "传递函数是什么？定义传递函数的前提条件是什么？为什么要附加这个条件？传递函数有哪些特点",
+        "4.什么是传递函数？定义传递函数的前提条件是什么？为什么要附加这个条件？传递函数有哪些特点？",
+        "7.什么是传递函数？传递函数的前提是什么？为什么要这个前提条件？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 5.25
+    },
+    {
+      "caseId": 60,
+      "queryType": "vague_contextual",
+      "query": "老师刚才提到“如何校核钢筋锚固长度”，它到底指什么，和相关知识点有什么关系？",
+      "expectedItemId": 120,
+      "canonical": "如何校核钢筋锚固长度？",
+      "category": "基础概念与辨析",
+      "retrievedVariantIds": [
+        476,
+        7114,
+        7549,
+        6665,
+        6526
+      ],
+      "retrievedItemIds": [
+        120,
+        1803,
+        1912,
+        1691,
+        1656
+      ],
+      "retrievedTexts": [
+        "如何校核钢筋锚固长度？",
+        "如何校核构件强度",
+        "如何校核拉弯构件？",
+        "如何校核强度？",
+        "工程梁强度校核的关键位置？"
+      ],
+      "top1Hit": true,
+      "top3Hit": true,
+      "top5Hit": true,
+      "latencyMs": 9.37
+    }
+  ],
+  "generatedAt": "2026-04-23T17:14:50"
+}
