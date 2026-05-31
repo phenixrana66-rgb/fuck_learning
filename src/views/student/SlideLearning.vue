@@ -373,12 +373,11 @@ import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
 import { streamLessonInteraction } from '@/api/studentStream'
 import {
   getStudentSectionDetail,
-  markStudentPageRead,
-  saveStudentRecentChapter
+  markStudentPageRead
 } from '@/api/student'
 import { buildQaImageAttachmentPayloads, cloneQaImageAttachments, QA_IMAGE_ACCEPT, useQaImageAttachments } from '@/composables/useQaImageAttachments'
 import { findFrontendTestLesson } from '@/mock/studentLessons'
-import { getStudentLessonListCache, getStudentProfile, getStudentViewState, saveStudentViewState } from '@/utils/platform'
+import { applyStudentLearningProgress, getStudentLessonListCache, getStudentProfile, getStudentViewState, saveStudentViewState } from '@/utils/platform'
 import { findAggregatedChapterForSection, getSectionsForAggregatedChapter } from '@/utils/studentKnowledge'
 
 const router = useRouter()
@@ -889,6 +888,20 @@ async function syncPageRead(page) {
     page.isRead = true
     detail.value.progressPercent = res.data.progressPercent
     detail.value.masteryPercent = res.data.masteryPercent
+    applyStudentLearningProgress({
+      lessonId: lessonId.value,
+      courseName: detail.value.courseName,
+      chapterId: lessonChapters.value[currentChapterIndex.value]?.chapterId || chapterId.value || sectionId.value,
+      sectionId: res.data.sectionId || sectionId.value || detail.value.sectionId,
+      sectionTitle: res.data.sectionTitle || detail.value.sectionTitle,
+      pageNo: res.data.pageNo || page.pageNo || activePageNo.value || 1,
+      anchorId: res.data.anchorId || '',
+      anchorTitle: res.data.anchorTitle || detail.value.sectionTitle,
+      progressPercent: res.data.progressPercent,
+      masteryPercent: res.data.masteryPercent,
+      overallProgress: res.data.overallProgress,
+      overallMastery: res.data.overallMastery
+    })
   } catch (error) {
     console.warn(error)
   }
@@ -1002,16 +1015,7 @@ async function toggleSectionAudio() {
 
 
 function persistRecentVisit() {
-  if (!lessonId.value || !sectionId.value) return
   captureKnowledgeViewState()
-  saveStudentRecentChapter({
-    studentId: studentProfile.value.studentId,
-    lessonId: lessonId.value,
-    sectionId: sectionId.value,
-    pageNo: activePageNo.value || 1
-  }).catch(() => {
-    console.warn('save recent chapter visit failed')
-  })
 }
 
 function openQaImagePicker() {

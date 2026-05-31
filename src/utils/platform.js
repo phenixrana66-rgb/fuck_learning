@@ -283,6 +283,21 @@ export function getStudentLessonListCache() {
   return JSON.parse(localStorage.getItem('studentLessonList') || '[]')
 }
 
+function formatStudentStudyTime(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+function dispatchStudentLearningSync(detail) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+  window.dispatchEvent(new CustomEvent('student-learning-sync', { detail }))
+}
+
 export function saveStudentProgressCache(lessonId, progress) {
   const cache = JSON.parse(localStorage.getItem('studentProgressCache') || '{}')
   cache[lessonId] = progress || {}
@@ -317,10 +332,14 @@ export function getStudentQaSessions(lessonId) {
 }
 
 export function saveStudentRecentChapterVisit(visit) {
-  if (!visit?.lessonId || !visit?.chapterId) return
+  if (!visit?.lessonId || (!visit?.chapterId && !visit?.sectionId)) return
   const list = JSON.parse(localStorage.getItem('studentRecentChapterVisits') || '[]')
   const normalized = Array.isArray(list) ? list : []
-  const filtered = normalized.filter((item) => !(item.lessonId === visit.lessonId && item.chapterId === visit.chapterId))
+  const visitKey = visit.sectionId ? `${visit.lessonId}:${visit.sectionId}` : `${visit.lessonId}:${visit.chapterId}`
+  const filtered = normalized.filter((item) => {
+    const itemKey = item?.sectionId ? `${item.lessonId}:${item.sectionId}` : `${item.lessonId}:${item.chapterId}`
+    return itemKey !== visitKey
+  })
   filtered.unshift(visit)
   localStorage.setItem('studentRecentChapterVisits', JSON.stringify(filtered.slice(0, 3)))
 }
@@ -328,6 +347,88 @@ export function saveStudentRecentChapterVisit(visit) {
 export function getStudentRecentChapterVisits() {
   const list = JSON.parse(localStorage.getItem('studentRecentChapterVisits') || '[]')
   return Array.isArray(list) ? list : []
+}
+
+export function applyStudentLearningProgress(snapshot) {
+  if (!snapshot?.lessonId) return null
+  const lessonId = String(snapshot.lessonId)
+  const progress = {
+    ...getStudentProgressCache(lessonId),
+    lessonId,
+    sectionId: String(snapshot.sectionId || ''),
+    anchorId: String(snapshot.anchorId || ''),
+    anchorTitle: String(snapshot.anchorTitle || snapshot.sectionTitle || ''),
+    pageNo: Number(snapshot.pageNo || 1),
+    currentTime: Number(snapshot.currentTime || snapshot.resumeTime || 0),
+    progressPercent: Number(snapshot.overallProgress ?? snapshot.progressPercent ?? 0),
+    masteryPercent: Number(snapshot.overallMastery ?? snapshot.masteryPercent ?? 0)
+  }
+  saveStudentProgressCache(lessonId, progress)
+
+  const lessons = getStudentLessonListCache()
+  const updatedLessons = lessons.map((lesson) => {
+    if (String(lesson.lessonId) !== lessonId) return lesson
+    const nextUnits = (lesson.units || []).map((unit) => ({
+      ...unit,
+      chapters: (unit.chapters || []).map((chapter) => (
+        String(chapter.sectionId || '') === String(snapshot.sectionId || '')
+          ? {
+              ...chapter,
+              progressPercent: Number(snapshot.progressPercent ?? chapter.progressPercent ?? 0),
+              masteryPercent: Number(snapshot.masteryPercent ?? chapter.masteryPercent ?? 0)
+            }
+          : chapter
+      ))
+    }))
+    const currentTitle = String(snapshot.sectionTitle || snapshot.anchorTitle || lesson.currentChapter || lesson.currentKnowledgePointName || '')
+    return {
+      ...lesson,
+      units: nextUnits,
+      progressPercent: Number(snapshot.overallProgress ?? lesson.progressPercent ?? 0),
+      masteryPercent: Number(snapshot.overallMastery ?? lesson.masteryPercent ?? 0),
+      currentPage: Number(snapshot.pageNo || lesson.currentPage || 1),
+      currentKnowledgePointName: currentTitle || lesson.currentKnowledgePointName,
+      currentChapter: currentTitle || lesson.currentChapter,
+      lastStudyAt: formatStudentStudyTime()
+    }
+  })
+  saveStudentLessonList(updatedLessons)
+
+  if (snapshot.sectionId || snapshot.chapterId) {
+    saveStudentRecentChapterVisit({
+      lessonId,
+      courseName: snapshot.courseName || updatedLessons.find((lesson) => String(lesson.lessonId) === lessonId)?.courseName || '',
+      chapterId: String(snapshot.chapterId || snapshot.sectionId || ''),
+      chapterTitle: snapshot.sectionTitle || snapshot.anchorTitle || '',
+      sectionId: String(snapshot.sectionId || ''),
+      pageNo: Number(snapshot.pageNo || 1),
+      lastExitedAt: formatStudentStudyTime(),
+      exitedAt: Date.now()
+    })
+  }
+
+  const detail = {
+    lessonId,
+    progress,
+    lessons: updatedLessons,
+    recentVisits: getStudentRecentChapterVisits(),
+    currentLesson: updatedLessons.find((lesson) => String(lesson.lessonId) === lessonId) || null
+  }
+  dispatchStudentLearningSync(detail)
+  return detail
+}
+
+export function subscribeStudentLearningSync(listener) {
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+    return () => {}
+  }
+  const handler = (event) => {
+    listener(event?.detail || {})
+  }
+  window.addEventListener('student-learning-sync', handler)
+  return () => {
+    window.removeEventListener('student-learning-sync', handler)
+  }
 }
 
 export function saveStudentViewState(lessonId, state) {

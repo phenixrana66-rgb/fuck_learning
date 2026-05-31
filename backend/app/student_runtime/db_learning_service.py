@@ -288,6 +288,68 @@ def _find_section_anchor(section: LessonSection, page_no: int | None = None) -> 
     return eligible[-1] if eligible else anchors[0]
 
 
+def _get_sorted_sections(lesson: Lesson) -> list[LessonSection]:
+    return [
+        section
+        for unit in sorted(lesson.units or [], key=lambda item: (item.sort_no, item.id))
+        for section in sorted(unit.sections or [], key=lambda item: (item.sort_no, item.id))
+    ]
+
+
+def _find_page_in_section(section: LessonSection | None, page_no: int | None = None) -> LessonSectionPage | None:
+    if not section:
+        return None
+    pages = sorted(section.pages or [], key=lambda item: (item.sort_no, item.page_no, item.id))
+    if not pages:
+        return None
+    if page_no is None:
+        return pages[0]
+    exact = next((page for page in pages if page.page_no == page_no), None)
+    return exact or pages[0]
+
+
+def _resolve_lesson_position(lesson: Lesson, lesson_progress: StudentLessonProgress | None) -> dict[str, Any]:
+    ordered_sections = _get_sorted_sections(lesson)
+    first_section = ordered_sections[0] if ordered_sections else None
+    section = None
+    anchor = None
+    requested_page_no = None
+
+    if lesson_progress:
+        if lesson_progress.current_section_id:
+            section = next((item for item in ordered_sections if item.id == lesson_progress.current_section_id), None)
+        if section is None and lesson_progress.current_anchor_id:
+            for item in ordered_sections:
+                matched_anchor = next((candidate for candidate in item.anchors or [] if candidate.id == lesson_progress.current_anchor_id), None)
+                if matched_anchor:
+                    section = item
+                    anchor = matched_anchor
+                    break
+        requested_page_no = lesson_progress.last_page_no or (anchor.page_no if anchor else None)
+
+    if section is None:
+        section = first_section
+
+    page = _find_page_in_section(section, requested_page_no)
+    if page is None and section is not first_section:
+        section = first_section
+        page = _find_page_in_section(section)
+
+    resolved_page_no = page.page_no if page else (_first_page_no(section) if section else 1)
+    if section is not None:
+        if not anchor or anchor not in (section.anchors or []):
+            anchor = _find_section_anchor(section, resolved_page_no)
+        if anchor is None and lesson_progress and lesson_progress.current_anchor_id:
+            anchor = next((candidate for candidate in section.anchors or [] if candidate.id == lesson_progress.current_anchor_id), None)
+
+    return {
+        "section": section,
+        "page": page,
+        "anchor": anchor,
+        "pageNo": resolved_page_no,
+    }
+
+
 def _build_ppt_asset_name_map(db: Session, lesson: Lesson) -> dict[int, str]:
     asset_ids = sorted({
         int(section.ppt_asset_id)
@@ -414,6 +476,20 @@ def enhance_player_with_db(db: Session, player: JsonDict, student_id: str | int 
     if chapters:
         player_copy["progressPercent"] = _round_int(sum(int(chapter.get("progressPercent") or 0) for chapter in chapters) / len(chapters))
         player_copy["masteryPercent"] = _round_int(sum(int(chapter.get("masteryPercent") or 0) for chapter in chapters) / len(chapters))
+    lesson_progress = None
+    if student_db_id:
+        lesson_progress = (
+            db.query(StudentLessonProgress)
+            .filter(StudentLessonProgress.student_id == student_db_id, StudentLessonProgress.lesson_id == lesson.id)
+            .first()
+        )
+    position = _resolve_lesson_position(lesson, lesson_progress)
+    current_section = cast(LessonSection | None, position["section"])
+    player_copy["currentPage"] = position["pageNo"]
+    if current_section:
+        player_copy["currentKnowledgePointName"] = current_section.section_name
+        player_copy["currentChapter"] = current_section.section_name
+    player_copy["lastStudyAt"] = _format_last_study_at(lesson_progress.last_operate_time if lesson_progress else lesson.published_at)
     return player_copy
 
 
@@ -447,14 +523,47 @@ def get_db_progress_state(db: Session, student_id: str | int | None, lesson_iden
     lesson_progress = db.query(StudentLessonProgress).filter(StudentLessonProgress.student_id == student_db_id, StudentLessonProgress.lesson_id == lesson.id).first()
     if not lesson_progress:
         return _build_default_progress(lesson)
-    anchor = None
-    if lesson_progress.current_anchor_id:
-        anchor = db.query(LessonSectionAnchor).filter(LessonSectionAnchor.id == lesson_progress.current_anchor_id).first()
-    if not anchor and lesson_progress.current_section_id:
-        section = db.query(LessonSection).filter(LessonSection.id == lesson_progress.current_section_id).first()
-        if section:
-            anchor = _find_section_anchor(section, lesson_progress.last_page_no)
-    return {"sectionId": str(lesson_progress.current_section_id) if lesson_progress.current_section_id else "", "anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else "", "pageNo": lesson_progress.last_page_no or (anchor.page_no if anchor else 1) or 1, "currentTime": (anchor.start_time_sec if anchor else 0) or 0, "progressPercent": _round_int(lesson_progress.total_progress), "understandingLevel": "partial", "weakPoints": []}
+    position = _resolve_lesson_position(lesson, lesson_progress)
+    section = cast(LessonSection | None, position["section"])
+    anchor = cast(LessonSectionAnchor | None, position["anchor"])
+    return {
+        "sectionId": str(section.id) if section else "",
+        "anchorId": str(anchor.id) if anchor else "",
+        "anchorTitle": anchor.anchor_title if anchor else (section.section_name if section else ""),
+        "pageNo": position["pageNo"],
+        "currentTime": (anchor.start_time_sec if anchor else 0) or 0,
+        "progressPercent": _round_int(lesson_progress.total_progress),
+        "understandingLevel": "partial",
+        "weakPoints": [],
+    }
+
+
+def get_db_resume_state(db: Session, student_id: str | int | None, lesson_identifier: str | int | None) -> JsonDict | None:
+    lesson = _find_lesson(db, lesson_identifier)
+    if not lesson:
+        return None
+    student_db_id = _resolve_user_id(db, student_id)
+    lesson_progress = None
+    if student_db_id:
+        lesson_progress = (
+            db.query(StudentLessonProgress)
+            .filter(StudentLessonProgress.student_id == student_db_id, StudentLessonProgress.lesson_id == lesson.id)
+            .first()
+        )
+    position = _resolve_lesson_position(lesson, lesson_progress)
+    section = cast(LessonSection | None, position["section"])
+    anchor = cast(LessonSectionAnchor | None, position["anchor"])
+    audio_url, _audio_status = _resolve_section_audio(section)
+    return {
+        "lessonId": lesson.lesson_no,
+        "sectionId": str(section.id) if section else "",
+        "audioUrl": audio_url,
+        "resumeTime": (anchor.start_time_sec if anchor else 0) or 0,
+        "currentTime": (anchor.start_time_sec if anchor else 0) or 0,
+        "anchorId": str(anchor.id) if anchor else "",
+        "anchorTitle": anchor.anchor_title if anchor else (section.section_name if section else ""),
+        "pageNo": position["pageNo"],
+    }
 
 
 def _get_lesson_progress_map(db: Session, student_db_id: int | None) -> dict[int, StudentLessonProgress]:
@@ -532,6 +641,9 @@ def _serialize_db_lesson(db: Session, lesson: Lesson, lesson_progress: StudentLe
         _round_int(sum(chapter_mastery_values) / len(chapter_mastery_values)) if chapter_mastery_values else 0
     )
     audio_url, audio_status = _resolve_section_audio(first_section)
+    position = _resolve_lesson_position(lesson, lesson_progress)
+    current_section = cast(LessonSection | None, position["section"])
+    current_section_name = current_section.section_name if current_section else (first_section.section_name if first_section else "")
     return {
         "lessonId": lesson.lesson_no,
         "courseId": lesson.course.course_code if lesson.course else str(lesson.course_id),
@@ -543,9 +655,9 @@ def _serialize_db_lesson(db: Session, lesson: Lesson, lesson_progress: StudentLe
         "progressPercent": progress_percent,
         "masteryPercent": mastery_percent,
         "coverImage": "",
-        "currentPage": lesson_progress.last_page_no if lesson_progress and lesson_progress.last_page_no else _first_page_no(first_section),
-        "currentKnowledgePointName": first_section.section_name if first_section else "",
-        "currentChapter": first_section.section_name if first_section else "",
+        "currentPage": position["pageNo"],
+        "currentKnowledgePointName": current_section_name,
+        "currentChapter": current_section_name,
         "questionCount": 0,
         "lastStudyAt": _format_last_study_at(lesson_progress.last_operate_time if lesson_progress else lesson.published_at),
         "units": units,

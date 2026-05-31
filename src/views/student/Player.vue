@@ -509,6 +509,7 @@ import { findFrontendTestLesson, getFrontendTestLessons } from '@/mock/studentLe
 import { buildQaImageAttachmentPayloads, cloneQaImageAttachments, QA_IMAGE_ACCEPT, useQaImageAttachments } from '@/composables/useQaImageAttachments'
 import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
 import {
+  getStudentProgressCache,
   ensurePlatformToken,
   getPlatformToken,
   getStudentLessonListCache,
@@ -520,7 +521,8 @@ import {
   saveStudentProfile,
   saveStudentQaHistory,
   saveStudentQaSessions,
-  saveStudentViewState
+  saveStudentViewState,
+  subscribeStudentLearningSync
 } from '@/utils/platform'
 import { buildAggregatedKnowledgeUnits, findAggregatedChapterForSection, getSectionsForAggregatedChapter } from '@/utils/studentKnowledge'
 
@@ -567,6 +569,7 @@ const rhythmSuggestion = ref('建议先完成当前章节，再根据掌握度�
 const hasLoadedLesson = ref(false)
 const hasActivatedOnce = ref(false)
 const expandedCourseMasteryMap = ref({})
+let removeStudentLearningSync = null
 const {
   draftAttachments: draftQaAttachments,
   pickerKey: qaImagePickerKey,
@@ -951,6 +954,93 @@ function syncLessonCache() {
     }
   })
   saveStudentLessonList(updated)
+}
+
+function applyLessonProgressSync(syncDetail) {
+  if (!syncDetail?.lessonId || String(syncDetail.lessonId) !== String(lessonId.value)) return
+  if (syncDetail.progress) {
+    progressState.value = {
+      ...progressState.value,
+      ...syncDetail.progress
+    }
+  } else {
+    const cachedProgress = getStudentProgressCache(lessonId.value)
+    if (Object.keys(cachedProgress || {}).length) {
+      progressState.value = {
+        ...progressState.value,
+        ...cachedProgress
+      }
+    }
+  }
+  const currentLesson = syncDetail.currentLesson
+  if (currentLesson?.units) {
+    lesson.value = {
+      ...lesson.value,
+      units: currentLesson.units,
+      progressPercent: currentLesson.progressPercent ?? lesson.value.progressPercent,
+      masteryPercent: currentLesson.masteryPercent ?? lesson.value.masteryPercent,
+      currentPage: currentLesson.currentPage ?? lesson.value.currentPage,
+      currentKnowledgePointName: currentLesson.currentKnowledgePointName || lesson.value.currentKnowledgePointName,
+      currentChapter: currentLesson.currentChapter || lesson.value.currentChapter,
+      lastStudyAt: currentLesson.lastStudyAt || lesson.value.lastStudyAt
+    }
+  }
+  const targetChapter = allChapters.value.find((chapter) => String(chapter.sectionId || '') === String(progressState.value.sectionId || ''))
+    || allChapters.value.find((chapter) => Number(chapter.pageNo) === Number(progressState.value.pageNo || 0))
+    || allChapters.value[0]
+  if (targetChapter?.chapterId) {
+    activeChapterId.value = targetChapter.chapterId
+  }
+}
+
+async function refreshLessonProgressState() {
+  if (!studentProfile.value.studentId || !lessonId.value) return
+  try {
+    const progressRes = await getStudentProgress({
+      studentId: studentProfile.value.studentId,
+      lessonId: lessonId.value
+    })
+    progressState.value = progressRes.data || progressState.value
+  } catch {
+    const cachedProgress = getStudentProgressCache(lessonId.value)
+    if (Object.keys(cachedProgress || {}).length) {
+      progressState.value = {
+        ...progressState.value,
+        ...cachedProgress
+      }
+    }
+  }
+
+  try {
+    const playRes = await playStudentLesson({
+      studentId: studentProfile.value.studentId,
+      lessonId: lessonId.value,
+      anchorId: progressState.value.anchorId
+    })
+    lesson.value = {
+      ...lesson.value,
+      ...(playRes.data || {})
+    }
+  } catch {
+    const cachedLesson = getStudentLessonListCache().find((item) => String(item.lessonId) === String(lessonId.value))
+    if (cachedLesson) {
+      lesson.value = {
+        ...lesson.value,
+        ...cachedLesson
+      }
+    }
+  }
+
+  const targetChapter = allChapters.value.find((chapter) => String(chapter.sectionId || '') === String(progressState.value.sectionId || ''))
+    || allChapters.value.find((chapter) => Number(chapter.pageNo) === Number(progressState.value.pageNo || 0))
+    || allChapters.value[0]
+  if (targetChapter?.chapterId) {
+    activeChapterId.value = targetChapter.chapterId
+  }
+  activeKnowledgeChapterId.value = findAggregatedChapterForSection(lesson.value.units || [], targetChapter?.sectionId || '')?.chapterId
+    || activeKnowledgeChapterId.value
+    || allAggregatedChapters.value[0]?.chapterId
+    || ''
 }
 
 function capturePlayerViewState() {
@@ -1466,6 +1556,9 @@ async function startNewConversation() {
 
 onMounted(async () => {
   document.addEventListener('pointerdown', handleDocumentPointerDown)
+  removeStudentLearningSync = subscribeStudentLearningSync((detail) => {
+    applyLessonProgressSync(detail)
+  })
   try {
     await loadLesson()
     await nextTick()
@@ -1484,6 +1577,7 @@ onActivated(async () => {
   if (!hasLoadedLesson.value) {
     await loadLesson()
   } else {
+    await refreshLessonProgressState()
     await restorePlayerViewState()
   }
   await nextTick()
@@ -1522,6 +1616,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateNavIndicator)
   pageMainRef.value?.removeEventListener('scroll', handlePlayerScroll)
   capturePlayerViewState()
+  removeStudentLearningSync?.()
 })
 
 onDeactivated(() => {

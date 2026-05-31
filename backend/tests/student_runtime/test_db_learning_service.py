@@ -13,8 +13,8 @@ from backend.app.lesson.tts_client import TtsSynthesisResult
 from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
-from backend.app.student_runtime.db_learning_service import get_db_progress_state, get_section_detail, get_student_lessons_from_db, mark_page_read
-from backend.chaoxing_db.models import ChapterScript, ChapterScriptSection, LessonSection, LessonSectionPage, StudentPageProgress, User
+from backend.app.student_runtime.db_learning_service import get_db_progress_state, get_db_resume_state, get_section_detail, get_student_lessons_from_db, mark_page_read
+from backend.chaoxing_db.models import ChapterScript, ChapterScriptSection, LessonSection, LessonSectionPage, StudentLessonProgress, StudentPageProgress, User
 
 
 class StudentDbLearningServiceTestCase(unittest.TestCase):
@@ -493,6 +493,147 @@ class StudentDbLearningServiceTestCase(unittest.TestCase):
         self.assertTrue(lesson["units"])
         self.assertTrue(lesson["units"][0]["chapters"])
         self.assertEqual(lesson["units"][0]["chapters"][0]["slideName"], "发布后的章节名")
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_resume_state_falls_back_to_valid_page_when_progress_page_is_stale(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        assert self.temp_dir is not None
+        mock_get_voice_cache_dir.return_value = Path(self.temp_dir.name) / "voice-cache"
+        mock_synthesize_speech.return_value = TtsSynthesisResult(
+            audio_bytes=b"ID3demo-audio",
+            duration_ms=2200,
+            reqid="req-001",
+            log_id="log-001",
+            voice_type="volcano-voice",
+        )
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId="cw-course-001",
+            title="demo",
+            chapters=[
+                CirChapter(
+                    chapterId="course-001-chap-001",
+                    chapterName="chapter",
+                    nodes=[
+                        LessonNode(nodeId="node-01-01", nodeName="node-1", pageRefs=[1], keyPoints=["k1"], summary="summary-1"),
+                    ],
+                )
+            ],
+        )
+        parse_payload = ParseRequest(
+            schoolId="school-001",
+            userId="teacher-001",
+            courseId="course-001",
+            fileType="ppt",
+            fileUrl="file:///tmp/demo.pptx",
+            isExtractKeyPoint=True,
+            enc="demo-signature",
+        )
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
+        script_summary = generate_script(
+            GenerateScriptRequest(
+                parseId=accepted.parseId,
+                teachingStyle="standard",
+                speechSpeed="normal",
+                customOpening=None,
+                enc="demo-signature",
+            )
+        )
+        script_detail = get_script_detail(script_summary.scriptId).model_copy(deep=True)
+        script_detail.scriptStructure[0].content = "student runtime short section 1"
+
+        with patch("backend.app.lesson.service.get_script", return_value=script_detail):
+            audio = generate_audio(
+                GenerateAudioRequest(
+                    scriptId=script_summary.scriptId,
+                    voiceType="female_standard",
+                    audioFormat="mp3",
+                    sectionIds=[script_detail.scriptStructure[0].sectionId],
+                    enc="demo-signature",
+                ),
+                base_url="http://testserver/",
+            )
+            publish = publish_lesson(
+                PublishRequest(
+                    coursewareId="cw-course-001",
+                    scriptId=script_summary.scriptId,
+                    audioId=audio["audioId"],
+                    publisherId="teacher-demo",
+                    enc="demo-signature",
+                )
+            )
+
+        with session_scope() as db:
+            teacher = db.query(User).filter(User.user_no == "teacher-001").first()
+            assert teacher is not None
+            student = User(user_no="student-002", user_name="学生二", role="student", school_id=teacher.school_id)
+            db.add(student)
+            db.flush()
+            section = (
+                db.query(LessonSection)
+                .filter(LessonSection.lesson.has(lesson_no=publish["lessonId"]))
+                .order_by(LessonSection.id.asc())
+                .first()
+            )
+            assert section is not None
+            page = (
+                db.query(LessonSectionPage)
+                .filter(LessonSectionPage.section_id == section.id)
+                .order_by(LessonSectionPage.page_no.asc(), LessonSectionPage.id.asc())
+                .first()
+            )
+            assert page is not None
+            student_no = student.user_no
+            student_db_id = student.id
+            section_id = section.id
+            lesson_db_id = section.lesson_id
+            page_no = page.page_no
+            db.commit()
+
+        with session_scope() as db:
+            mark_page_read(
+                db=db,
+                student_id=student_no,
+                lesson_identifier=publish["lessonId"],
+                section_identifier=str(section_id),
+                lesson_page_id=f"{publish['lessonId']}-P{page_no}",
+                page_no=page_no,
+            )
+            lesson_progress = (
+                db.query(StudentLessonProgress)
+                .filter(
+                    StudentLessonProgress.student_id == student_db_id,
+                    StudentLessonProgress.lesson_id == lesson_db_id,
+                )
+                .first()
+            )
+            assert lesson_progress is not None
+            lesson_progress.last_page_no = 999
+            db.commit()
+
+            progress = get_db_progress_state(db=db, student_id=student_no, lesson_identifier=publish["lessonId"])
+            resume = get_db_resume_state(db=db, student_id=student_no, lesson_identifier=publish["lessonId"])
+
+        self.assertIsNotNone(progress)
+        self.assertIsNotNone(resume)
+        assert progress is not None
+        assert resume is not None
+        self.assertEqual(progress["sectionId"], str(section_id))
+        self.assertEqual(progress["pageNo"], page_no)
+        self.assertEqual(resume["sectionId"], str(section_id))
+        self.assertEqual(resume["pageNo"], page_no)
 
     @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
     @patch("backend.app.lesson.service.synthesize_speech")

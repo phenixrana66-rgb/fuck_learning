@@ -197,7 +197,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -212,9 +212,12 @@ import {
 import {
   ensurePlatformToken,
   getPlatformToken,
+  getStudentLessonListCache,
   getStudentProfile,
+  getStudentRecentChapterVisits,
   saveStudentLessonList,
-  saveStudentProfile
+  saveStudentProfile,
+  subscribeStudentLearningSync
 } from '@/utils/platform'
 
 const router = useRouter()
@@ -242,8 +245,8 @@ const studentProfile = ref({
   ...fallbackProfile,
   ...getStudentProfile()
 })
-const lessonList = ref([])
-const recentChapterVisits = ref([])
+const lessonList = ref(getStudentLessonListCache().map(normalizeLesson))
+const recentChapterVisits = ref(getStudentRecentChapterVisits())
 const filterOptions = [
   { label: '全部', value: 'all' },
   { label: '进行中', value: 'inProgress' },
@@ -251,6 +254,7 @@ const filterOptions = [
 ]
 
 let closeTimer = null
+let removeStudentLearningSync = null
 
 const heroStudentName = computed(() => String(studentProfile.value.studentName || '').trim())
 const heroAvatarText = computed(() => heroStudentName.value.slice(0, 1) || '')
@@ -533,9 +537,24 @@ async function bootstrapStudent() {
   }
 }
 
+async function refreshLessonList() {
+  if (!studentProfile.value.studentId) return
+  try {
+    const lessonsRes = await getStudentLessonList({
+      studentId: studentProfile.value.studentId,
+      token: getPlatformToken()
+    })
+    const apiLessons = (lessonsRes.data?.lessons || []).map(normalizeLesson)
+    lessonList.value = apiLessons
+    saveStudentLessonList(apiLessons)
+  } catch (_error) {
+    lessonList.value = getStudentLessonListCache().map(normalizeLesson)
+  }
+}
+
 async function loadRecentChapterVisits() {
   if (!studentProfile.value.studentId) {
-    recentChapterVisits.value = []
+    recentChapterVisits.value = getStudentRecentChapterVisits()
     return
   }
 
@@ -546,8 +565,13 @@ async function loadRecentChapterVisits() {
     })
     recentChapterVisits.value = res.data?.items || []
   } catch (_error) {
-    recentChapterVisits.value = []
+    recentChapterVisits.value = getStudentRecentChapterVisits()
   }
+}
+
+function syncHomeFromCache() {
+  lessonList.value = getStudentLessonListCache().map(normalizeLesson)
+  recentChapterVisits.value = getStudentRecentChapterVisits()
 }
 
 async function loadNotifications() {
@@ -667,15 +691,25 @@ watch(totalCoursePages, (value) => {
 onMounted(async () => {
   supportsHover.value = window.matchMedia('(hover: hover)').matches
   document.addEventListener('click', handleDocumentClick)
+  removeStudentLearningSync = subscribeStudentLearningSync(() => {
+    syncHomeFromCache()
+  })
 
   await bootstrapStudent()
   await loadNotifications()
   await loadRecentChapterVisits()
 })
 
+onActivated(async () => {
+  syncHomeFromCache()
+  await refreshLessonList()
+  await loadRecentChapterVisits()
+})
+
 onBeforeUnmount(() => {
   clearCloseTimer()
   document.removeEventListener('click', handleDocumentClick)
+  removeStudentLearningSync?.()
 })
 </script>
 

@@ -76,6 +76,73 @@ class StudentRouterTestCase(unittest.TestCase):
         self.assertNotIn("L10001", [item["lessonId"] for item in lessons])
         self.assertNotIn("L10002", [item["lessonId"] for item in lessons])
 
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_resume_and_recent_chapters_follow_latest_page_read_progress(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+
+        page_read_response = self.client.post(
+            "/student-api/api/v1/progress/page/read",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "lessonPageId": f"{publish['lessonId']}-P1",
+                    "pageNo": 1,
+                }
+            ),
+        )
+        self.assertEqual(page_read_response.status_code, 200)
+        persisted_section_id = page_read_response.json()["data"]["sectionId"]
+
+        resume_response = self.client.post(
+            "/student-api/api/v1/lesson/resume",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "anchorId": "stale-anchor",
+                }
+            ),
+        )
+        self.assertEqual(resume_response.status_code, 200)
+        resume_payload = resume_response.json()["data"]
+        self.assertEqual(resume_payload["pageNo"], 1)
+        self.assertEqual(resume_payload["sectionId"], persisted_section_id)
+        self.assertNotEqual(resume_payload["anchorId"], "stale-anchor")
+
+        recent_response = self.client.post(
+            "/student-api/api/v1/recentChapters/list",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "limit": 3,
+                }
+            ),
+        )
+        self.assertEqual(recent_response.status_code, 200)
+        items = recent_response.json()["data"]["items"]
+        self.assertTrue(items)
+        self.assertEqual(items[0]["lessonId"], publish["lessonId"])
+        self.assertEqual(items[0]["sectionId"], persisted_section_id)
+        self.assertEqual(items[0]["pageNo"], 1)
+
     @patch("backend.app.student_runtime.router.answer_question")
     @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
     @patch("backend.app.lesson.service.synthesize_speech")

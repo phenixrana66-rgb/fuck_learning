@@ -14,6 +14,7 @@ from backend.app.student_runtime.adapter import ChaoxingAdapter
 from backend.app.student_runtime.db_learning_service import (
     enhance_player_with_db,
     get_db_progress_state,
+    get_db_resume_state,
     get_recent_chapter_visits,
     get_section_detail,
     get_student_lessons_from_db,
@@ -287,9 +288,11 @@ async def progress_adjust(request: Request):
 
 
 @router.post("/api/v1/lesson/resume")
-async def lesson_resume(request: Request):
+async def lesson_resume(request: Request, db: Session = Depends(get_db)):
     payload = await require_signature(request)
-    data = learning_service.resume(payload.get("lessonId"), payload.get("anchorId"))
+    data = get_db_resume_state(db, payload.get("studentId"), payload.get("lessonId"))
+    if data is None:
+        data = learning_service.resume(payload.get("lessonId"), payload.get("anchorId"))
     return response(200, "success", data, getattr(request.state, "request_id", None))
 
 
