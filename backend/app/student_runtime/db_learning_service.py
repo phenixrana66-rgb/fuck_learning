@@ -3,12 +3,21 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Any, cast
 from urllib.parse import urlsplit
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
+from backend.app.student_runtime.pace_service import (
+    clear_pace_state,
+    compute_mastery_percent,
+    ensure_section_progress,
+    get_active_pace_suggestion,
+    refresh_lesson_progress_rollup,
+    should_clear_pace_on_completion,
+)
 from backend.chaoxing_db.models import ChapterPptAsset, ChapterParseResult, ChapterScript, ChapterScriptSection, CourseChapter, Lesson, LessonSection, LessonSectionAnchor, LessonSectionPage, LessonUnit, ProgressTrackLog, ResumeRecord, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionMasteryLog, StudentSectionProgress, User
 
 UNDERSTANDING_LABELS = {"weak": "未理解", "partial": "部分理解", "complete": "完全理解"}
@@ -741,9 +750,13 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
             }
         )
 
-    current_page_no = progress.last_page_no if progress and progress.last_page_no else (pages[0]["pageNo"] if pages else 1)
     teacher_name = _find_teacher_name(db, lesson)
     audio_url, audio_status = _resolve_section_audio(section)
+    pace_suggestion = get_active_pace_suggestion(progress, section) if progress else None
+    current_page_no = progress.last_page_no if progress and progress.last_page_no else (pages[0]["pageNo"] if pages else 1)
+    suggested_page_no = _round_int((pace_suggestion or {}).get("suggestedBlockPayload", {}).get("targetPageNo"))
+    if suggested_page_no:
+        current_page_no = suggested_page_no
     return {
         "lessonId": lesson.lesson_no,
         "lessonDbId": lesson.id,
@@ -762,6 +775,7 @@ def get_section_detail(db: Session, student_id: str | int | None, lesson_identif
         "scriptContent": chapter_context["scriptContent"],
         "knowledgePoints": [point.point_name for point in sorted(section.knowledge_points or [], key=lambda item: (item.sort_no, item.id))],
         "pages": pages,
+        "paceSuggestion": pace_suggestion,
     }
 
 def get_section_context_for_qa(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None) -> JsonDict | None:
@@ -984,42 +998,37 @@ def mark_page_read(db: Session, student_id: str | int | None, lesson_identifier:
     progress_percent = _round_int((completed_pages / total_pages) * 100) if total_pages else 0
     practice_attempt = _find_latest_practice_attempt(db, student_db_id, lesson.id, section.id)
     practice_percent = _round_int(practice_attempt.accuracy_percent if practice_attempt and practice_attempt.accuracy_percent is not None else 0)
-    mastery_percent = _round_int(progress_percent * 0.4 + practice_percent * 0.6)
+    mastery_percent = compute_mastery_percent(progress_percent, practice_percent)
     anchor = _find_section_anchor(section, page_no or page.page_no)
-    section_progress = db.query(StudentSectionProgress).filter(StudentSectionProgress.student_id == student_db_id, StudentSectionProgress.lesson_id == lesson.id, StudentSectionProgress.section_id == section.id).first()
-    if not section_progress:
-        section_progress = StudentSectionProgress(student_id=student_db_id, course_id=lesson.course_id, lesson_id=lesson.id, unit_id=section.unit_id, section_id=section.id)
-        db.add(section_progress)
+    section_progress = ensure_section_progress(
+        db,
+        student_db_id=student_db_id,
+        lesson=lesson,
+        section=section,
+    )
     section_progress.current_anchor_id = anchor.id if anchor else None
     section_progress.last_page_no = page.page_no
     section_progress.progress_percent = progress_percent
     section_progress.mastery_percent = mastery_percent
     section_progress.last_practice_attempt_id = practice_attempt.id if practice_attempt else None
     section_progress.last_operate_time = now
-    lesson_progress = db.query(StudentLessonProgress).filter(StudentLessonProgress.student_id == student_db_id, StudentLessonProgress.lesson_id == lesson.id).first()
-    if not lesson_progress:
-        lesson_progress = StudentLessonProgress(student_id=student_db_id, course_id=lesson.course_id, lesson_id=lesson.id)
-        db.add(lesson_progress)
-    db.flush()
-    all_section_rows = db.query(StudentSectionProgress).filter(StudentSectionProgress.student_id == student_db_id, StudentSectionProgress.lesson_id == lesson.id).all()
-    if all_section_rows:
-        total_progress = _round_int(sum(_round_int(row.progress_percent) for row in all_section_rows) / len(all_section_rows))
-        overall_mastery = _round_int(sum(_round_int(row.mastery_percent) for row in all_section_rows) / len(all_section_rows))
-    else:
-        total_progress = progress_percent
-        overall_mastery = mastery_percent
-    lesson_progress.total_progress = total_progress
-    lesson_progress.overall_mastery_percent = overall_mastery
-    lesson_progress.current_unit_id = section.unit_id
-    lesson_progress.current_section_id = section.id
-    lesson_progress.current_anchor_id = anchor.id if anchor else None
+    if should_clear_pace_on_completion(section_progress):
+        clear_pace_state(section_progress)
+    lesson_progress, total_progress, overall_mastery = refresh_lesson_progress_rollup(
+        db,
+        student_db_id=student_db_id,
+        lesson=lesson,
+        section=section,
+        section_progress=section_progress,
+    )
+    lesson_progress.current_anchor_id = anchor.id if anchor else lesson_progress.current_anchor_id
     lesson_progress.last_page_no = page.page_no
     lesson_progress.last_operate_time = now
     db.add(ProgressTrackLog(student_id=student_db_id, course_id=lesson.course_id, lesson_id=lesson.id, section_id=section.id, anchor_id=anchor.id if anchor else None, page_no=page.page_no, track_source="page_read", progress_percent=progress_percent, last_operate_time=now))
     db.add(ResumeRecord(student_id=student_db_id, course_id=lesson.course_id, lesson_id=lesson.id, section_id=section.id, anchor_id=anchor.id if anchor else None, page_no=page.page_no, resume_time_sec=anchor.start_time_sec if anchor else 0, resume_type="manual"))
     db.add(StudentSectionMasteryLog(student_id=student_db_id, course_id=lesson.course_id, lesson_id=lesson.id, section_id=section.id, practice_attempt_id=practice_attempt.id if practice_attempt else None, source_type="progress_sync", page_progress_contribution=round(progress_percent * 0.4, 2), practice_contribution=round(practice_percent * 0.6, 2), qa_contribution=0, final_mastery_percent=mastery_percent, detail_json={"progressPercent": progress_percent, "practicePercent": practice_percent}))
     db.commit()
-    return {"sectionId": str(section.id), "sectionTitle": section.section_name, "pageNo": page.page_no, "anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else "", "progressPercent": progress_percent, "masteryPercent": mastery_percent, "overallProgress": total_progress, "overallMastery": overall_mastery}
+    return {"sectionId": str(section.id), "sectionTitle": section.section_name, "pageNo": page.page_no, "anchorId": str(anchor.id) if anchor else "", "anchorTitle": anchor.anchor_title if anchor else "", "progressPercent": progress_percent, "masteryPercent": mastery_percent, "practicePercent": practice_percent, "overallProgress": total_progress, "overallMastery": overall_mastery, "paceSuggestion": get_active_pace_suggestion(section_progress, section)}
 
 
 def interact_with_section_context(db: Session, lesson_identifier: str | int | None, section_identifier: str | int | None, question: str, page_no: int | None) -> JsonDict | None:

@@ -14,7 +14,8 @@ from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
 from backend.app.student_runtime.db_learning_service import get_db_progress_state, get_db_resume_state, get_section_detail, get_student_lessons_from_db, mark_page_read
-from backend.chaoxing_db.models import ChapterScript, ChapterScriptSection, LessonSection, LessonSectionPage, StudentLessonProgress, StudentPageProgress, User
+from backend.app.student_runtime.pace_service import apply_qa_checkpoint, ensure_section_progress
+from backend.chaoxing_db.models import ChapterPractice, ChapterScript, ChapterScriptSection, LessonSection, LessonSectionPage, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionProgress, User
 
 
 class StudentDbLearningServiceTestCase(unittest.TestCase):
@@ -766,3 +767,294 @@ class StudentDbLearningServiceTestCase(unittest.TestCase):
         self.assertEqual(result["pageNo"], page_no)
         self.assertEqual(progress_page_no, page_no)
         self.assertTrue(progress_is_completed)
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_get_section_detail_returns_persisted_pace_suggestion(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        assert self.temp_dir is not None
+        mock_get_voice_cache_dir.return_value = Path(self.temp_dir.name) / "voice-cache"
+        mock_synthesize_speech.return_value = TtsSynthesisResult(
+            audio_bytes=b"ID3demo-audio",
+            duration_ms=2200,
+            reqid="req-001",
+            log_id="log-001",
+            voice_type="volcano-voice",
+        )
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId="cw-course-001",
+            title="demo",
+            chapters=[
+                CirChapter(
+                    chapterId="course-001-chap-001",
+                    chapterName="chapter",
+                    nodes=[
+                        LessonNode(nodeId="node-01-01", nodeName="node-1", pageRefs=[1], keyPoints=["k1"], summary="summary-1"),
+                    ],
+                )
+            ],
+        )
+        parse_payload = ParseRequest(
+            schoolId="school-001",
+            userId="teacher-001",
+            courseId="course-001",
+            fileType="ppt",
+            fileUrl="file:///tmp/demo.pptx",
+            isExtractKeyPoint=True,
+            enc="demo-signature",
+        )
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
+        script_summary = generate_script(
+            GenerateScriptRequest(
+                parseId=accepted.parseId,
+                teachingStyle="standard",
+                speechSpeed="normal",
+                customOpening=None,
+                enc="demo-signature",
+            )
+        )
+        script_detail = get_script_detail(script_summary.scriptId).model_copy(deep=True)
+        script_detail.scriptStructure[0].content = "student runtime short section 1"
+
+        with patch("backend.app.lesson.service.get_script", return_value=script_detail):
+            audio = generate_audio(
+                GenerateAudioRequest(
+                    scriptId=script_summary.scriptId,
+                    voiceType="female_standard",
+                    audioFormat="mp3",
+                    sectionIds=[script_detail.scriptStructure[0].sectionId],
+                    enc="demo-signature",
+                ),
+                base_url="http://testserver/",
+            )
+            publish = publish_lesson(
+                PublishRequest(
+                    coursewareId="cw-course-001",
+                    scriptId=script_summary.scriptId,
+                    audioId=audio["audioId"],
+                    publisherId="teacher-demo",
+                    enc="demo-signature",
+                )
+            )
+
+        with session_scope() as db:
+            teacher = db.query(User).filter(User.user_no == "teacher-001").first()
+            assert teacher is not None
+            student = User(user_no="student-pace-001", user_name="学生节奏", role="student", school_id=teacher.school_id)
+            db.add(student)
+            db.flush()
+            section = (
+                db.query(LessonSection)
+                .filter(LessonSection.lesson.has(lesson_no=publish["lessonId"]))
+                .order_by(LessonSection.id.asc())
+                .first()
+            )
+            assert section is not None
+            page = (
+                db.query(LessonSectionPage)
+                .filter(LessonSectionPage.section_id == section.id)
+                .order_by(LessonSectionPage.page_no.asc(), LessonSectionPage.id.asc())
+                .first()
+            )
+            assert page is not None
+            section_progress = ensure_section_progress(db, student_db_id=student.id, lesson=section.lesson, section=section)
+            suggestion = apply_qa_checkpoint(
+                db,
+                student_db_id=student.id,
+                lesson=section.lesson,
+                section=section,
+                section_progress=section_progress,
+                checkpoint_result={
+                    "understandingLevel": "weak",
+                    "weakPoints": ["k1"],
+                },
+                page_no=page.page_no,
+            )
+            db.commit()
+            student_no = student.user_no
+            section_id = section.id
+
+        with session_scope() as db:
+            detail = get_section_detail(
+                db=db,
+                student_id=student_no,
+                lesson_identifier=publish["lessonId"],
+                section_identifier=str(section_id),
+            )
+
+        self.assertIsNotNone(detail)
+        self.assertIsNotNone(suggestion)
+        assert detail is not None
+        self.assertEqual(detail["paceSuggestion"]["paceMode"], "reinforce")
+        self.assertEqual(detail["paceSuggestion"]["triggerSource"], "qa")
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_mark_page_read_clears_active_pace_when_section_completed(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        assert self.temp_dir is not None
+        mock_get_voice_cache_dir.return_value = Path(self.temp_dir.name) / "voice-cache"
+        mock_synthesize_speech.return_value = TtsSynthesisResult(
+            audio_bytes=b"ID3demo-audio",
+            duration_ms=2200,
+            reqid="req-001",
+            log_id="log-001",
+            voice_type="volcano-voice",
+        )
+        mock_parse_courseware.return_value = (
+            FileInfo(fileName="demo.pptx", fileSize=1024, pageCount=8),
+            StructurePreview(chapters=[]),
+        )
+        mock_build_cir.return_value = CIR(
+            coursewareId="cw-course-001",
+            title="demo",
+            chapters=[
+                CirChapter(
+                    chapterId="course-001-chap-001",
+                    chapterName="chapter",
+                    nodes=[
+                        LessonNode(nodeId="node-01-01", nodeName="node-1", pageRefs=[1], keyPoints=["k1"], summary="summary-1"),
+                    ],
+                )
+            ],
+        )
+        parse_payload = ParseRequest(
+            schoolId="school-001",
+            userId="teacher-001",
+            courseId="course-001",
+            fileType="ppt",
+            fileUrl="file:///tmp/demo.pptx",
+            isExtractKeyPoint=True,
+            enc="demo-signature",
+        )
+        accepted = create_parse_task(parse_payload)
+        run_parse_task(accepted.parseId, parse_payload)
+        script_summary = generate_script(
+            GenerateScriptRequest(
+                parseId=accepted.parseId,
+                teachingStyle="standard",
+                speechSpeed="normal",
+                customOpening=None,
+                enc="demo-signature",
+            )
+        )
+        script_detail = get_script_detail(script_summary.scriptId).model_copy(deep=True)
+        script_detail.scriptStructure[0].content = "student runtime short section 1"
+
+        with patch("backend.app.lesson.service.get_script", return_value=script_detail):
+            audio = generate_audio(
+                GenerateAudioRequest(
+                    scriptId=script_summary.scriptId,
+                    voiceType="female_standard",
+                    audioFormat="mp3",
+                    sectionIds=[script_detail.scriptStructure[0].sectionId],
+                    enc="demo-signature",
+                ),
+                base_url="http://testserver/",
+            )
+            publish = publish_lesson(
+                PublishRequest(
+                    coursewareId="cw-course-001",
+                    scriptId=script_summary.scriptId,
+                    audioId=audio["audioId"],
+                    publisherId="teacher-demo",
+                    enc="demo-signature",
+                )
+            )
+
+        with session_scope() as db:
+            teacher = db.query(User).filter(User.user_no == "teacher-001").first()
+            assert teacher is not None
+            student = User(user_no="student-pace-002", user_name="学生节奏二", role="student", school_id=teacher.school_id)
+            db.add(student)
+            db.flush()
+            section = (
+                db.query(LessonSection)
+                .filter(LessonSection.lesson.has(lesson_no=publish["lessonId"]))
+                .order_by(LessonSection.id.asc())
+                .first()
+            )
+            assert section is not None
+            page = (
+                db.query(LessonSectionPage)
+                .filter(LessonSectionPage.section_id == section.id)
+                .order_by(LessonSectionPage.page_no.asc(), LessonSectionPage.id.asc())
+                .first()
+            )
+            assert page is not None
+            section_progress = ensure_section_progress(db, student_db_id=student.id, lesson=section.lesson, section=section)
+            section_progress.pace_mode = "reinforce"
+            section_progress.pace_reason_summary = "需要先强化关键内容。"
+            section_progress.pace_trigger_source = "qa"
+            practice = ChapterPractice(
+                practice_code="practice-pace-001",
+                course_id=section.course_id,
+                chapter_id=section.source_chapter_id,
+                created_by=teacher.id,
+                practice_title="章节练习",
+                practice_type="exercise",
+                difficulty_level="medium",
+                total_score=100,
+                item_count=1,
+                publish_status="published",
+            )
+            db.add(practice)
+            db.flush()
+            db.add(
+                StudentPracticeAttempt(
+                    attempt_no="attempt-pace-001",
+                    practice_id=practice.id,
+                    student_id=student.id,
+                    course_id=section.course_id,
+                    lesson_id=section.lesson_id,
+                    section_id=section.id,
+                    accuracy_percent=100,
+                    grading_status="graded",
+                    attempt_status="graded",
+                )
+            )
+            db.commit()
+            student_no = student.user_no
+            section_id = section.id
+            page_no = page.page_no
+
+        with session_scope() as db:
+            result = mark_page_read(
+                db=db,
+                student_id=student_no,
+                lesson_identifier=publish["lessonId"],
+                section_identifier=str(section_id),
+                lesson_page_id=f"{publish['lessonId']}-P{page_no}",
+                page_no=page_no,
+            )
+            persisted = (
+                db.query(StudentSectionProgress)
+                .filter(StudentSectionProgress.student_id == db.query(User.id).filter(User.user_no == student_no).scalar())
+                .first()
+            )
+            persisted_pace_mode = persisted.pace_mode if persisted is not None else None
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertIsNone(result["paceSuggestion"])
+        self.assertIsNotNone(persisted)
+        self.assertIsNone(persisted_pace_mode)

@@ -258,6 +258,92 @@ if data is None:
   - `POST /api/v1/qa-lab/compare`
 - Student QA read path:
   - `answer_question(..., runtime_config=...)`
+
+---
+
+## Scenario: Student Chapter Pace Suggestion State
+
+### 1. Scope / Trigger
+- Trigger: chapter-internal dynamic pacing now persists active supplement/reinforce state and exposes it through section detail, QA checkpoint, practice checkpoint, and skip logging flows.
+- Why this needs code-spec depth: the contract spans ORM fields, runtime service rules, two checkpoint APIs, and the chapter learning UI's cold-start/immediate-refresh behavior.
+
+### 2. Signatures
+- ORM fields on `student_section_progress`:
+  - `pace_mode`
+  - `pace_reason_summary`
+  - `pace_trigger_source`
+  - `pace_updated_at`
+- Runtime helpers:
+  - `apply_qa_checkpoint(...)`
+  - `apply_practice_checkpoint(...)`
+  - `get_active_pace_suggestion(...)`
+  - `record_pace_skip(...)`
+- APIs:
+  - `POST /student-api/api/v1/lesson/section/detail`
+  - `POST /student-api/api/v1/qa/interact`
+  - `POST /student-api/api/v1/qa/interact/stream`
+  - `POST /student-api/api/v1/progress/practice/checkpoint`
+  - `POST /student-api/api/v1/progress/pace/skip`
+
+### 3. Contracts
+- Persist only active intervention state:
+  - `pace_mode` stores `supplement | reinforce`
+  - improved `continue` results clear persisted pace fields instead of creating a long-lived banner state
+- Section detail contract:
+  - `paceSuggestion` is the cold-start source for chapter re-entry
+  - when active pacing exists, `currentPageNo` should resolve to the suggested target step, not blindly to the raw last page
+- QA checkpoint contract:
+  - `understandingLevel=partial -> supplement`
+  - `understandingLevel=weak -> reinforce`
+  - `understandingLevel=complete -> clear persisted pace state`
+- Practice checkpoint contract:
+  - `< 60 -> reinforce`
+  - `60-79 -> supplement`
+  - `>= 80 -> clear persisted pace state`
+- Completion cleanup:
+  - if `progress_percent == 100` and `mastery_percent >= 60`, clear active pace state unless the latest checkpoint is explicitly `weak`
+
+### 4. Validation & Error Matrix
+- missing lesson or student on pace checkpoint routes -> `404`
+- missing section on pace checkpoint routes -> `404`
+- practice checkpoint without a graded attempt -> `404`
+- section detail with no active pacing -> `paceSuggestion: null`
+- QA/practice improvement to `continue` -> clear persisted pace fields and return `paceSuggestion: null`
+- pace skip without active pacing -> return success with `paceSuggestion: null`; skip is auxiliary logging, not a state transition
+
+### 5. Good / Base / Bad Cases
+- Good: QA returns `weak`, backend persists `reinforce`, section detail re-entry restores the same suggestion, and skip only logs without silently clearing the intervention.
+- Base: practice returns `72`, backend emits `supplement`, updates mastery rollup, and the chapter page shows the new suggestion immediately.
+- Bad: backend persists `continue` as if it were an active mode, causing a permanent chapter banner that survives even after the learner has improved.
+
+### 6. Tests Required
+- DB regression:
+  - persisted QA pace suggestion appears in `get_section_detail(...)`
+  - chapter completion via `mark_page_read(...)` clears active pace state
+- Router regression:
+  - `qa/interact` returns `paceSuggestion` for weak/partial answers
+  - `progress/practice/checkpoint` returns the latest `paceSuggestion`
+  - `progress/pace/skip` preserves the active suggestion while still succeeding
+- Verification:
+  - frontend build passes after chapter learning UI changes
+
+### 7. Wrong vs Correct
+#### Wrong
+```python
+# Treat continue as a durable mode and keep showing it on chapter re-entry.
+section_progress.pace_mode = "continue"
+section_progress.pace_reason_summary = "可以继续学习"
+```
+
+#### Correct
+```python
+# Persist only active interventions; improvement clears the stored pace state.
+if next_mode == "continue":
+    clear_pace_state(section_progress)
+else:
+    section_progress.pace_mode = next_mode
+    section_progress.pace_reason_summary = _pace_reason_summary(next_mode, trigger_source)
+```
   - `build_qa_context_bundle(..., runtime_config=...)`
   - `DashScopeClient(runtime_config=...)`
 

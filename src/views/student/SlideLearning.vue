@@ -43,6 +43,12 @@
           </div>
         </section>
 
+        <StudentPaceSuggestionCard
+          :suggestion="visiblePaceSuggestion"
+          @apply="applyPaceSuggestion"
+          @skip="skipPaceSuggestion"
+        />
+
         <section class="ppt-card">
           <div class="ppt-card-header">
             <div>
@@ -369,11 +375,13 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import StudentPaceSuggestionCard from '@/components/student/StudentPaceSuggestionCard.vue'
 import { useRealtimeAsr } from '@/composables/useRealtimeAsr'
 import { streamLessonInteraction } from '@/api/studentStream'
 import {
   getStudentSectionDetail,
-  markStudentPageRead
+  markStudentPageRead,
+  skipStudentPace
 } from '@/api/student'
 import { buildQaImageAttachmentPayloads, cloneQaImageAttachments, QA_IMAGE_ACCEPT, useQaImageAttachments } from '@/composables/useQaImageAttachments'
 import { findFrontendTestLesson } from '@/mock/studentLessons'
@@ -402,13 +410,15 @@ const detail = ref({
   sectionTitle: '',
   progressPercent: 0,
   masteryPercent: 0,
+  practicePercent: 0,
   aiGuideContent: '',
   scriptContent: '',
   audioUrl: '',
   audioStatus: '',
   knowledgePoints: [],
   pages: [],
-  currentPageNo: 1
+  currentPageNo: 1,
+  paceSuggestion: null
 })
 const activePageNo = ref(1)
 const questionText = ref('')
@@ -441,6 +451,7 @@ const thumbnailRefs = ref({})
 const hasLoadedDetail = ref(false)
 const hasActivatedOnce = ref(false)
 const isKnowledgeViewActive = ref(false)
+const dismissedPaceUpdatedAt = ref('')
 let sectionDetailLoadSeq = 0
 let contentMotionFrame = 0
 let contentMotionTimer = 0
@@ -468,6 +479,12 @@ const activePage = computed(() => {
 const activePageDisplayNo = computed(() => (normalizedActivePageIndex.value >= 0 ? normalizedActivePageIndex.value + 1 : 0))
 const hasPrevPage = computed(() => normalizedActivePageIndex.value > 0)
 const hasNextPage = computed(() => normalizedActivePageIndex.value >= 0 && normalizedActivePageIndex.value < totalPages.value - 1)
+const visiblePaceSuggestion = computed(() => {
+  const suggestion = detail.value.paceSuggestion
+  if (!suggestion || suggestion.paceMode === 'continue') return null
+  if (dismissedPaceUpdatedAt.value && dismissedPaceUpdatedAt.value === suggestion.updatedAt) return null
+  return suggestion
+})
 const lessonUnits = computed(() => {
   const cachedLesson = getStudentLessonListCache().find((item) => String(item.lessonId) === String(lessonId.value))
     || findFrontendTestLesson(lessonId.value)
@@ -727,13 +744,15 @@ function normalizeFallbackDetail() {
     sectionTitle: chapter?.chapterTitle || '章节学习',
     progressPercent: Number(chapter?.progressPercent || 0),
     masteryPercent: Number(chapter?.masteryPercent || 0),
+    practicePercent: 0,
     aiGuideContent: chapter?.guideContent || chapter?.summary || '',
     scriptContent: chapter?.scriptContent || '',
     audioUrl: '',
     audioStatus: 'empty',
     knowledgePoints: chapter?.knowledgePoints || [],
     pages: fallbackPages,
-    currentPageNo: fallbackPages[0]?.pageNo || 1
+    currentPageNo: fallbackPages[0]?.pageNo || 1,
+    paceSuggestion: null
   }
 }
 
@@ -854,6 +873,7 @@ async function loadSectionDetail() {
       ...fallback,
       ...(res.data || {})
     }
+    dismissedPaceUpdatedAt.value = ''
     if (detail.value.audioUrl) {
       detail.value.audioStatus = detail.value.audioStatus || 'published'
     } else {
@@ -888,6 +908,8 @@ async function syncPageRead(page) {
     page.isRead = true
     detail.value.progressPercent = res.data.progressPercent
     detail.value.masteryPercent = res.data.masteryPercent
+    detail.value.practicePercent = res.data.practicePercent || detail.value.practicePercent || 0
+    detail.value.paceSuggestion = res.data.paceSuggestion || null
     applyStudentLearningProgress({
       lessonId: lessonId.value,
       courseName: detail.value.courseName,
@@ -982,6 +1004,29 @@ function fillQuestion(question) {
   questionText.value = question
 }
 
+function applyPaceSuggestion() {
+  const targetPageNo = Number(visiblePaceSuggestion.value?.suggestedBlockPayload?.targetPageNo || 0)
+  if (targetPageNo) {
+    setActivePage(targetPageNo)
+  }
+}
+
+async function skipPaceSuggestion() {
+  const suggestion = visiblePaceSuggestion.value
+  if (!suggestion) return
+  dismissedPaceUpdatedAt.value = suggestion.updatedAt || `dismissed-${Date.now()}`
+  try {
+    await skipStudentPace({
+      studentId: studentProfile.value.studentId,
+      lessonId: lessonId.value,
+      sectionId: sectionId.value,
+      pageNo: activePageNo.value
+    })
+  } catch (error) {
+    console.warn(error)
+  }
+}
+
 async function toggleSectionAudio() {
   if (!canPlaySectionAudio.value) {
     ElMessage.info('当前章节暂无语音。')
@@ -1073,6 +1118,10 @@ async function submitQuestion() {
     assistantStreamingStarted.value = true
     ensureAssistantVisible()
     assistantMessage.content = donePayload?.answer || assistantMessage.content || '当前内容暂无更多解读。'
+    detail.value.paceSuggestion = donePayload?.paceSuggestion || null
+    if (donePayload?.paceSuggestion?.updatedAt && donePayload.paceSuggestion.updatedAt !== dismissedPaceUpdatedAt.value) {
+      dismissedPaceUpdatedAt.value = ''
+    }
     replaceQaAttachments(outboundAttachments)
   } catch (error) {
     if (error?.name === 'AbortError') {

@@ -12,6 +12,10 @@ from backend.app.common.exceptions import ApiError
 from backend.app.common.security import verify_signature_payload
 from backend.app.student_runtime.adapter import ChaoxingAdapter
 from backend.app.student_runtime.db_learning_service import (
+    _find_latest_practice_attempt,
+    _find_lesson,
+    _find_section,
+    _resolve_user_id,
     enhance_player_with_db,
     get_db_progress_state,
     get_db_resume_state,
@@ -23,6 +27,12 @@ from backend.app.student_runtime.db_learning_service import (
     mark_page_read,
     save_recent_chapter_visit,
 )
+from backend.app.student_runtime.pace_service import (
+    apply_practice_checkpoint,
+    apply_qa_checkpoint,
+    ensure_section_progress,
+    record_pace_skip,
+)
 from backend.app.student_runtime.db_qa_service import get_qa_sessions, save_qa_session
 from backend.app.student_runtime.qa_image_storage import normalize_qa_image_attachments
 from backend.app.student_runtime.learning_service import LearningService
@@ -30,6 +40,7 @@ from backend.app.student_runtime.qa_asr_service import AudioPayloadError, transc
 from backend.app.student_runtime.qa_asr_realtime_service import handle_realtime_asr_message
 from backend.app.student_runtime.qa_orchestrator import answer_question
 from backend.app.student_runtime.qa_streaming import iter_answer_chunks
+from backend.chaoxing_db.models import StudentPracticeAttempt, StudentSectionProgress
 
 router = APIRouter()
 adapter = ChaoxingAdapter()
@@ -199,13 +210,42 @@ async def qa_interact(request: Request, db: Session = Depends(get_db)):
     question = (payload.get("question") or "").strip()
     page_no = payload.get("pageNo")
     lesson_id = payload.get("lessonId")
+    student_db_id = _resolve_user_id(db, payload.get("studentId"))
+    lesson = _find_lesson(db, lesson_id) if section_id and student_db_id else None
+    section = _find_section(db, lesson.id, section_id) if lesson else None
     if section_id and question:
         data = answer_question(db, lesson_id=lesson_id, section_id=section_id, page_no=page_no, question=question)
         if data:
-            return response(200, "success", data, getattr(request.state, "request_id", None))
+            pace_suggestion = None
+            if student_db_id and lesson and section:
+                section_progress = ensure_section_progress(db, student_db_id=student_db_id, lesson=lesson, section=section)
+                pace_suggestion = apply_qa_checkpoint(
+                    db,
+                    student_db_id=student_db_id,
+                    lesson=lesson,
+                    section=section,
+                    section_progress=section_progress,
+                    checkpoint_result=data,
+                    page_no=page_no,
+                )
+                db.commit()
+            return response(200, "success", {**data, "paceSuggestion": pace_suggestion}, getattr(request.state, "request_id", None))
         data = interact_with_section_context(db, lesson_id, section_id, question, page_no)
         if data:
-            return response(200, "success", data, getattr(request.state, "request_id", None))
+            pace_suggestion = None
+            if student_db_id and lesson and section:
+                section_progress = ensure_section_progress(db, student_db_id=student_db_id, lesson=lesson, section=section)
+                pace_suggestion = apply_qa_checkpoint(
+                    db,
+                    student_db_id=student_db_id,
+                    lesson=lesson,
+                    section=section,
+                    section_progress=section_progress,
+                    checkpoint_result=data,
+                    page_no=page_no,
+                )
+                db.commit()
+            return response(200, "success", {**data, "paceSuggestion": pace_suggestion}, getattr(request.state, "request_id", None))
     data = learning_service.interact(lesson_id, question, payload.get("anchorId"), page_no)
     return response(200, "success", data, getattr(request.state, "request_id", None))
 
@@ -217,6 +257,9 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
     question = (payload.get("question") or "").strip()
     page_no = payload.get("pageNo")
     lesson_id = payload.get("lessonId")
+    student_db_id = _resolve_user_id(db, payload.get("studentId"))
+    lesson = _find_lesson(db, lesson_id) if section_id and student_db_id else None
+    section = _find_section(db, lesson.id, section_id) if lesson else None
     attachments = normalize_qa_image_attachments(payload.get("attachments") or [])
     request_id = getattr(request.state, "request_id", None)
     if not question and not attachments:
@@ -243,6 +286,21 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
             else:
                 data = learning_service.interact(lesson_id, question, payload.get("anchorId"), page_no)
 
+            pace_suggestion = None
+            if data and student_db_id and lesson and section:
+                section_progress = ensure_section_progress(db, student_db_id=student_db_id, lesson=lesson, section=section)
+                pace_suggestion = apply_qa_checkpoint(
+                    db,
+                    student_db_id=student_db_id,
+                    lesson=lesson,
+                    section=section,
+                    section_progress=section_progress,
+                    checkpoint_result=data,
+                    page_no=page_no,
+                )
+                db.commit()
+                data = {**data, "paceSuggestion": pace_suggestion}
+
             answer = (data or {}).get("answer") or "当前内容暂无更多解读。"
             for chunk in iter_answer_chunks(answer):
                 if await request.is_disconnected():
@@ -262,6 +320,99 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/api/v1/progress/practice/checkpoint")
+async def progress_practice_checkpoint(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    lesson = _find_lesson(db, payload.get("lessonId"))
+    student_db_id = _resolve_user_id(db, payload.get("studentId"))
+    if not lesson or not student_db_id:
+        raise ApiError(404, "练习检查点关联的课程不存在", status_code=404)
+    section = _find_section(db, lesson.id, payload.get("sectionId"))
+    if not section:
+        raise ApiError(404, "练习检查点关联的章节不存在", status_code=404)
+
+    attempt_id = payload.get("attemptId")
+    practice_attempt = None
+    if attempt_id not in (None, ""):
+        attempt_text = str(attempt_id).strip()
+        if attempt_text.isdigit():
+            practice_attempt = (
+                db.query(StudentPracticeAttempt)
+                .filter(
+                    StudentPracticeAttempt.id == int(attempt_text),
+                    StudentPracticeAttempt.student_id == student_db_id,
+                    StudentPracticeAttempt.lesson_id == lesson.id,
+                    StudentPracticeAttempt.section_id == section.id,
+                    StudentPracticeAttempt.grading_status == "graded",
+                )
+                .first()
+            )
+    if practice_attempt is None:
+        practice_attempt = _find_latest_practice_attempt(db, student_db_id, lesson.id, section.id)
+    if not practice_attempt:
+        raise ApiError(404, "暂无已批改的章节练习记录", status_code=404)
+
+    section_progress = ensure_section_progress(db, student_db_id=student_db_id, lesson=lesson, section=section)
+    pace_suggestion, practice_percent, mastery_percent, overall_progress, overall_mastery = apply_practice_checkpoint(
+        db,
+        student_db_id=student_db_id,
+        lesson=lesson,
+        section=section,
+        section_progress=section_progress,
+        practice_attempt=practice_attempt,
+        page_no=payload.get("pageNo"),
+    )
+    db.commit()
+    return response(
+        200,
+        "success",
+        {
+            "sectionId": str(section.id),
+            "sectionTitle": section.section_name,
+            "progressPercent": int(round(float(section_progress.progress_percent or 0))),
+            "practicePercent": practice_percent,
+            "masteryPercent": mastery_percent,
+            "overallProgress": overall_progress,
+            "overallMastery": overall_mastery,
+            "paceSuggestion": pace_suggestion,
+        },
+        getattr(request.state, "request_id", None),
+    )
+
+
+@router.post("/api/v1/progress/pace/skip")
+async def progress_pace_skip(request: Request, db: Session = Depends(get_db)):
+    payload = await require_signature(request)
+    lesson = _find_lesson(db, payload.get("lessonId"))
+    student_db_id = _resolve_user_id(db, payload.get("studentId"))
+    if not lesson or not student_db_id:
+        raise ApiError(404, "学习节奏记录不存在", status_code=404)
+    section = _find_section(db, lesson.id, payload.get("sectionId"))
+    if not section:
+        raise ApiError(404, "学习节奏记录不存在", status_code=404)
+    section_progress = (
+        db.query(StudentSectionProgress)
+        .filter(
+            StudentSectionProgress.student_id == student_db_id,
+            StudentSectionProgress.lesson_id == lesson.id,
+            StudentSectionProgress.section_id == section.id,
+        )
+        .first()
+    )
+    if not section_progress:
+        return response(200, "success", {"paceSuggestion": None}, getattr(request.state, "request_id", None))
+    suggestion = record_pace_skip(
+        db,
+        student_db_id=student_db_id,
+        lesson=lesson,
+        section=section,
+        section_progress=section_progress,
+        page_no=payload.get("pageNo"),
+    )
+    db.commit()
+    return response(200, "success", {"paceSuggestion": suggestion}, getattr(request.state, "request_id", None))
 
 
 @router.post("/api/v1/qa/sessions/list")

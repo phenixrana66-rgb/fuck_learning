@@ -20,7 +20,7 @@ from backend.app.main import create_app
 from backend.app.parser.schemas import FileInfo, StructurePreview
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.script.service import clear_scripts, generate_script, get_script as get_script_detail
-from backend.chaoxing_db.models import Lesson, LessonSection, School, User
+from backend.chaoxing_db.models import ChapterPractice, Lesson, LessonSection, School, StudentPracticeAttempt, StudentSectionProgress, User
 
 
 class StudentRouterTestCase(unittest.TestCase):
@@ -487,6 +487,193 @@ class StudentRouterTestCase(unittest.TestCase):
         self.assertEqual(runtime_config.retrieval_top_k, 6)
         self.assertEqual(mock_build_bundle.call_args.kwargs["runtime_config"].qa_llm_model, "qwen-plus")
         mock_record_trace.assert_called_once()
+
+    @patch("backend.app.student_runtime.router.answer_question")
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_student_qa_route_returns_pace_suggestion(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+        mock_answer_question,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+        mock_answer_question.return_value = {
+            "answer": "建议先回看关键内容。",
+            "relatedKnowledgePoints": ["k1"],
+            "understandingLevel": "weak",
+            "understandingLabel": "未理解",
+            "resumeAnchor": {"anchorId": "", "anchorTitle": "课程导学", "pageNo": 1},
+            "weakPoints": ["k1"],
+        }
+
+        response = self.client.post(
+            "/student-api/api/v1/qa/interact",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "question": "我没懂这一页",
+                    "pageNo": 1,
+                }
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertEqual(payload["paceSuggestion"]["paceMode"], "reinforce")
+        self.assertEqual(payload["paceSuggestion"]["triggerSource"], "qa")
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_practice_checkpoint_route_returns_pace_suggestion(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+
+        with session_scope() as db:
+            section = (
+                db.query(LessonSection)
+                .join(Lesson, LessonSection.lesson_id == Lesson.id)
+                .filter(Lesson.lesson_no == publish["lessonId"], LessonSection.section_code == section_id)
+                .first()
+            )
+            assert section is not None
+            student = db.query(User).filter(User.user_no == student_identifier).first()
+            assert student is not None
+            practice = ChapterPractice(
+                practice_code="practice-router-001",
+                course_id=section.course_id,
+                chapter_id=section.source_chapter_id,
+                created_by=section.lesson.teacher_id,
+                practice_title="章节练习",
+                practice_type="exercise",
+                difficulty_level="medium",
+                total_score=100,
+                item_count=1,
+                publish_status="published",
+            )
+            db.add(practice)
+            db.flush()
+            db.add(
+                StudentPracticeAttempt(
+                    attempt_no="attempt-router-001",
+                    practice_id=practice.id,
+                    student_id=student.id,
+                    course_id=section.course_id,
+                    lesson_id=section.lesson_id,
+                    section_id=section.id,
+                    accuracy_percent=72,
+                    grading_status="graded",
+                    attempt_status="graded",
+                )
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/student-api/api/v1/progress/practice/checkpoint",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "pageNo": 1,
+                }
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertEqual(payload["practicePercent"], 72)
+        self.assertEqual(payload["paceSuggestion"]["paceMode"], "supplement")
+        self.assertEqual(payload["paceSuggestion"]["triggerSource"], "practice")
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_pace_skip_route_keeps_active_suggestion(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_code = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+
+        with session_scope() as db:
+            student = db.query(User).filter(User.user_no == student_identifier).first()
+            assert student is not None
+            section = (
+                db.query(LessonSection)
+                .join(Lesson, LessonSection.lesson_id == Lesson.id)
+                .filter(Lesson.lesson_no == publish["lessonId"], LessonSection.section_code == section_code)
+                .first()
+            )
+            assert section is not None
+            db.add(
+                StudentSectionProgress(
+                    student_id=student.id,
+                    course_id=section.course_id,
+                    lesson_id=section.lesson_id,
+                    unit_id=section.unit_id,
+                    section_id=section.id,
+                    pace_mode="reinforce",
+                    pace_reason_summary="需要先强化关键内容。",
+                    pace_trigger_source="qa",
+                )
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/student-api/api/v1/progress/pace/skip",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_code,
+                    "pageNo": 1,
+                }
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]["paceSuggestion"]
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["paceMode"], "reinforce")
 
     def _publish_demo_lesson(self, mock_parse_courseware, mock_build_cir, mock_synthesize_speech, mock_get_voice_cache_dir):
         assert self.temp_dir is not None

@@ -100,6 +100,20 @@ export function markStudentPageRead(data) {
   })
 }
 
+export function checkpointStudentPractice(data) {
+  return request({
+    url: '/api/v1/progress/practice/checkpoint',
+    data
+  })
+}
+
+export function skipStudentPace(data) {
+  return request({
+    url: '/api/v1/progress/pace/skip',
+    data
+  })
+}
+
 export function resumeStudentLesson(data) {
   return request({
     url: '/api/v1/lesson/resume',
