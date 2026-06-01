@@ -9,6 +9,16 @@ Thumbs.db
 cache/
 public/courseware-previews/
 
+### Trellis ###
+.agent
+.agents
+.codex
+.claude
+.gemini
+.opencode
+.trellis
+AGENTS.md
+
 *.log
 .vite/
 npm-debug.log*
@@ -27,4 +37,4 @@ node_modules/
 dist/
 __pycache__/
 .pycache*/
-.codex/
+
