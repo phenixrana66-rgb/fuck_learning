@@ -19,6 +19,7 @@ from backend.app.student_runtime.qa_prompt_builder import (
     build_system_prompt,
 )
 from backend.app.student_runtime.qa_retrieval_service import build_qa_context_bundle
+from backend.app.student_runtime.qa_runtime_config_service import StudentQARuntimeConfig, get_student_qa_runtime_config
 
 
 def answer_question(
@@ -30,22 +31,53 @@ def answer_question(
     question: str,
     attachments: list[dict[str, Any]] | None = None,
     history: list[dict[str, str]] | None = None,
+    runtime_config: StudentQARuntimeConfig | None = None,
+    include_debug: bool = False,
+    record_trace: bool = True,
 ) -> dict[str, Any] | None:
     if not section_id:
         return None
     image_data_urls = _collect_multimodal_image_data_urls(attachments or [])
     effective_question = (question or "").strip() or (DEFAULT_IMAGE_ONLY_QUESTION if image_data_urls else "")
-    bundle = build_qa_context_bundle(db, lesson_id, section_id, page_no, effective_question)
+    effective_runtime_config = runtime_config or get_student_qa_runtime_config(db)
+    bundle = build_qa_context_bundle(
+        db,
+        lesson_id,
+        section_id,
+        page_no,
+        effective_question,
+        runtime_config=effective_runtime_config,
+    )
     settings = get_settings()
     if effective_question and bundle.get("questionIntent") == "definition" and bundle.get("faq_candidates") and not image_data_urls:
-        return _build_direct_faq_answer(bundle)
+        direct_result = _build_direct_faq_answer(bundle)
+        return _compose_answer_response(
+            direct_result,
+            bundle=bundle,
+            runtime_config=effective_runtime_config,
+            include_debug=include_debug,
+            latency_ms=0,
+            mode="direct_faq",
+            used_fallback=False,
+            has_images=bool(image_data_urls),
+        )
     if not settings.dashscope_api_key:
-        return interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
+        fallback = interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
+        return _compose_answer_response(
+            fallback,
+            bundle=bundle,
+            runtime_config=effective_runtime_config,
+            include_debug=include_debug,
+            latency_ms=0,
+            mode="context_fallback",
+            used_fallback=True,
+            has_images=bool(image_data_urls),
+        )
 
     prompt = build_prompt(bundle, effective_question, history=history)
     started = time.perf_counter()
     try:
-        client = DashScopeClient()
+        client = DashScopeClient(runtime_config=effective_runtime_config)
         raw = (
             client.chat_multimodal_completion(prompt=prompt, image_data_urls=image_data_urls, system_prompt=build_system_prompt())
             if image_data_urls
@@ -55,33 +87,113 @@ def answer_question(
         parsed = _parse_model_payload(raw["text"])
         result = _normalize_model_payload(parsed, bundle)
         if _should_fallback_to_context_answer(result["answer"], bundle):
-            return interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
-        record_qa_answer_trace(
-            db,
-            {
-                "lesson_id": bundle.get("section", {}).get("lessonDbId"),
-                "section_id": bundle.get("section", {}).get("sectionDbId"),
-                "page_no": bundle.get("page", {}).get("pageNo"),
-                "model_provider": settings.qa_llm_provider,
-                "model_name": settings.qa_llm_model,
-                "embedding_model": settings.qa_embedding_model,
-                "faq_hit_ids_json": [item["faqId"] for item in bundle.get("faq_candidates", [])],
-                "context_chunk_ids_json": [item["chunkId"] for item in bundle.get("context_chunks", [])],
-                "prompt_version": PROMPT_VERSION,
-                "latency_ms": latency_ms,
-                "confidence_score": result.get("confidenceScore"),
-            },
+            fallback = interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
+            return _compose_answer_response(
+                fallback,
+                bundle=bundle,
+                runtime_config=effective_runtime_config,
+                include_debug=include_debug,
+                latency_ms=latency_ms,
+                mode="context_fallback",
+                used_fallback=True,
+                has_images=bool(image_data_urls),
+            )
+        if record_trace:
+            record_qa_answer_trace(
+                db,
+                {
+                    "lesson_id": bundle.get("section", {}).get("lessonDbId"),
+                    "section_id": bundle.get("section", {}).get("sectionDbId"),
+                    "page_no": bundle.get("page", {}).get("pageNo"),
+                    "model_provider": settings.qa_llm_provider,
+                    "model_name": effective_runtime_config.actual_chat_model(has_images=bool(image_data_urls)),
+                    "embedding_model": effective_runtime_config.qa_embedding_model,
+                    "faq_hit_ids_json": [item["faqId"] for item in bundle.get("faq_candidates", [])],
+                    "context_chunk_ids_json": [item["chunkId"] for item in bundle.get("context_chunks", [])],
+                    "prompt_version": PROMPT_VERSION,
+                    "latency_ms": latency_ms,
+                    "confidence_score": result.get("confidenceScore"),
+                },
+            )
+        return _compose_answer_response(
+            result,
+            bundle=bundle,
+            runtime_config=effective_runtime_config,
+            include_debug=include_debug,
+            latency_ms=latency_ms,
+            mode="model",
+            used_fallback=False,
+            has_images=bool(image_data_urls),
         )
-        return {
-            "answer": result["answer"],
-            "relatedKnowledgePoints": result["relatedKnowledgePoints"],
-            "understandingLevel": result["understandingLevel"],
-            "understandingLabel": _understanding_label(result["understandingLevel"]),
-            "resumeAnchor": result["resumeAnchor"],
-            "weakPoints": result["weakPoints"],
-        }
     except Exception:
-        return interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
+        fallback = interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
+        return _compose_answer_response(
+            fallback,
+            bundle=bundle,
+            runtime_config=effective_runtime_config,
+            include_debug=include_debug,
+            latency_ms=None,
+            mode="context_fallback",
+            used_fallback=True,
+            has_images=bool(image_data_urls),
+        )
+
+
+def _compose_answer_response(
+    payload: dict[str, Any] | None,
+    *,
+    bundle: dict[str, Any],
+    runtime_config: StudentQARuntimeConfig,
+    include_debug: bool,
+    latency_ms: int | None,
+    mode: str,
+    used_fallback: bool,
+    has_images: bool,
+) -> dict[str, Any]:
+    data = payload or {}
+    response = {
+        "answer": data.get("answer") or "",
+        "relatedKnowledgePoints": data.get("relatedKnowledgePoints") or [],
+        "understandingLevel": data.get("understandingLevel") or "partial",
+        "understandingLabel": data.get("understandingLabel") or _understanding_label(data.get("understandingLevel") or "partial"),
+        "resumeAnchor": data.get("resumeAnchor") or {"anchorId": "", "anchorTitle": "", "pageNo": 1},
+        "weakPoints": data.get("weakPoints") or [],
+    }
+    if include_debug:
+        response["debug"] = _build_debug_payload(
+            bundle,
+            runtime_config=runtime_config,
+            latency_ms=latency_ms,
+            mode=mode,
+            used_fallback=used_fallback,
+            has_images=has_images,
+        )
+    return response
+
+
+def _build_debug_payload(
+    bundle: dict[str, Any],
+    *,
+    runtime_config: StudentQARuntimeConfig,
+    latency_ms: int | None,
+    mode: str,
+    used_fallback: bool,
+    has_images: bool,
+) -> dict[str, Any]:
+    return {
+        "promptVersion": PROMPT_VERSION,
+        "questionIntent": bundle.get("questionIntent") or "",
+        "mode": mode,
+        "usedFallback": used_fallback,
+        "latencyMs": latency_ms,
+        "runtimeConfig": {
+            **runtime_config.to_dict(),
+            "actualModel": runtime_config.actual_chat_model(has_images=has_images),
+        },
+        "faqCandidates": bundle.get("faq_candidates") or [],
+        "contextChunks": bundle.get("context_chunks") or [],
+        "knowledgePoints": bundle.get("knowledge_points") or [],
+    }
 
 
 def _build_direct_faq_answer(bundle: dict[str, Any]) -> dict[str, Any]:

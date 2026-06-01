@@ -117,3 +117,43 @@ export function getScriptAudios(scriptId) {
     method: 'get'
   })
 }
+
+export function getQaLabRuntimeConfig() {
+  return request({
+    url: '/api/v1/qa-lab/runtime-config',
+    method: 'get'
+  })
+}
+
+export function updateQaLabRuntimeConfig(data) {
+  return request({
+    url: '/api/v1/qa-lab/runtime-config',
+    method: 'put',
+    data
+  })
+}
+
+export function resetQaLabRuntimeConfig(data = {}) {
+  return request({
+    url: '/api/v1/qa-lab/runtime-config/reset',
+    method: 'post',
+    data
+  })
+}
+
+export function getQaLabCourseOutline(data) {
+  return request({
+    url: '/api/v1/qa-lab/course-outline',
+    method: 'post',
+    data
+  })
+}
+
+export function runQaLabCompare(data) {
+  return request({
+    url: '/api/v1/qa-lab/compare',
+    method: 'post',
+    data,
+    timeout: 120000
+  })
+}

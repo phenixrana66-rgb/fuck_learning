@@ -56,6 +56,11 @@ const routes = [
     path: '/teacher/audio-generate',
     name: 'AudioGenerate',
     component: () => import('@/views/teacher/AudioGenerate.vue')
+  },
+  {
+    path: '/teacher/qa-lab',
+    name: 'TeacherQaLab',
+    component: () => import('@/views/teacher/QaLab.vue')
   }
 ]
 

@@ -10,13 +10,15 @@ from dashscope.audio.asr.transcription import Transcription
 from dashscope.utils.oss_utils import OssUtils
 
 from backend.app.common.config import get_settings
+from backend.app.student_runtime.qa_runtime_config_service import StudentQARuntimeConfig
 
 
 class DashScopeClient:
     EMBEDDING_BATCH_SIZE = 10
 
-    def __init__(self) -> None:
+    def __init__(self, runtime_config: StudentQARuntimeConfig | None = None) -> None:
         self.settings = get_settings()
+        self.runtime_config = runtime_config
 
     def ensure_ready(self) -> None:
         if not self.settings.dashscope_api_key:
@@ -29,7 +31,7 @@ class DashScopeClient:
             messages.append({'role': 'system', 'content': system_prompt})
         messages.append({'role': 'user', 'content': prompt})
         payload = {
-            'model': self.settings.qa_llm_model,
+            'model': self.runtime_config.qa_llm_model if self.runtime_config else self.settings.qa_llm_model,
             'input': {'messages': messages},
             'parameters': {'result_format': 'message', 'temperature': 0.2},
         }
@@ -74,7 +76,11 @@ class DashScopeClient:
         messages.append({"role": "user", "content": content})
 
         payload = {
-            "model": self.settings.qa_multimodal_model or self.settings.qa_llm_model,
+            "model": (
+                self.runtime_config.actual_chat_model(has_images=True)
+                if self.runtime_config
+                else (self.settings.qa_multimodal_model or self.settings.qa_llm_model)
+            ),
             "messages": messages,
             "temperature": 0.2,
         }
@@ -111,7 +117,7 @@ class DashScopeClient:
             for start in range(0, len(texts), self.EMBEDDING_BATCH_SIZE):
                 chunk = texts[start : start + self.EMBEDDING_BATCH_SIZE]
                 payload = {
-                    'model': self.settings.qa_embedding_model,
+                    'model': self.runtime_config.qa_embedding_model if self.runtime_config else self.settings.qa_embedding_model,
                     'input': {'texts': chunk},
                     'parameters': {
                         'text_type': text_type,

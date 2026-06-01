@@ -21,6 +21,7 @@
         <el-button type="primary" @click="goPage('/teacher/course-parse')">课件解析</el-button>
         <el-button type="success" @click="goPage('/teacher/script-generate')">讲稿生成</el-button>
         <el-button type="warning" @click="goPage('/teacher/audio-generate')">音频生成与发布</el-button>
+        <el-button type="info" plain @click="goPage('/teacher/qa-lab')">QA 实验台</el-button>
         <el-button @click="fetchStatus">刷新状态</el-button>
       </div>
 

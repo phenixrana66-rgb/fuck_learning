@@ -14,6 +14,7 @@ from .progress import (
 )
 from .qa import QAAnswer, QAMessage, QAMessageAttachment, QAMessageKnowledgeRef, QASession, VoiceTranscript
 from .qa_retrieval import QAAnswerTrace, QAFaqItem, QAFaqVariant
+from .qa_runtime import QARuntimeConfig
 from .teacher_content import (
     ChapterAudioAsset,
     ChapterKnowledgeNode,
@@ -57,6 +58,7 @@ __all__ = [
     "QAFaqVariant",
     "QAAnswer",
     "QAAnswerTrace",
+    "QARuntimeConfig",
     "QAMessage",
     "QAMessageAttachment",
     "QAMessageKnowledgeRef",

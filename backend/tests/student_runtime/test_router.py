@@ -1,6 +1,8 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -264,6 +266,228 @@ class StudentRouterTestCase(unittest.TestCase):
         self.assertEqual(listed_session["messages"][0]["questionType"], "image")
         self.assertTrue(listed_session["messages"][0]["attachments"][0]["url"].startswith("/cache/qa-images/"))
 
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_qa_lab_course_outline_returns_lessons_sections_and_pages(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+
+        response = self.client.post(
+            "/api/v1/qa-lab/course-outline",
+            json={"courseId": "course-001"},
+            headers=self._teacher_headers(),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertEqual(payload["courseId"], "course-001")
+        self.assertTrue(payload["lessons"])
+        self.assertEqual(payload["lessons"][0]["lessonId"], publish["lessonId"])
+        self.assertTrue(payload["lessons"][0]["sections"])
+        self.assertTrue(payload["lessons"][0]["sections"][0]["pages"])
+
+    @patch("backend.app.student_runtime.qa_lab_service.answer_question")
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_qa_lab_runtime_config_update_and_compare(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+        mock_answer_question,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+
+        update_response = self.client.put(
+            "/api/v1/qa-lab/runtime-config",
+            json={
+                "qaLlmModel": "qwen-plus",
+                "qaMultimodalModel": "qwen-vl-plus",
+                "qaEmbeddingModel": "text-embedding-v4-exp",
+                "retrievalEnabled": True,
+                "retrievalTopK": 7,
+            },
+            headers=self._teacher_headers(),
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        updated_config = update_response.json()["data"]["config"]
+        self.assertEqual(updated_config["qaLlmModel"], "qwen-plus")
+        self.assertEqual(updated_config["retrievalTopK"], 7)
+        self.assertTrue(update_response.json()["data"]["warnings"])
+        self.assertTrue(update_response.json()["data"]["overrideActive"])
+
+        reset_response = self.client.post(
+            "/api/v1/qa-lab/runtime-config/reset",
+            json={},
+            headers=self._teacher_headers(),
+        )
+
+        self.assertEqual(reset_response.status_code, 200)
+        reset_payload = reset_response.json()["data"]
+        self.assertFalse(reset_payload["overrideActive"])
+        self.assertEqual(reset_payload["config"], reset_payload["defaults"])
+        self.assertNotIn("updatedAt", reset_payload)
+
+        def _fake_answer_question(*_args, **kwargs):
+            runtime_config = kwargs["runtime_config"]
+            return {
+                "answer": "检索开启回答" if runtime_config.retrieval_enabled else "检索关闭回答",
+                "relatedKnowledgePoints": ["k1"],
+                "understandingLevel": "partial",
+                "understandingLabel": "部分理解",
+                "resumeAnchor": {"anchorId": "", "anchorTitle": "课程导学", "pageNo": 1},
+                "weakPoints": [],
+                "debug": {
+                    "runtimeConfig": {
+                        **runtime_config.to_dict(),
+                        "actualModel": runtime_config.actual_chat_model(has_images=False),
+                    },
+                    "latencyMs": 12 if runtime_config.retrieval_enabled else 8,
+                    "faqCandidates": [],
+                    "contextChunks": [],
+                },
+            }
+
+        mock_answer_question.side_effect = _fake_answer_question
+
+        compare_response = self.client.post(
+            "/api/v1/qa-lab/compare",
+            json={
+                "lessonId": publish["lessonId"],
+                "sectionId": section_id,
+                "question": "这一页主要讲了什么？",
+            },
+            headers=self._teacher_headers(),
+        )
+
+        self.assertEqual(compare_response.status_code, 200)
+        results = compare_response.json()["data"]["results"]
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["variantKey"], "retrieval_on")
+        self.assertEqual(results[1]["variantKey"], "retrieval_off")
+        self.assertTrue(results[0]["result"]["debug"]["runtimeConfig"]["retrievalEnabled"])
+        self.assertFalse(results[1]["result"]["debug"]["runtimeConfig"]["retrievalEnabled"])
+        self.assertEqual(mock_answer_question.call_count, 2)
+
+    @patch("backend.app.student_runtime.qa_orchestrator.record_qa_answer_trace")
+    @patch("backend.app.student_runtime.qa_orchestrator.get_settings")
+    @patch("backend.app.student_runtime.qa_orchestrator.DashScopeClient")
+    @patch("backend.app.student_runtime.qa_orchestrator.build_qa_context_bundle")
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_student_qa_route_uses_runtime_config(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+        mock_build_bundle,
+        mock_dashscope_client,
+        mock_get_settings,
+        mock_record_trace,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+
+        update_response = self.client.put(
+            "/api/v1/qa-lab/runtime-config",
+            json={
+                "qaLlmModel": "qwen-plus",
+                "qaMultimodalModel": "qwen-vl-plus",
+                "qaEmbeddingModel": "text-embedding-v4-exp",
+                "retrievalEnabled": True,
+                "retrievalTopK": 6,
+            },
+            headers=self._teacher_headers(),
+        )
+        self.assertEqual(update_response.status_code, 200)
+
+        mock_get_settings.return_value = SimpleNamespace(
+            dashscope_api_key="demo-key",
+            qa_llm_provider="dashscope",
+        )
+        mock_build_bundle.return_value = {
+            "lesson": {"lessonId": publish["lessonId"], "sectionId": section_id},
+            "questionIntent": "generative",
+            "section": {
+                "lessonDbId": 1,
+                "sectionDbId": 1,
+                "sectionName": "课程导学",
+                "summary": "这里是摘要",
+                "chapterContextText": "",
+            },
+            "page": {"pageNo": 1, "anchorId": "", "anchorTitle": "课程导学"},
+            "knowledge_points": [],
+            "faq_candidates": [],
+            "context_chunks": [],
+        }
+        mock_dashscope_client.return_value.chat_completion.return_value = {
+            "text": json.dumps(
+                {
+                    "answer": "运行时配置已生效",
+                    "relatedKnowledgePoints": [],
+                    "understandingLevel": "partial",
+                    "weakPoints": [],
+                    "resumeAnchor": {"anchorId": "", "anchorTitle": "课程导学", "pageNo": 1},
+                    "confidenceScore": 0.8,
+                },
+                ensure_ascii=False,
+            ),
+        }
+
+        response = self.client.post(
+            "/student-api/api/v1/qa/interact",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "question": "帮我总结这一页",
+                    "pageNo": 1,
+                }
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["answer"], "运行时配置已生效")
+        runtime_config = mock_dashscope_client.call_args.kwargs["runtime_config"]
+        self.assertEqual(runtime_config.qa_llm_model, "qwen-plus")
+        self.assertEqual(runtime_config.qa_multimodal_model, "qwen-vl-plus")
+        self.assertEqual(runtime_config.qa_embedding_model, "text-embedding-v4-exp")
+        self.assertEqual(runtime_config.retrieval_top_k, 6)
+        self.assertEqual(mock_build_bundle.call_args.kwargs["runtime_config"].qa_llm_model, "qwen-plus")
+        mock_record_trace.assert_called_once()
+
     def _publish_demo_lesson(self, mock_parse_courseware, mock_build_cir, mock_synthesize_speech, mock_get_voice_cache_dir):
         assert self.temp_dir is not None
         mock_get_voice_cache_dir.return_value = Path(self.temp_dir.name) / "voice-cache"
@@ -380,6 +604,15 @@ class StudentRouterTestCase(unittest.TestCase):
         timestamp = "1713513600000"
         enc = generate_signature(payload, get_settings().static_key, timestamp)
         return {**payload, "time": timestamp, "enc": enc}
+
+    def _teacher_headers(self) -> dict[str, str]:
+        token = get_settings().teacher_test_platform_token
+        with session_scope() as db:
+            teacher = db.query(User).filter(User.role == "teacher").order_by(User.id.asc()).first()
+            if teacher is not None and teacher.auth_token != token:
+                teacher.auth_token = token
+                db.flush()
+        return {"X-Platform-Token": token}
 
 
 if __name__ == "__main__":

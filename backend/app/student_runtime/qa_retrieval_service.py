@@ -14,6 +14,7 @@ from backend.app.student_runtime.db_learning_service import (
     get_section_pages_context_for_qa,
 )
 from backend.app.student_runtime.qa_embedding_service import embed_text
+from backend.app.student_runtime.qa_runtime_config_service import StudentQARuntimeConfig
 from backend.chaoxing_db.models import QAFaqItem, QAFaqVariant
 
 
@@ -33,15 +34,35 @@ def classify_question_intent(question: str) -> str:
     return "contextual"
 
 
-def search_faq_candidates(db: Session, question: str, top_k: int = 5) -> list[dict[str, Any]]:
+def search_faq_candidates(
+    db: Session,
+    question: str,
+    top_k: int = 5,
+    runtime_config: StudentQARuntimeConfig | None = None,
+) -> list[dict[str, Any]]:
     text = (question or "").strip()
     if not text:
         return []
+    effective_top_k = runtime_config.retrieval_top_k if runtime_config else top_k
+    if runtime_config is not None and not runtime_config.retrieval_enabled:
+        return search_faq_candidates_with_embedding(
+            db,
+            text,
+            [],
+            top_k=effective_top_k,
+            runtime_config=runtime_config,
+        )
     try:
-        query_embedding = embed_text(text, text_type="query")
+        query_embedding = embed_text(text, text_type="query", runtime_config=runtime_config)
     except Exception:
         query_embedding = []
-    return search_faq_candidates_with_embedding(db, text, query_embedding, top_k=top_k)
+    return search_faq_candidates_with_embedding(
+        db,
+        text,
+        query_embedding,
+        top_k=effective_top_k,
+        runtime_config=runtime_config,
+    )
 
 
 def search_faq_candidates_with_embedding(
@@ -50,6 +71,7 @@ def search_faq_candidates_with_embedding(
     query_embedding: list[float] | None,
     top_k: int = 5,
     vector_db: Session | None = None,
+    runtime_config: StudentQARuntimeConfig | None = None,
 ) -> list[dict[str, Any]]:
     text = (question or "").strip()
     if not text:
@@ -80,6 +102,9 @@ def search_faq_candidates_with_embedding(
             }
         )
     if len(results) >= top_k:
+        return results[:top_k]
+
+    if runtime_config is not None and not runtime_config.retrieval_enabled:
         return results[:top_k]
 
     if not query_embedding:
@@ -142,6 +167,7 @@ def search_section_context(
     page_no: int | None,
     question: str,
     top_k: int = 5,
+    runtime_config: StudentQARuntimeConfig | None = None,
 ) -> list[dict[str, Any]]:
     section_context = get_section_context_for_qa(db, lesson_id, section_id)
     if not section_context:
@@ -193,10 +219,12 @@ def search_section_context(
             ppt_outline_text,
         )
 
-    try:
-        query_embedding = embed_text(question, text_type="query")
-    except Exception:
-        query_embedding = []
+    query_embedding: list[float] = []
+    if runtime_config is None or runtime_config.retrieval_enabled:
+        try:
+            query_embedding = embed_text(question, text_type="query", runtime_config=runtime_config)
+        except Exception:
+            query_embedding = []
 
     if query_embedding:
         try:
@@ -256,7 +284,9 @@ def build_qa_context_bundle(
     section_id: str | int | None,
     page_no: int | None,
     question: str,
+    runtime_config: StudentQARuntimeConfig | None = None,
 ) -> dict[str, Any]:
+    effective_top_k = runtime_config.retrieval_top_k if runtime_config else 5
     section_context = get_section_context_for_qa(db, lesson_id, section_id)
     page_context = get_page_context_for_qa(db, lesson_id, section_id, page_no)
     return {
@@ -265,8 +295,16 @@ def build_qa_context_bundle(
         "section": section_context,
         "page": page_context,
         "knowledge_points": get_section_knowledge_points_for_qa(db, lesson_id, section_id),
-        "faq_candidates": search_faq_candidates(db, question),
-        "context_chunks": search_section_context(db, lesson_id, section_id, page_no, question),
+        "faq_candidates": search_faq_candidates(db, question, top_k=effective_top_k, runtime_config=runtime_config),
+        "context_chunks": search_section_context(
+            db,
+            lesson_id,
+            section_id,
+            page_no,
+            question,
+            top_k=effective_top_k,
+            runtime_config=runtime_config,
+        ),
     }
 
 

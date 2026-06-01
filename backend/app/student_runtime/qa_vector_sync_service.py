@@ -10,6 +10,7 @@ from backend.app.student_runtime.db_learning_service import (
 )
 from backend.app.student_runtime.qa_embedding_service import embed_texts
 from backend.app.student_runtime.qa_retrieval_service import PLACEHOLDER_PAGE_PATTERN
+from backend.app.student_runtime.qa_runtime_config_service import get_student_qa_runtime_config
 from backend.chaoxing_db.models import LessonSectionPage, QAFaqItem, QAFaqVariant
 
 
@@ -21,7 +22,8 @@ def sync_faq_variants_to_vector_db(db: Session) -> int:
         .all()
     )
     texts = [variant.variant_text for variant, _item in rows]
-    embeddings = embed_texts(texts, text_type="document")
+    runtime_config = get_student_qa_runtime_config(db)
+    embeddings = embed_texts(texts, text_type="document", runtime_config=runtime_config)
     count = 0
     with vector_session_scope() as vector_db:
         for (variant, _item), embedding in zip(rows, embeddings):
@@ -105,7 +107,8 @@ def sync_section_context_to_vector_db(db: Session, lesson_id: str | int | None, 
             )
         )
 
-    embeddings = embed_texts([item[3] for item in payloads], text_type="document")
+    runtime_config = get_student_qa_runtime_config(db)
+    embeddings = embed_texts([item[3] for item in payloads], text_type="document", runtime_config=runtime_config)
     count = 0
     with vector_session_scope() as vector_db:
         for (source_type, source_id, page_no, chunk_text, metadata), embedding in zip(payloads, embeddings):

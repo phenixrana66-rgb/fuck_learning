@@ -86,7 +86,8 @@ const menuList = [
   { label: '课件解析', path: '/teacher/course-parse', icon: DataBoard },
   { label: '讲稿生成', path: '/teacher/script-generate', icon: Document },
   { label: '讲稿编辑', path: '/teacher/script-edit', icon: EditPen },
-  { label: '音频生成', path: '/teacher/audio-generate', icon: Microphone }
+  { label: '音频生成', path: '/teacher/audio-generate', icon: Microphone },
+  { label: 'QA 实验台', path: '/teacher/qa-lab', icon: DataBoard }
 ]
 
 const teacherName = computed(() => teacherInfo.value.teacherName || teacherInfo.value.userName || '教师用户')
