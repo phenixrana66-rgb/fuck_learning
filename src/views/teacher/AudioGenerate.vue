@@ -1,168 +1,200 @@
 <template>
   <TeacherLayout>
-    <div class="page-card teacher-card">
-      <div class="page-title">语音生成</div>
+    <div class="page-container">
+      <!-- Left Section: Configuration -->
+      <div class="config-section">
+        <div class="page-card teacher-card">
+          <div class="page-title">语音生成</div>
 
-      <el-form :model="form" label-width="110px" class="teacher-form">
-        <el-form-item label="当前课程">
-          <el-input :model-value="currentCourse.courseName || '-'" readonly />
-        </el-form-item>
+          <el-form :model="form" label-width="110px">
+            <el-form-item label="当前课程">
+              <el-input :model-value="currentCourse.courseName || '-'" readonly />
+            </el-form-item>
 
-        <el-form-item label="发布章节名">
-          <el-input
-            v-model="chapterInfo.chapterName"
-            placeholder="请输入发布时使用的章节名"
-            @input="handleChapterNameInput"
-          />
-        </el-form-item>
+            <el-form-item label="发布章节名">
+              <el-input
+                v-model="chapterInfo.chapterName"
+                placeholder="请输入发布时使用的章节名"
+                @input="handleChapterNameInput"
+              />
+            </el-form-item>
 
-        <el-form-item label="解析版本">
-          <el-select
-            v-model="form.parseId"
-            class="full-width"
-            placeholder="请选择解析版本"
-            :loading="loadingHistory"
-            @change="handleParseChange"
-          >
-            <el-option
-              v-for="item in parseOptions"
-              :key="item.parseId"
-              :label="item.label"
-              :value="item.parseId"
-              :disabled="item.taskStatus !== 'completed'"
-            />
-          </el-select>
-        </el-form-item>
+            <el-form-item label="解析版本">
+              <el-select
+                v-model="form.parseId"
+                class="full-width"
+                placeholder="请选择解析版本"
+                :loading="loadingHistory"
+                @change="handleParseChange"
+              >
+                <el-option
+                  v-for="item in parseOptions"
+                  :key="item.parseId"
+                  :label="item.label"
+                  :value="item.parseId"
+                  :disabled="item.taskStatus !== 'completed'"
+                />
+              </el-select>
+            </el-form-item>
 
-        <el-form-item label="讲稿版本">
-          <el-select
-            v-model="form.scriptId"
-            class="full-width"
-            placeholder="请选择脚本版本"
-            :disabled="!form.parseId"
-            @change="handleScriptChange"
-          >
-            <el-option
-              v-for="item in parseScripts"
-              :key="item.scriptId"
-              :label="`${item.scriptId} · ${scriptStatusText(item.scriptStatus)} · ${styleText(item.teachingStyle)}`"
-              :value="item.scriptId"
-            />
-          </el-select>
-        </el-form-item>
+            <el-form-item label="讲稿版本">
+              <el-select
+                v-model="form.scriptId"
+                class="full-width"
+                placeholder="请选择脚本版本"
+                :disabled="!form.parseId"
+                @change="handleScriptChange"
+              >
+                <el-option
+                  v-for="item in parseScripts"
+                  :key="item.scriptId"
+                  :label="`${item.scriptId} · ${scriptStatusText(item.scriptStatus)} · ${styleText(item.teachingStyle)}`"
+                  :value="item.scriptId"
+                />
+              </el-select>
+            </el-form-item>
 
-        <el-form-item v-if="selectedScriptMeta" label="当前脚本">
-          <div class="version-summary">
-            <div>脚本：{{ selectedScriptMeta.scriptId }}</div>
-            <div>风格：{{ styleText(selectedScriptMeta.teachingStyle) }} · 音频数：{{ selectedScriptMeta.audioCount || 0 }}</div>
-            <div>状态：{{ scriptStatusText(selectedScriptMeta.scriptStatus) }}</div>
+            <el-form-item v-if="selectedScriptMeta" label="当前脚本">
+              <div class="version-summary">
+                <div>脚本：{{ selectedScriptMeta.scriptId }}</div>
+                <div>风格：{{ styleText(selectedScriptMeta.teachingStyle) }} · 音频数：{{ selectedScriptMeta.audioCount || 0 }}</div>
+                <div>状态：{{ scriptStatusText(selectedScriptMeta.scriptStatus) }}</div>
+              </div>
+            </el-form-item>
+
+            <el-form-item label="音色选择">
+              <el-radio-group v-model="form.voiceType" class="card-radio-group" :disabled="loading">
+                <el-radio v-for="voice in voiceOptions" :key="voice.value" :label="voice.value" class="card-radio">
+                  <div class="card-radio-content">
+                    <el-icon class="card-icon"><component :is="voice.icon" /></el-icon>
+                    <div class="card-info">
+                      <div class="card-label">{{ voice.label }}</div>
+                      <div class="card-desc">{{ voice.desc }}</div>
+                    </div>
+                  </div>
+                </el-radio>
+              </el-radio-group>
+            </el-form-item>
+
+            <el-form-item>
+              <el-button type="primary" :loading="loading" @click="handleGenerateAudio">
+                生成音频
+              </el-button>
+              <el-button :disabled="!form.scriptId || loading" @click="openScript">
+                脚本编辑
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </div>
+      </div>
+
+      <!-- Right Section: Status & History -->
+      <div class="status-section">
+        <!-- Audio Preview & Publish -->
+        <div v-if="form.audioUrl" class="page-card teacher-card preview-card">
+          <div class="sub-title">
+            <el-icon><Headset /></el-icon>音频预览
           </div>
-        </el-form-item>
 
-        <el-form-item label="Voice">
-          <div class="voice-grid">
-            <div
-              v-for="voice in voiceList"
-              :key="voice.value"
-              type="button"
-              class="voice-card"
-              :class="{ active: form.voiceType === voice.value }"
-              @click="form.voiceType = voice.value"
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="音频ID">{{ form.audioId || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="音色">{{ selectedVoiceLabel }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="publishInfo.status === 'published' ? 'success' : 'primary'" size="small">
+                {{ publishInfo.status === 'published' ? '已发布' : (form.status || '已生成') }}
+              </el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <audio class="audio-preview" :src="form.audioUrl" controls />
+
+          <div class="toolbar" style="margin-top: 16px;">
+            <el-button 
+              :type="publishInfo.status === 'published' ? 'info' : 'success'" 
+              class="full-width" 
+              :loading="publishing" 
+              :disabled="publishInfo.status === 'published'"
+              @click="publishLesson"
             >
-              <div class="voice-title">{{ voice.label }}</div>
-              <div class="voice-desc">{{ voice.desc }}</div>
-            </div>
+              {{ publishInfo.status === 'published' ? '课程已发布' : '发布课程' }}
+            </el-button>
           </div>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="loading" @click="handleGenerateAudio">
-            基于当前脚本生成音频
-          </el-button>
-          <el-button :disabled="!form.scriptId" @click="openScript">
-            打开脚本编辑
-          </el-button>
-        </el-form-item>
-      </el-form>
+        </div>
 
-      <el-alert
-        v-if="audioHistory.length"
-        class="status-panel"
-        type="info"
-        :closable="false"
-        show-icon
-        :title="`当前脚本下已有 ${audioHistory.length} 份音频，可直接复用，也可以重新生成。`"
-      />
+        <!-- Task Status -->
+        <div v-if="loading || errorCode" class="page-card teacher-card status-card">
+          <div class="sub-title">任务状态</div>
+          
+          <div v-if="loading" class="progress-wrapper">
+            <el-progress 
+              type="dashboard" 
+              :percentage="loading ? 50 : 0" 
+              :status="loading ? '' : 'success'"
+              :stroke-width="10"
+              :width="120"
+            >
+              <template #default>
+                <div class="progress-text">
+                  <span class="percentage-value">...</span>
+                  <span class="percentage-label">生成中</span>
+                </div>
+              </template>
+            </el-progress>
+          </div>
 
-      <div v-if="audioHistory.length" class="existing-list">
-        <div class="sub-title">已有音频</div>
-        <el-table :data="audioHistory" border>
-          <el-table-column prop="audioId" label="音频编号" min-width="160" />
-          <el-table-column prop="voiceType" label="音色" width="130">
-            <template #default="{ row }">
-              {{ voiceText(row.voiceType) }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="status" label="状态" width="110">
-            <template #default="{ row }">
-              <el-tag :type="row.status === 'published' ? 'success' : 'info'">{{ audioStatusText(row.status) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="totalDurationSec" label="时长(s)" width="90" />
-          <el-table-column prop="updatedAt" label="更新时间" min-width="180" />
-          <el-table-column label="操作" width="140">
-            <template #default="{ row }">
-              <el-button type="primary" link @click="useExistingAudio(row)">使用此音频</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="状态">
+              <el-tag :type="loading ? 'primary' : (errorCode ? 'danger' : 'success')">
+                {{ loading ? '生成中' : (errorCode ? '失败' : '空闲') }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="耗时">{{ elapsedLabel }}</el-descriptions-item>
+          </el-descriptions>
 
-      <div v-if="loading" class="status-panel">
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          :title="`Audio generation in progress, processed ${elapsedLabel}`"
-        />
-      </div>
+          <ErrorTip
+            v-if="errorCode"
+            :code="errorCode"
+            :message="errorMsg"
+            @retry="handleGenerateAudio"
+          />
+        </div>
 
-      <Loading :visible="loading" :text="`Generating audio, elapsed ${elapsedLabel}`" />
+        <!-- History Audios -->
+        <div v-if="audioHistory.length" class="page-card teacher-card history-card">
+          <div class="sub-title">已有音频</div>
+          <el-table :data="audioHistory" border size="small">
+            <el-table-column prop="voiceType" label="音色" width="100">
+              <template #default="{ row }">
+                {{ voiceText(row.voiceType) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 'published' ? 'success' : 'info'" size="small">
+                  {{ audioStatusText(row.status).substring(0, 1) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" min-width="80">
+              <template #default="{ row }">
+                <el-button type="primary" link @click="useExistingAudio(row)">使用</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
 
-      <ErrorTip
-        v-if="errorCode"
-        :code="errorCode"
-        :message="errorMsg"
-        @retry="handleGenerateAudio"
-      />
-    </div>
-
-    <div class="page-card" v-if="form.audioUrl">
-      <div class="sub-title">音频预览</div>
-
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="audioId">{{ form.audioId || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="Voice">{{ selectedVoiceLabel }}</el-descriptions-item>
-        <el-descriptions-item label="Status">
-          <el-tag type="success">{{ form.status || 'success' }}</el-tag>
-        </el-descriptions-item>
-      </el-descriptions>
-
-      <audio class="audio-preview" :src="form.audioUrl" controls />
-
-      <div class="toolbar" style="margin-top: 16px;">
-        <el-button type="success" :loading="publishing" @click="publishLesson">
-          发布课程
-        </el-button>
+        <div v-if="publishInfo.status === 'published'" class="page-card teacher-card">
+          <el-result
+            icon="success"
+            title="已发布"
+            sub-title="课程已成功发布"
+            style="padding: 10px 0;"
+          />
+        </div>
       </div>
     </div>
 
-    <div v-if="publishInfo.status === 'published'" class="page-card teacher-card">
-      <el-result
-        icon="success"
-        title="Lesson Published"
-        :sub-title="`Course: ${currentCourse.courseName || '-'}, lesson: ${publishInfo.lessonId || '-'}, audio: ${form.audioId || '-'}`"
-      />
-    </div>
+    <Loading :visible="loading" :text="`正在生成音频，已耗时 ${elapsedLabel}`" />
   </TeacherLayout>
 </template>
 
@@ -170,6 +202,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Female, Male, Headset } from '@element-plus/icons-vue'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
@@ -195,12 +228,14 @@ const audioResult = getAudioResult()
 const initialWorkspaceContext = getTeacherWorkspaceContext(currentCourse.courseId)
 const readWorkspaceContext = () => getTeacherWorkspaceContext(currentCourse.courseId)
 
-const voiceList = [
-  { label: '女声标准', value: 'female_standard', desc: '清晰中性，适合日常教学。' },
-  { label: '男声标准', value: 'male_standard', desc: '声音稳定，适合技术类话题。' },
-  { label: '女声温暖', value: 'female_warm', desc: '柔和的声音，适合引导式课程。' },
-  { label: '男声深沉', value: 'male_deep', desc: '低沉的音调，适合演示风格。' }
+const voiceOptions = [
+  { label: '女声标准', value: 'female_standard', desc: '清晰中性，适合日常。', icon: Female },
+  { label: '男声标准', value: 'male_standard', desc: '声音稳定，适合技术。', icon: Male },
+  { label: '女声温暖', value: 'female_warm', desc: '柔和声音，适合引导。', icon: Female },
+  { label: '男声深沉', value: 'male_deep', desc: '低沉音调，适合演示。', icon: Male }
 ]
+
+const voiceList = voiceOptions
 
 const form = ref({
   parseId: initialWorkspaceContext.parseId || scriptResult.parseId || parseResult.parseId || '',
@@ -687,16 +722,145 @@ function formatElapsed(totalSeconds) {
   const seconds = safeSeconds % 60
 
   if (hours > 0) {
-    return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+    return `${hours}小时 ${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`
   }
 
-  return `${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+  return `${String(minutes).padStart(2, '0')}分 ${String(seconds).padStart(2, '0')}秒`
 }
 </script>
 
 <style scoped>
+.page-container {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .page-container {
+    grid-template-columns: 1fr;
+  }
+}
+
 .teacher-card {
   border-radius: 22px;
+  box-shadow: 0 8px 24px rgba(149, 157, 165, 0.1);
+}
+
+.config-section .teacher-card {
+  padding: 24px;
+}
+
+.status-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.status-card, .history-card, .preview-card {
+  padding: 20px;
+}
+
+.progress-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+  background: #f8faff;
+  padding: 20px;
+  border-radius: 16px;
+}
+
+.progress-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.percentage-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #409eff;
+}
+
+.percentage-label {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.sub-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-radio-group {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  width: 100%;
+}
+
+.card-radio {
+  margin-right: 0 !important;
+  height: auto !important;
+  border: 2px solid #f0f2f5;
+  border-radius: 12px;
+  padding: 12px !important;
+  transition: all 0.3s;
+  background: #fff;
+}
+
+.card-radio.is-checked {
+  border-color: #409eff;
+  background: #f0f7ff;
+}
+
+.card-radio:hover {
+  border-color: #c6e2ff;
+}
+
+:deep(.card-radio .el-radio__input) {
+  display: none;
+}
+
+:deep(.card-radio .el-radio__label) {
+  padding-left: 0;
+  width: 100%;
+}
+
+.card-radio-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.card-icon {
+  font-size: 24px;
+  color: #909399;
+}
+
+.is-checked .card-icon {
+  color: #409eff;
+}
+
+.card-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.card-desc {
+  font-size: 11px;
+  color: #909399;
+  line-height: 1.4;
 }
 
 .full-width {
@@ -707,44 +871,25 @@ function formatElapsed(totalSeconds) {
   display: grid;
   gap: 4px;
   color: #4b5f82;
-  line-height: 1.8;
-}
-
-.status-panel {
-  margin-bottom: 16px;
-}
-
-.existing-list {
-  margin-bottom: 16px;
-}
-
-.voice-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-  width: 100%;
-}
-
-.voice-card {
-  border: 1px solid #dcdfe6;
+  line-height: 1.6;
+  font-size: 13px;
+  background: #f8faff;
+  padding: 12px;
   border-radius: 12px;
-  padding: 14px;
-  cursor: pointer;
-  transition: all 0.2s ease;
 }
 
-.voice-card.active {
-  border-color: #409eff;
-  background: #ecf5ff;
+.audio-preview {
+  width: 100%;
+  margin-top: 16px;
 }
 
-.voice-title {
-  font-weight: 600;
+:deep(.el-descriptions__label) {
+  width: 100px;
+  color: #606266;
 }
 
-.voice-desc {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 6px;
+:deep(.el-descriptions__content) {
+  color: #2c3e50;
+  font-weight: 500;
 }
 </style>
