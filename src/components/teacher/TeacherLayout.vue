@@ -120,7 +120,7 @@ function go(path) {
   justify-content: space-between;
   padding: 0 22px;
   background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid #e5eefb;
+  border-bottom: 1px solid var(--app-border-color-lighter);
   backdrop-filter: blur(14px);
 }
 
@@ -134,13 +134,13 @@ function go(path) {
 
 .teacher-brand:focus-visible {
   border-radius: 14px;
-  box-shadow: 0 0 0 3px rgba(80, 122, 220, 0.18);
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.1);
 }
 
 .teacher-brand-mark {
   width: 46px;
   height: 46px;
-  border-radius: 16px;
+  border-radius: var(--app-radius-large);
   background: linear-gradient(135deg, #ff6d60 0%, #ff4d4f 100%);
   color: #fff;
   font-size: 22px;
@@ -158,7 +158,7 @@ function go(path) {
 
 .teacher-brand-subtitle {
   margin-top: 2px;
-  color: #8395b5;
+  color: var(--app-text-secondary);
   font-size: 13px;
 }
 
@@ -170,19 +170,19 @@ function go(path) {
 
 .teacher-user-avatar {
   background: linear-gradient(135deg, #eff4ff 0%, #dfeaff 100%);
-  color: #2552a5;
+  color: var(--app-primary-color);
   font-weight: 700;
 }
 
 .teacher-user-name {
-  color: #213d71;
+  color: var(--app-text-primary);
   font-size: 14px;
   font-weight: 600;
 }
 
 .teacher-user-school {
   margin-top: 2px;
-  color: #8b9abb;
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 
@@ -204,7 +204,7 @@ function go(path) {
   padding: 18px 14px 20px;
   overflow-y: auto;
   background: rgba(255, 255, 255, 0.88);
-  border-right: 1px solid #e8eef9;
+  border-right: 1px solid var(--app-border-color-lighter);
   backdrop-filter: blur(14px);
 }
 
@@ -240,7 +240,7 @@ function go(path) {
 
 .teacher-menu-group {
   margin: 18px 8px 10px;
-  color: #90a0bf;
+  color: var(--app-text-placeholder);
   font-size: 12px;
   letter-spacing: 0.08em;
 }
@@ -250,25 +250,25 @@ function go(path) {
   height: 52px;
   padding: 0 14px;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--app-radius-base);
   display: flex;
   align-items: center;
   gap: 12px;
   background: transparent;
-  color: #5a6f95;
+  color: var(--app-text-regular);
   cursor: pointer;
   text-align: left;
   transition: background 0.18s ease, color 0.18s ease;
 }
 
 .teacher-menu-item:hover {
-  background: #f1f6ff;
-  color: #2d69da;
+  background: var(--app-border-color-extra-light);
+  color: var(--app-primary-color);
 }
 
 .teacher-menu-item.active {
   background: linear-gradient(135deg, #edf4ff 0%, #e1edff 100%);
-  color: #2c67d8;
+  color: var(--app-primary-color);
   font-weight: 600;
 }
 
@@ -290,13 +290,13 @@ function go(path) {
   margin-bottom: 18px;
   padding: 20px 22px;
   border-radius: 20px;
-  border: 1px solid #e7eef9;
+  border: 1px solid var(--app-border-color-lighter);
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 12px 28px rgba(53, 82, 136, 0.08);
+  box-shadow: var(--app-shadow-light);
 }
 
 .teacher-course-bar-title {
-  color: #203b70;
+  color: var(--app-text-primary);
   font-size: 22px;
   font-weight: 700;
 }

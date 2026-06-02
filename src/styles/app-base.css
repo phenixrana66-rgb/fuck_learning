@@ -1,6 +1,37 @@
 :root {
   --student-serif-font: SimHei, "Heiti SC", "STHeiti", "Microsoft YaHei", sans-serif;
   --app-sans-font: "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+
+  /* Global Colors */
+  --app-primary-color: #409eff;
+  --app-success-color: #67c23a;
+  --app-warning-color: #e6a23c;
+  --app-danger-color: #f56c6c;
+  --app-info-color: #909399;
+
+  /* Text Colors */
+  --app-text-primary: #303133;
+  --app-text-regular: #606266;
+  --app-text-secondary: #909399;
+  --app-text-placeholder: #c0c4cc;
+
+  /* Border Colors */
+  --app-border-color: #dcdfe6;
+  --app-border-color-light: #e4e7ed;
+  --app-border-color-lighter: #ebeef5;
+  --app-border-color-extra-light: #f2f6fc;
+
+  /* Backgrounds */
+  --app-bg-color: #f3f6fb;
+  --app-card-bg: #ffffff;
+
+  /* Radius */
+  --app-radius-base: 8px;
+  --app-radius-large: 16px;
+
+  /* Shadows */
+  --app-shadow-light: 0 6px 20px rgba(31, 35, 41, 0.06);
+  --app-shadow-base: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
 }
 
 * {
