@@ -1,119 +1,157 @@
 <template>
   <TeacherLayout>
-    <div class="page-card teacher-card">
-      <div class="page-title">讲稿生成</div>
+    <div class="page-container">
+      <!-- Left Section: Configuration -->
+      <div class="config-section">
+        <div class="page-card teacher-card">
+          <div class="page-title">讲稿生成</div>
 
-      <el-form :model="form" label-width="110px">
-        <el-form-item label="当前课程">
-          <el-input :model-value="currentCourse.courseName || '-'" readonly />
-        </el-form-item>
+          <el-form :model="form" label-width="110px">
+            <el-form-item label="当前课程">
+              <el-input :model-value="currentCourse.courseName || '-'" readonly />
+            </el-form-item>
 
-        <el-form-item label="当前章节">
-          <el-input :model-value="chapterInfo.chapterName || '-'" readonly />
-        </el-form-item>
+            <el-form-item label="当前章节">
+              <el-input :model-value="chapterInfo.chapterName || '-'" readonly />
+            </el-form-item>
 
-        <el-form-item label="解析版本">
-          <el-select
-            v-model="form.parseId"
-            class="full-width"
-            placeholder="请选择已完成解析的课件版本"
-            :loading="loadingHistory"
-            @change="handleParseChange"
-          >
-            <el-option
-              v-for="item in parseOptions"
-              :key="item.parseId"
-              :label="item.label"
-              :value="item.parseId"
-              :disabled="item.taskStatus !== 'completed'"
-            />
-          </el-select>
-        </el-form-item>
+            <el-form-item label="解析版本">
+              <el-select
+                v-model="form.parseId"
+                class="full-width"
+                placeholder="请选择已完成解析的课件版本"
+                :loading="loadingHistory"
+                :disabled="loading || taskSnapshot.status === 'running'"
+                @change="handleParseChange"
+              >
+                <el-option
+                  v-for="item in parseOptions"
+                  :key="item.parseId"
+                  :label="item.label"
+                  :value="item.parseId"
+                  :disabled="item.taskStatus !== 'completed'"
+                />
+              </el-select>
+            </el-form-item>
 
-        <el-form-item v-if="selectedParseMeta" label="当前课件">
-          <div class="version-summary">
-            <div>文件：{{ selectedParseMeta.fileName }}</div>
-            <div>版本：V{{ selectedParseMeta.versionNo }} · {{ selectedParseMeta.fileType.toUpperCase() }}</div>
-            <div>状态：{{ parseStatusText(selectedParseMeta.taskStatus) }}</div>
-          </div>
-        </el-form-item>
+            <el-form-item v-if="selectedParseMeta" label="当前课件">
+              <div class="version-summary">
+                <div>文件：{{ selectedParseMeta.fileName }}</div>
+                <div>版本：V{{ selectedParseMeta.versionNo }} · {{ selectedParseMeta.fileType.toUpperCase() }}</div>
+                <div>状态：{{ parseStatusText(selectedParseMeta.taskStatus) }}</div>
+              </div>
+            </el-form-item>
 
-        <el-form-item label="讲解风格">
-          <el-radio-group v-model="form.teachingStyle">
-            <el-radio label="standard">标准</el-radio>
-            <el-radio label="detailed">详细</el-radio>
-            <el-radio label="concise">简洁</el-radio>
-          </el-radio-group>
-        </el-form-item>
+            <el-form-item label="讲解风格">
+              <el-radio-group v-model="form.teachingStyle" class="card-radio-group" :disabled="loading || taskSnapshot.status === 'running'">
+                <el-radio v-for="opt in styleOptions" :key="opt.value" :label="opt.value" class="card-radio">
+                  <div class="card-radio-content">
+                    <el-icon class="card-icon"><component :is="opt.icon" /></el-icon>
+                    <div class="card-info">
+                      <div class="card-label">{{ opt.label }}</div>
+                      <div class="card-desc">{{ opt.desc }}</div>
+                    </div>
+                  </div>
+                </el-radio>
+              </el-radio-group>
+            </el-form-item>
 
-        <el-form-item label="讲解语速">
-          <el-radio-group v-model="form.speechSpeed">
-            <el-radio label="slow">慢</el-radio>
-            <el-radio label="normal">正常</el-radio>
-            <el-radio label="fast">快</el-radio>
-          </el-radio-group>
-        </el-form-item>
+            <el-form-item label="讲解语速">
+              <el-radio-group v-model="form.speechSpeed" class="card-radio-group" :disabled="loading || taskSnapshot.status === 'running'">
+                <el-radio v-for="opt in speedOptions" :key="opt.value" :label="opt.value" class="card-radio">
+                  <div class="card-radio-content">
+                    <el-icon class="card-icon"><component :is="opt.icon" /></el-icon>
+                    <div class="card-info">
+                      <div class="card-label">{{ opt.label }}</div>
+                      <div class="card-desc">{{ opt.desc }}</div>
+                    </div>
+                  </div>
+                </el-radio>
+              </el-radio-group>
+            </el-form-item>
 
-        <el-form-item label="开场白">
-          <el-input
-            v-model="form.customOpening"
-            type="textarea"
-            :rows="3"
-            placeholder="可选。生成首章时会自然融入这段开场白。"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="loading" @click="handleGenerate">
-            基于当前解析生成讲稿
-          </el-button>
-          <el-button v-if="canOpenLastResult" @click="openLastResult">
-            打开上次结果
-          </el-button>
-        </el-form-item>
-      </el-form>
-
-      <el-alert
-        v-if="selectedParseMeta && parseScripts.length"
-        class="status-alert"
-        type="info"
-        :closable="false"
-        show-icon
-        :title="`当前解析版本下已有 ${parseScripts.length} 份脚本，可直接打开编辑，也可以重新生成新版本。`"
-      />
-
-      <div v-if="parseScripts.length" class="existing-list">
-        <div class="sub-title">已有脚本</div>
-        <el-table :data="parseScripts" border>
-          <el-table-column prop="scriptId" label="脚本编号" min-width="180" />
-          <el-table-column prop="scriptStatus" label="状态" width="110">
-            <template #default="{ row }">
-              <el-tag :type="scriptStatusType(row.scriptStatus)">{{ scriptStatusText(row.scriptStatus) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="teachingStyle" label="风格" width="110">
-            <template #default="{ row }">
-              {{ styleText(row.teachingStyle) }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="audioCount" label="音频数" width="90" />
-          <el-table-column prop="updatedAt" label="更新时间" min-width="180" />
-          <el-table-column label="操作" width="140">
-            <template #default="{ row }">
-              <el-button type="primary" link @click="openScript(row.scriptId)">打开编辑</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+            <el-form-item label="开场白">
+              <el-input
+                v-model="form.customOpening"
+                type="textarea"
+                :rows="3"
+                placeholder="可选。生成首章时会自然融入这段开场白。"
+                :disabled="loading || taskSnapshot.status === 'running'"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="loading" @click="handleGenerate">
+                基于当前解析生成讲稿
+              </el-button>
+              <el-button v-if="canOpenLastResult" @click="openLastResult">
+                打开上次结果
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </div>
       </div>
 
-      <div v-if="hasLastTask" class="status-panel">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="状态">{{ taskStatusLabel }}</el-descriptions-item>
-          <el-descriptions-item label="总耗时">{{ elapsedLabel }}</el-descriptions-item>
-          <el-descriptions-item label="脚本编号">{{ taskSnapshot.scriptId || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="进度">{{ progressLabel }}</el-descriptions-item>
-          <el-descriptions-item label="当前章节">{{ taskSnapshot.currentSectionName || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="解析任务编号">{{ taskSnapshot.parseId || '-' }}</el-descriptions-item>
-        </el-descriptions>
+      <!-- Right Section: Status & History -->
+      <div class="status-section">
+        <!-- Current Task Status -->
+        <div v-if="hasLastTask" class="page-card teacher-card status-card">
+          <div class="sub-title">任务状态</div>
+          
+          <div v-if="taskSnapshot.status === 'running'" class="progress-wrapper">
+            <el-progress 
+              type="dashboard" 
+              :percentage="progressPercentage" 
+              :status="progressStatus"
+              :stroke-width="10"
+              :width="120"
+            >
+              <template #default="{ percentage }">
+                <div class="progress-text">
+                  <span class="percentage-value">{{ percentage }}%</span>
+                  <span class="percentage-label">生成进度</span>
+                </div>
+              </template>
+            </el-progress>
+          </div>
+
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="状态">
+              <el-tag :type="taskStatusType">{{ taskStatusLabel }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="进度">{{ progressLabel }}</el-descriptions-item>
+            <el-descriptions-item label="当前章节">{{ taskSnapshot.currentSectionName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="总耗时">{{ elapsedLabel }}</el-descriptions-item>
+          </el-descriptions>
+
+          <div v-if="taskSnapshot.status === 'failed' || taskSnapshot.status === 'interrupted'" class="error-retry">
+            <div class="error-msg">{{ taskSnapshot.errorMsg || (taskSnapshot.status === 'failed' ? '生成失败' : '生成中断') }}</div>
+            <el-button type="warning" size="small" @click="handleGenerate">重新发起生成</el-button>
+          </div>
+        </div>
+
+        <!-- Recent Scripts -->
+        <div v-if="parseScripts.length" class="page-card teacher-card history-card">
+          <div class="sub-title">历史脚本</div>
+          <el-table :data="parseScripts" border size="small">
+            <el-table-column prop="scriptStatus" label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag :type="scriptStatusType(row.scriptStatus)" size="small">
+                  {{ scriptStatusText(row.scriptStatus).substring(1, 2) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="updatedAt" label="更新时间" min-width="100">
+              <template #default="{ row }">
+                {{ row.updatedAt.split(' ')[0].substring(5) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="60">
+              <template #default="{ row }">
+                <el-button type="primary" link @click="openScript(row.scriptId)">打开</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </div>
 
       <Loading :visible="loading" :text="`正在启动脚本生成，已处理 ${elapsedLabel}`" />
@@ -132,6 +170,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Document, Timer, Collection, Reading } from '@element-plus/icons-vue'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
@@ -212,7 +251,28 @@ const progressLabel = computed(() => {
   const total = Number(taskSnapshot.value.totalSections || 0)
   return total > 0 ? `${completed}/${total}` : '-'
 })
+const progressPercentage = computed(() => {
+  const completed = Number(taskSnapshot.value.completedSections || 0)
+  const total = Number(taskSnapshot.value.totalSections || 0)
+  return total > 0 ? Math.floor((completed / total) * 100) : 0
+})
+const progressStatus = computed(() => {
+  if (taskSnapshot.value.status === 'failed') return 'exception'
+  if (taskSnapshot.value.status === 'completed' || taskSnapshot.value.status === 'success') return 'success'
+  return ''
+})
 const elapsedLabel = computed(() => formatElapsed(elapsedSeconds.value))
+const taskStatusType = computed(() => {
+  const map = {
+    running: 'primary',
+    completed: 'success',
+    success: 'success',
+    failed: 'danger',
+    interrupted: 'warning',
+    pending: 'info'
+  }
+  return map[taskSnapshot.value.status] || 'info'
+})
 
 watch(
   form,
@@ -223,6 +283,20 @@ watch(
 )
 
 onMounted(async () => {
+  // Validate stale task
+  if (taskSnapshot.value.status === 'running' && taskSnapshot.value.startedAt) {
+    const startTime = new Date(taskSnapshot.value.startedAt).getTime()
+    const now = Date.now()
+    const diffMinutes = (now - startTime) / (1000 * 60)
+    if (diffMinutes > 30) {
+      taskSnapshot.value = patchScriptTask({
+        ...taskSnapshot.value,
+        status: 'interrupted',
+        errorMsg: '任务执行时间过长，已自动判定为中断'
+      })
+    }
+  }
+
   persistTaskSnapshot({ lastPage: TASK_PAGE })
   syncElapsed()
   await loadCoursewareHistory()
@@ -597,8 +671,137 @@ function formatElapsed(totalSeconds) {
 </script>
 
 <style scoped>
+.page-container {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .page-container {
+    grid-template-columns: 1fr;
+  }
+}
+
 .teacher-card {
   border-radius: 22px;
+  box-shadow: 0 8px 24px rgba(149, 157, 165, 0.1);
+}
+
+.config-section .teacher-card {
+  padding: 24px;
+}
+
+.status-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.status-card, .history-card {
+  padding: 20px;
+}
+
+.progress-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+  background: #f8faff;
+  padding: 20px;
+  border-radius: 16px;
+}
+
+.progress-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.percentage-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #409eff;
+}
+
+.percentage-label {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.sub-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-radio-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  width: 100%;
+}
+
+.card-radio {
+  margin-right: 0 !important;
+  height: auto !important;
+  border: 2px solid #f0f2f5;
+  border-radius: 12px;
+  padding: 12px !important;
+  transition: all 0.3s;
+  background: #fff;
+}
+
+.card-radio.is-checked {
+  border-color: #409eff;
+  background: #f0f7ff;
+}
+
+.card-radio:hover {
+  border-color: #c6e2ff;
+}
+
+:deep(.card-radio .el-radio__input) {
+  display: none;
+}
+
+:deep(.card-radio .el-radio__label) {
+  padding-left: 0;
+  width: 100%;
+}
+
+.card-radio-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.card-icon {
+  font-size: 24px;
+  color: #909399;
+}
+
+.is-checked .card-icon {
+  color: #409eff;
+}
+
+.card-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.card-desc {
+  font-size: 11px;
+  color: #909399;
+  line-height: 1.4;
 }
 
 .full-width {
@@ -609,18 +812,35 @@ function formatElapsed(totalSeconds) {
   display: grid;
   gap: 4px;
   color: #4b5f82;
-  line-height: 1.8;
+  line-height: 1.6;
+  font-size: 13px;
+  background: #f8faff;
+  padding: 12px;
+  border-radius: 12px;
 }
 
-.status-alert {
-  margin-top: 12px;
-}
-
-.existing-list {
-  margin-top: 18px;
-}
-
-.status-panel {
+.error-retry {
   margin-top: 16px;
+  padding: 12px;
+  background: #fff5f5;
+  border-radius: 12px;
+  border: 1px solid #ffcfcf;
+  text-align: center;
+}
+
+.error-msg {
+  color: #f56c6c;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+:deep(.el-descriptions__label) {
+  width: 100px;
+  color: #606266;
+}
+
+:deep(.el-descriptions__content) {
+  color: #2c3e50;
+  font-weight: 500;
 }
 </style>
