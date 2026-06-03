@@ -6,15 +6,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from backend.app.common.config import get_settings
 from backend.app.common.exceptions import ApiError
 from backend.app.student_runtime.db_learning_service import (
     get_page_context_for_qa,
     get_section_context_for_qa,
     get_section_knowledge_points_for_qa,
 )
-from backend.app.student_runtime.qa_dashscope_client import DashScopeClient
 from backend.app.student_runtime.qa_image_storage import store_qa_image_from_url
+from backend.app.student_runtime.qa_provider_adapters import ModelProviderError, build_provider_adapter
+from backend.app.student_runtime.qa_runtime_config_service import get_student_qa_runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,14 @@ def generate_qa_image(
     if not normalized_prompt:
         raise ApiError(400, "请输入图片生成描述", status_code=400)
 
-    settings = get_settings()
+    runtime_config = get_student_qa_runtime_config(db)
+    image_config = runtime_config.image_generation
+    timeout_seconds = float(image_config.timeout_seconds or 60.0)
+    poll_interval = float(image_config.settings.get("pollIntervalSeconds") or 2.0)
     started = time.perf_counter()
     try:
-        task = DashScopeClient().create_image_generation_task(
+        adapter = build_provider_adapter(image_config)
+        task = adapter.create_image_generation_task(
             prompt=build_image_generation_prompt(
                 db,
                 lesson_id=lesson_id,
@@ -47,12 +51,17 @@ def generate_qa_image(
                 prompt=normalized_prompt,
             ),
             parameters={
-                "size": settings.qa_image_generation_size,
-                "n": max(1, min(int(settings.qa_image_generation_count or 1), 1)),
+                "size": image_config.settings.get("size") or "1024*1024",
+                "n": max(1, min(int(image_config.settings.get("count") or 1), 1)),
             },
         )
-        result = _wait_for_image_task(task["task_id"], settings=settings)
-        attachments = _store_generated_images(result.get("results") or [], timeout=settings.qa_image_generation_timeout_seconds)
+        result = _wait_for_image_task(
+            task["task_id"],
+            adapter=adapter,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval,
+        )
+        attachments = _store_generated_images(result.get("results") or [], timeout=timeout_seconds)
         if not attachments:
             raise RuntimeError("DashScope image task succeeded without image results.")
         return {
@@ -62,17 +71,32 @@ def generate_qa_image(
             "relatedKnowledgePoints": [],
             "generation": {
                 "status": "SUCCEEDED",
-                "model": result.get("model") or settings.qa_image_generation_model,
+                "model": result.get("model") or image_config.model_name,
                 "imageCount": len(attachments),
                 "latencyMs": int((time.perf_counter() - started) * 1000),
             },
         }
     except ApiError as exc:
         logger.warning("student QA image generation failed: status=%s message=%s", exc.status_code, exc.msg)
-        return _build_failure_payload(settings=settings, latency_ms=int((time.perf_counter() - started) * 1000))
+        return _build_failure_payload(
+            model_name=image_config.model_name,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            message=exc.msg,
+        )
+    except ModelProviderError as exc:
+        logger.warning("student QA image generation provider config failure: %s", exc)
+        return _build_failure_payload(
+            model_name=image_config.model_name,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            message=str(exc),
+        )
     except Exception as exc:
         logger.warning("student QA image generation provider failure: %s", exc)
-        return _build_failure_payload(settings=settings, latency_ms=int((time.perf_counter() - started) * 1000))
+        return _build_failure_payload(
+            model_name=image_config.model_name,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            message=IMAGE_GENERATION_FAILURE_ANSWER,
+        )
 
 
 def build_image_generation_prompt(
@@ -109,13 +133,18 @@ def build_image_generation_prompt(
     return "\n".join(context_lines)
 
 
-def _wait_for_image_task(task_id: str, *, settings) -> dict[str, Any]:
-    deadline = time.monotonic() + max(float(settings.qa_image_generation_timeout_seconds or 60.0), 1.0)
-    interval = max(float(settings.qa_image_generation_poll_interval_seconds or 2.0), 0.5)
-    client = DashScopeClient()
+def _wait_for_image_task(
+    task_id: str,
+    *,
+    adapter,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + max(float(timeout_seconds or 60.0), 1.0)
+    interval = max(float(poll_interval_seconds or 2.0), 0.5)
     last_result: dict[str, Any] = {}
     while time.monotonic() < deadline:
-        last_result = client.get_image_generation_task(task_id)
+        last_result = adapter.get_image_generation_task(task_id)
         status = str(last_result.get("status") or "").upper()
         if status == "SUCCEEDED":
             return last_result
@@ -141,16 +170,18 @@ def _store_generated_images(results: list[dict[str, Any]], *, timeout: float) ->
     return attachments
 
 
-def _build_failure_payload(*, settings, latency_ms: int) -> dict[str, Any]:
+def _build_failure_payload(*, model_name: str, latency_ms: int, message: str | None = None) -> dict[str, Any]:
+    answer = message if message and message != IMAGE_GENERATION_FAILURE_ANSWER else IMAGE_GENERATION_FAILURE_ANSWER
     return {
-        "answer": IMAGE_GENERATION_FAILURE_ANSWER,
+        "answer": answer,
         "mode": IMAGE_GENERATION_MODE,
         "attachments": [],
         "relatedKnowledgePoints": [],
         "generation": {
             "status": "FAILED",
-            "model": settings.qa_image_generation_model,
+            "model": model_name,
             "imageCount": 0,
             "latencyMs": latency_ms,
+            "error": message or IMAGE_GENERATION_FAILURE_ANSWER,
         },
     }

@@ -526,9 +526,92 @@ class StudentRouterTestCase(unittest.TestCase):
         self.assertFalse(results[1]["result"]["debug"]["runtimeConfig"]["retrievalEnabled"])
         self.assertEqual(mock_answer_question.call_count, 2)
 
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_model_runtime_config_update_rejects_real_api_key_and_updates_legacy_summary(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+
+        get_response = self.client.get(
+            "/api/v1/model-config/runtime-config",
+            headers=self._teacher_headers(),
+        )
+        self.assertEqual(get_response.status_code, 200)
+        initial_payload = get_response.json()["data"]
+        self.assertIn("teacher_script_generation", initial_payload["capabilities"])
+        self.assertIn("student_embedding", initial_payload["capabilities"])
+
+        update_response = self.client.put(
+            "/api/v1/model-config/runtime-config",
+            json={
+                "capabilities": {
+                    "teacher_script_generation": {
+                        "provider": "openai_compatible",
+                        "baseUrl": "http://127.0.0.1:13010/v1",
+                        "apiKeyRef": "llm_api_key",
+                        "model": "teacher-script-model",
+                        "timeoutSeconds": 45,
+                    },
+                    "student_text_chat": {
+                        "provider": "dashscope",
+                        "baseUrl": "https://dashscope.aliyuncs.com",
+                        "apiKeyRef": "dashscope_api_key",
+                        "model": "qwen-plus",
+                        "timeoutSeconds": 60,
+                    },
+                    "student_embedding": {
+                        "provider": "openai_compatible",
+                        "baseUrl": "http://127.0.0.1:13010/v1",
+                        "apiKeyRef": "openai_compat_api_key",
+                        "model": "text-embedding-3-large",
+                        "timeoutSeconds": 120,
+                        "settings": {"dimensions": 768},
+                    },
+                },
+                "retrieval": {"retrievalEnabled": False, "retrievalTopK": 4},
+            },
+            headers=self._teacher_headers(),
+        )
+        self.assertEqual(update_response.status_code, 200)
+        data = update_response.json()["data"]
+        self.assertTrue(data["overrideActive"])
+        self.assertEqual(data["capabilities"]["teacher_script_generation"]["model"], "teacher-script-model")
+        self.assertEqual(data["capabilities"]["student_embedding"]["settings"]["dimensions"], 768)
+        self.assertFalse(data["retrieval"]["retrievalEnabled"])
+        self.assertEqual(data["retrieval"]["retrievalTopK"], 4)
+        self.assertTrue(data["warnings"])
+
+        qa_summary_response = self.client.get(
+            "/api/v1/qa-lab/runtime-config",
+            headers=self._teacher_headers(),
+        )
+        qa_config = qa_summary_response.json()["data"]["config"]
+        self.assertEqual(qa_config["qaLlmModel"], "qwen-plus")
+        self.assertEqual(qa_config["qaEmbeddingModel"], "text-embedding-3-large")
+        self.assertFalse(qa_config["retrievalEnabled"])
+        self.assertEqual(qa_config["retrievalTopK"], 4)
+
+        secret_response = self.client.put(
+            "/api/v1/model-config/runtime-config",
+            json={"capabilities": {"student_text_chat": {"apiKey": "real-secret"}}},
+            headers=self._teacher_headers(),
+        )
+        self.assertEqual(secret_response.status_code, 400)
+
     @patch("backend.app.student_runtime.qa_orchestrator.record_qa_answer_trace")
-    @patch("backend.app.student_runtime.qa_orchestrator.get_settings")
-    @patch("backend.app.student_runtime.qa_orchestrator.DashScopeClient")
+    @patch("backend.app.student_runtime.qa_orchestrator.build_provider_adapter")
     @patch("backend.app.student_runtime.qa_orchestrator.build_qa_context_bundle")
     @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
     @patch("backend.app.lesson.service.synthesize_speech")
@@ -541,8 +624,7 @@ class StudentRouterTestCase(unittest.TestCase):
         mock_synthesize_speech,
         mock_get_voice_cache_dir,
         mock_build_bundle,
-        mock_dashscope_client,
-        mock_get_settings,
+        mock_build_provider_adapter,
         mock_record_trace,
     ) -> None:
         publish = self._publish_demo_lesson(
@@ -567,10 +649,6 @@ class StudentRouterTestCase(unittest.TestCase):
         )
         self.assertEqual(update_response.status_code, 200)
 
-        mock_get_settings.return_value = SimpleNamespace(
-            dashscope_api_key="demo-key",
-            qa_llm_provider="dashscope",
-        )
         mock_build_bundle.return_value = {
             "lesson": {"lessonId": publish["lessonId"], "sectionId": section_id},
             "questionIntent": "generative",
@@ -586,7 +664,7 @@ class StudentRouterTestCase(unittest.TestCase):
             "faq_candidates": [],
             "context_chunks": [],
         }
-        mock_dashscope_client.return_value.chat_completion.return_value = {
+        mock_build_provider_adapter.return_value.chat_completion.return_value = {
             "text": json.dumps(
                 {
                     "answer": "运行时配置已生效",
@@ -615,12 +693,13 @@ class StudentRouterTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"]["answer"], "运行时配置已生效")
-        runtime_config = mock_dashscope_client.call_args.kwargs["runtime_config"]
+        chat_config = mock_build_provider_adapter.call_args.args[0]
+        self.assertEqual(chat_config.model_name, "qwen-plus")
+        runtime_config = mock_build_bundle.call_args.kwargs["runtime_config"]
         self.assertEqual(runtime_config.qa_llm_model, "qwen-plus")
         self.assertEqual(runtime_config.qa_multimodal_model, "qwen-vl-plus")
         self.assertEqual(runtime_config.qa_embedding_model, "text-embedding-v4-exp")
         self.assertEqual(runtime_config.retrieval_top_k, 6)
-        self.assertEqual(mock_build_bundle.call_args.kwargs["runtime_config"].qa_llm_model, "qwen-plus")
         mock_record_trace.assert_called_once()
 
     @patch("backend.app.student_runtime.router.answer_question")

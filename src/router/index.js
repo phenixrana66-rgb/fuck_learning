@@ -61,6 +61,11 @@ const routes = [
     path: '/teacher/qa-lab',
     name: 'TeacherQaLab',
     component: () => import('@/views/teacher/QaLab.vue')
+  },
+  {
+    path: '/teacher/model-config',
+    name: 'TeacherModelConfig',
+    component: () => import('@/views/teacher/ModelConfig.vue')
   }
 ]
 

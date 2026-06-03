@@ -17,6 +17,7 @@ public/courseware-previews/
 .gemini
 .opencode
 .trellis
+.omo
 AGENTS.md
 
 *.log

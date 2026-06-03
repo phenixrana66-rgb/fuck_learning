@@ -43,16 +43,13 @@
     </div>
 
     <div class="qa-lab-grid">
-      <section class="page-card teacher-card qa-lab-card">
+      <section class="page-card teacher-card qa-lab-card qa-lab-config-summary-card">
         <div class="qa-lab-card-header">
           <div>
-            <div class="sub-title">运行时配置</div>
-            <div class="qa-lab-card-desc">全局生效，数据库持久化；恢复后会重新回到 config.local.py 默认值。</div>
+            <div class="sub-title">当前模型配置</div>
+            <div class="qa-lab-card-desc">全局配置由模型配置页维护。</div>
           </div>
-          <div class="qa-lab-config-actions">
-            <el-button :loading="resettingConfig" :disabled="!overrideActive" @click="resetRuntimeConfig">恢复默认</el-button>
-            <el-button type="primary" :loading="savingConfig" @click="saveRuntimeConfig">保存配置</el-button>
-          </div>
+          <el-button type="primary" @click="goModelConfig">模型配置</el-button>
         </div>
 
         <el-alert
@@ -73,70 +70,23 @@
           class="qa-lab-alert"
         />
 
-        <div class="qa-lab-form-grid">
-          <label class="qa-lab-field">
-            <span>QA 主模型</span>
-            <el-select
-              v-model="runtimeForm.qaLlmModel"
-              filterable
-              allow-create
-              default-first-option
-              placeholder="输入或选择模型名"
-            >
-              <el-option
-                v-for="item in qaModelOptions"
-                :key="item"
-                :label="item"
-                :value="item"
-              />
-            </el-select>
-          </label>
-
-          <label class="qa-lab-field">
-            <span>多模态模型</span>
-            <el-select
-              v-model="runtimeForm.qaMultimodalModel"
-              filterable
-              allow-create
-              default-first-option
-              placeholder="输入或选择模型名"
-            >
-              <el-option
-                v-for="item in multimodalOptions"
-                :key="item"
-                :label="item"
-                :value="item"
-              />
-            </el-select>
-          </label>
-
-          <label class="qa-lab-field">
-            <span>Embedding 模型</span>
-            <el-select
-              v-model="runtimeForm.qaEmbeddingModel"
-              filterable
-              allow-create
-              default-first-option
-              placeholder="输入或选择模型名"
-            >
-              <el-option
-                v-for="item in embeddingOptions"
-                :key="item"
-                :label="item"
-                :value="item"
-              />
-            </el-select>
-          </label>
-
-          <label class="qa-lab-field">
-            <span>向量检索</span>
-            <el-switch v-model="runtimeForm.retrievalEnabled" inline-prompt active-text="开" inactive-text="关" />
-          </label>
-
-          <label class="qa-lab-field">
-            <span>Top K</span>
-            <el-input-number v-model="runtimeForm.retrievalTopK" :min="1" :max="10" :step="1" />
-          </label>
+        <div class="qa-lab-config-summary">
+          <div class="info-item">
+            <div class="info-label">文本问答</div>
+            <div class="info-value">{{ runtimeConfig.qaLlmModel || '-' }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">图片理解</div>
+            <div class="info-value">{{ runtimeConfig.qaMultimodalModel || '-' }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Embedding</div>
+            <div class="info-value">{{ runtimeConfig.qaEmbeddingModel || '-' }}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">检索策略</div>
+            <div class="info-value">{{ runtimeConfig.retrievalEnabled ? '开启' : '关闭' }} / Top {{ runtimeConfig.retrievalTopK || 5 }}</div>
+          </div>
         </div>
       </section>
 
@@ -306,30 +256,28 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import TeacherLayout from '@/components/teacher/TeacherLayout.vue'
 import Loading from '@/components/teacher/Loading.vue'
 import ErrorTip from '@/components/teacher/ErrorTip.vue'
 import {
   getQaLabCourseOutline,
   getQaLabRuntimeConfig,
-  resetQaLabRuntimeConfig,
-  runQaLabCompare,
-  updateQaLabRuntimeConfig
+  runQaLabCompare
 } from '@/api/teacher'
 import { buildQaImageAttachmentPayloads, QA_IMAGE_ACCEPT, useQaImageAttachments } from '@/composables/useQaImageAttachments'
 import { getCourseList, getCurrentCourse, saveCurrentCourse } from '@/utils/platform'
 
 const initialCourseList = getCourseList()
 const initialCourse = getCurrentCourse() || initialCourseList[0] || {}
+const router = useRouter()
 
 const courseList = ref(initialCourseList)
 const currentCourse = ref(initialCourse)
 const selectedCourseId = ref(initialCourse.courseId || '')
 
 const loading = ref(false)
-const savingConfig = ref(false)
-const resettingConfig = ref(false)
 const runningCompare = ref(false)
 const errorCode = ref('')
 const errorMsg = ref('')
@@ -337,8 +285,7 @@ const configUpdatedAt = ref('')
 const configWarnings = ref([])
 const overrideActive = ref(false)
 
-const runtimeForm = ref(createEmptyConfig())
-const runtimeDefaults = ref(createEmptyConfig())
+const runtimeConfig = ref(createEmptyConfig())
 const outlineData = ref({ lessons: [] })
 
 const selectedLessonId = ref('')
@@ -361,26 +308,6 @@ const sectionOptions = computed(() => selectedLesson.value?.sections || [])
 const selectedSection = computed(() => sectionOptions.value.find((item) => item.sectionId === selectedSectionId.value) || null)
 const pageOptions = computed(() => selectedSection.value?.pages || [])
 
-const qaModelOptions = computed(() => buildModelOptions([
-  runtimeForm.value.qaLlmModel,
-  runtimeDefaults.value.qaLlmModel,
-  'qwen-max',
-  'qwen-plus',
-  'qwen-turbo'
-]))
-
-const multimodalOptions = computed(() => buildModelOptions([
-  runtimeForm.value.qaMultimodalModel,
-  runtimeDefaults.value.qaMultimodalModel,
-  'qwen3.5-plus'
-]))
-
-const embeddingOptions = computed(() => buildModelOptions([
-  runtimeForm.value.qaEmbeddingModel,
-  runtimeDefaults.value.qaEmbeddingModel,
-  'text-embedding-v4'
-]))
-
 function createEmptyConfig() {
   return {
     qaLlmModel: '',
@@ -391,14 +318,9 @@ function createEmptyConfig() {
   }
 }
 
-function buildModelOptions(values = []) {
-  return [...new Set(values.map((item) => `${item || ''}`.trim()).filter(Boolean))]
-}
-
 async function fetchRuntimeConfig() {
   const res = await getQaLabRuntimeConfig()
-  runtimeForm.value = { ...createEmptyConfig(), ...(res.data?.config || {}) }
-  runtimeDefaults.value = { ...createEmptyConfig(), ...(res.data?.defaults || {}) }
+  runtimeConfig.value = { ...createEmptyConfig(), ...(res.data?.config || {}) }
   configWarnings.value = res.data?.warnings || []
   configUpdatedAt.value = res.data?.updatedAt || ''
   overrideActive.value = Boolean(res.data?.overrideActive)
@@ -472,52 +394,8 @@ function handleSectionChange() {
   selectedPageNo.value = null
 }
 
-async function saveRuntimeConfig() {
-  savingConfig.value = true
-  try {
-    const res = await updateQaLabRuntimeConfig(runtimeForm.value)
-    runtimeForm.value = { ...createEmptyConfig(), ...(res.data?.config || {}) }
-    runtimeDefaults.value = { ...createEmptyConfig(), ...(res.data?.defaults || {}) }
-    configWarnings.value = res.data?.warnings || []
-    configUpdatedAt.value = res.data?.updatedAt || ''
-    overrideActive.value = Boolean(res.data?.overrideActive)
-    ElMessage.success('QA 运行时配置已保存')
-  } catch (error) {
-    ElMessage.error(error.msg || '保存 QA 运行时配置失败')
-  } finally {
-    savingConfig.value = false
-  }
-}
-
-async function resetRuntimeConfig() {
-  try {
-    await ElMessageBox.confirm(
-      '恢复后会清除数据库中的 QA 运行时覆写，学生端 QA 将重新使用 config.local.py 的默认配置。是否继续？',
-      '恢复默认配置',
-      {
-        confirmButtonText: '恢复默认',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-  } catch (_error) {
-    return
-  }
-
-  resettingConfig.value = true
-  try {
-    const res = await resetQaLabRuntimeConfig()
-    runtimeForm.value = { ...createEmptyConfig(), ...(res.data?.config || {}) }
-    runtimeDefaults.value = { ...createEmptyConfig(), ...(res.data?.defaults || {}) }
-    configWarnings.value = res.data?.warnings || []
-    configUpdatedAt.value = res.data?.updatedAt || ''
-    overrideActive.value = Boolean(res.data?.overrideActive)
-    ElMessage.success('已恢复为 config.local.py 默认配置')
-  } catch (error) {
-    ElMessage.error(error.msg || '恢复默认配置失败')
-  } finally {
-    resettingConfig.value = false
-  }
+function goModelConfig() {
+  router.push('/teacher/model-config')
 }
 
 async function runCompareExperiment() {
@@ -639,14 +517,15 @@ onMounted(() => {
   line-height: 1.7;
 }
 
-.qa-lab-config-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .qa-lab-alert {
   margin-top: 16px;
+}
+
+.qa-lab-config-summary {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 14px;
 }
 
 .qa-lab-form-grid {
@@ -846,7 +725,8 @@ onMounted(() => {
   }
 
   .qa-lab-form-grid,
-  .qa-lab-form-grid--experiment {
+  .qa-lab-form-grid--experiment,
+  .qa-lab-config-summary {
     grid-template-columns: 1fr;
   }
 }

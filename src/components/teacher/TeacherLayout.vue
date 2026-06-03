@@ -72,7 +72,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { DataBoard, Document, EditPen, House, Microphone } from '@element-plus/icons-vue'
+import { DataBoard, Document, EditPen, House, Microphone, Setting } from '@element-plus/icons-vue'
 import { getCurrentCourse, getTeacherProfile } from '@/utils/platform'
 
 const router = useRouter()
@@ -87,6 +87,7 @@ const menuList = [
   { label: '讲稿生成', path: '/teacher/script-generate', icon: Document },
   { label: '讲稿编辑', path: '/teacher/script-edit', icon: EditPen },
   { label: '音频生成', path: '/teacher/audio-generate', icon: Microphone },
+  { label: '模型配置', path: '/teacher/model-config', icon: Setting },
   { label: 'QA 实验台', path: '/teacher/qa-lab', icon: DataBoard }
 ]
 

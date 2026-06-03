@@ -7,6 +7,7 @@ from backend.app.student_runtime.qa_image_generation_service import (
     build_image_generation_prompt,
     generate_qa_image,
 )
+from backend.app.student_runtime.qa_runtime_config_service import CAP_STUDENT_IMAGE_GENERATION, ModelCapabilityConfig
 
 
 class QaImageGenerationServiceTestCase(unittest.TestCase):
@@ -44,20 +45,32 @@ class QaImageGenerationServiceTestCase(unittest.TestCase):
         self.assertNotIn("完整正文", prompt)
 
     @patch("backend.app.student_runtime.qa_image_generation_service.store_qa_image_from_url")
-    @patch("backend.app.student_runtime.qa_image_generation_service.DashScopeClient")
+    @patch("backend.app.student_runtime.qa_image_generation_service.build_provider_adapter")
+    @patch("backend.app.student_runtime.qa_image_generation_service.get_student_qa_runtime_config")
     @patch("backend.app.student_runtime.qa_image_generation_service.build_image_generation_prompt")
     def test_generate_qa_image_returns_local_attachment_payload(
         self,
         mock_build_prompt,
-        mock_dashscope_client,
+        mock_get_runtime_config,
+        mock_build_provider_adapter,
         mock_store_image,
     ) -> None:
         mock_build_prompt.return_value = "compact prompt"
-        mock_dashscope_client.return_value.create_image_generation_task.return_value = {
+        image_config = ModelCapabilityConfig(
+            capability=CAP_STUDENT_IMAGE_GENERATION,
+            provider="dashscope",
+            base_url="https://dashscope.aliyuncs.com",
+            api_key_ref="dashscope_api_key",
+            model_name="wanx2.1-t2i-turbo",
+            timeout_seconds=60.0,
+            settings={"size": "1024*1024", "count": 1, "pollIntervalSeconds": 0.5},
+        )
+        mock_get_runtime_config.return_value = SimpleNamespace(image_generation=image_config)
+        mock_build_provider_adapter.return_value.create_image_generation_task.return_value = {
             "task_id": "task-001",
             "status": "PENDING",
         }
-        mock_dashscope_client.return_value.get_image_generation_task.return_value = {
+        mock_build_provider_adapter.return_value.get_image_generation_task.return_value = {
             "task_id": "task-001",
             "status": "SUCCEEDED",
             "results": [{"url": "https://example.com/generated.png"}],

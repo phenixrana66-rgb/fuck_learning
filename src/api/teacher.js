@@ -141,6 +141,29 @@ export function resetQaLabRuntimeConfig(data = {}) {
   })
 }
 
+export function getModelRuntimeConfig() {
+  return request({
+    url: '/api/v1/model-config/runtime-config',
+    method: 'get'
+  })
+}
+
+export function updateModelRuntimeConfig(data) {
+  return request({
+    url: '/api/v1/model-config/runtime-config',
+    method: 'put',
+    data
+  })
+}
+
+export function resetModelRuntimeConfig(data = {}) {
+  return request({
+    url: '/api/v1/model-config/runtime-config/reset',
+    method: 'post',
+    data
+  })
+}
+
 export function getQaLabCourseOutline(data) {
   return request({
     url: '/api/v1/qa-lab/course-outline',

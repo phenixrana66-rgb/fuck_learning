@@ -64,9 +64,10 @@ class Settings(BaseModel):
     qa_asr_poll_interval_seconds: float = 2.0
     dashscope_api_key: str | None = None
     dashscope_base_url: str = "https://dashscope.aliyuncs.com"
+    openai_compat_api_key: str | None = None
     vector_db_url: str | None = None
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -95,6 +96,11 @@ def _load_local_config_values() -> dict[str, object]:
     loaded_values: dict[str, object] = {}
     for key, value in local_namespace.items():
         resolved_key = _SETTING_ALIASES.get(key, _SETTING_ALIASES.get(key.lower(), key))
-        if resolved_key in declared_keys:
+        if resolved_key in declared_keys or _is_runtime_secret_key(resolved_key):
             loaded_values[resolved_key] = value
     return loaded_values
+
+
+def _is_runtime_secret_key(key: str) -> bool:
+    normalized = str(key or "").lower()
+    return "_api_key" in normalized or "_api_token" in normalized

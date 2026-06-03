@@ -491,6 +491,92 @@ if row is not None:
 
 ---
 
+## Scenario: Model Capability Runtime Config
+
+### 1. Scope / Trigger
+- Trigger: teacher and student LLM/model usage is now configured by capability instead of one student QA model row.
+- Why this needs code-spec depth: the contract spans teacher-only APIs, global runtime DB rows, `config.local.py` secret resolution, provider adapters, teacher script/PPT parsing, student QA, image generation, embedding, and frontend model config UI.
+
+### 2. Signatures
+- DB table: `model_runtime_configs(scope_key, capability, provider, base_url, api_key_ref, model_name, timeout_seconds, settings_json, created_at, updated_at)`
+- DB table: `student_qa_retrieval_runtime_configs(scope_key, retrieval_enabled, retrieval_top_k, created_at, updated_at)`
+- Unique key: `model_runtime_configs(scope_key, capability)`
+- Global scope key: `global`
+- Student QA retrieval scope key: `student_qa_global`
+- Teacher APIs:
+  - `GET /api/v1/model-config/runtime-config`
+  - `PUT /api/v1/model-config/runtime-config`
+  - `POST /api/v1/model-config/runtime-config/reset`
+- First capabilities:
+  - `teacher_script_generation`
+  - `teacher_structure_parse`
+  - `student_text_chat`
+  - `student_vision_chat`
+  - `student_image_generation`
+  - `student_embedding`
+
+### 3. Contracts
+- Runtime config rows persist non-secret fields only:
+  - `provider`
+  - `baseUrl`
+  - `apiKeyRef`
+  - `model`
+  - `timeoutSeconds`
+  - capability-specific `settings`
+- Real API keys must remain in `config.local.py` / environment-backed settings and are resolved by `apiKeyRef`.
+- Never return real API key values from config APIs.
+- Student QA retrieval switches are not embedding model settings:
+  - `retrievalEnabled`
+  - `retrievalTopK`
+- Provider adapter support starts with:
+  - DashScope: text chat, vision chat, image generation, embedding
+  - OpenAI-compatible: text chat, vision chat, embedding
+
+### 4. Validation & Error Matrix
+- real key field such as `apiKey` or `api_key` in update payload -> `400`
+- missing or unknown `apiKeyRef` at runtime -> controlled API error naming the missing ref
+- provider does not support requested capability -> controlled API error or saveable image-generation failure payload
+- `retrievalTopK` outside range -> clamp into `1..10`
+- embedding model or dimensions changed -> response warning reminding operators to rerun vector sync
+
+### 5. Good / Base / Bad Cases
+- Good: operator edits `student_text_chat` provider/model/base URL and student QA immediately resolves that capability through the provider adapter.
+- Base: no DB override exists; defaults come from `config.local.py` / `Settings`, and `overrideActive=false`.
+- Bad: DB stores a real provider API key or returns a masked real key to the frontend; use `apiKeyRef` instead.
+- Bad: `retrievalTopK` is hidden inside `student_embedding.settings_json`, coupling retrieval strategy to vector model config.
+
+### 6. Tests Required
+- Config regression:
+  - extra `*_api_key*` values in `config.local.py` can be resolved by `apiKeyRef`
+- Router regression:
+  - model config update persists capability rows and retrieval config
+  - model config update rejects real API key fields
+  - reset clears DB overrides and returns defaults
+- Student QA regression:
+  - text QA uses `student_text_chat`
+  - image QA uses `student_vision_chat`
+  - image generation uses `student_image_generation`
+  - embedding retrieval/vector sync uses `student_embedding`
+- Frontend verification:
+  - model config route builds
+  - QA lab no longer owns full model config editing
+
+### 7. Wrong vs Correct
+#### Wrong
+```python
+# Real secrets must not be persisted in business tables.
+row.api_key = payload["apiKey"]
+```
+
+#### Correct
+```python
+# Persist only the reference; resolve the real secret from settings at call time.
+row.api_key_ref = payload["apiKeyRef"]
+api_key = resolve_api_key_ref(row.api_key_ref)
+```
+
+---
+
 ## Review Checklist
 
 When reviewing DB-facing changes, check:

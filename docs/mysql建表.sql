@@ -13,6 +13,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `api_call_logs`;
 DROP TABLE IF EXISTS `voice_transcripts`;
 DROP TABLE IF EXISTS `qa_runtime_configs`;
+DROP TABLE IF EXISTS `student_qa_retrieval_runtime_configs`;
+DROP TABLE IF EXISTS `model_runtime_configs`;
 DROP TABLE IF EXISTS `qa_message_attachments`;
 DROP TABLE IF EXISTS `qa_message_knowledge_refs`;
 DROP TABLE IF EXISTS `qa_answers`;
@@ -634,19 +636,32 @@ CREATE TABLE `qa_message_attachments` (
   CONSTRAINT `fk_qa_message_attachments_lesson` FOREIGN KEY (`lesson_id`) REFERENCES `lessons` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='问答消息附件';
 
-CREATE TABLE `qa_runtime_configs` (
+CREATE TABLE `model_runtime_configs` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `scope_key` VARCHAR(64) NOT NULL,
-  `qa_llm_model` VARCHAR(128) NOT NULL,
-  `qa_multimodal_model` VARCHAR(128) NOT NULL,
-  `qa_embedding_model` VARCHAR(128) NOT NULL,
+  `capability` VARCHAR(64) NOT NULL,
+  `provider` VARCHAR(64) NOT NULL,
+  `base_url` VARCHAR(512) NOT NULL,
+  `api_key_ref` VARCHAR(128) NOT NULL,
+  `model_name` VARCHAR(128) NOT NULL,
+  `timeout_seconds` DOUBLE NOT NULL DEFAULT 60,
+  `settings_json` TEXT,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_runtime_scope_capability` (`scope_key`, `capability`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型能力运行时配置（不存真实 API Key）';
+
+CREATE TABLE `student_qa_retrieval_runtime_configs` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `scope_key` VARCHAR(64) NOT NULL,
   `retrieval_enabled` TINYINT(1) NOT NULL DEFAULT 1,
   `retrieval_top_k` INT NOT NULL DEFAULT 5,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_qa_runtime_configs_scope` (`scope_key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生 QA 运行时实验配置';
+  UNIQUE KEY `uk_student_qa_retrieval_runtime_scope` (`scope_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生 QA 检索运行时配置';
 
 CREATE TABLE `qa_answers` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

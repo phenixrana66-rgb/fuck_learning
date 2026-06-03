@@ -6,8 +6,11 @@ from backend.app.common.exceptions import ApiError
 from backend.app.platform.teacher_service import require_teacher
 from backend.app.student_runtime.qa_lab_service import get_course_outline, run_compare
 from backend.app.student_runtime.qa_runtime_config_service import (
+    build_model_runtime_config_payload,
     build_student_qa_runtime_config_payload,
+    reset_model_runtime_config,
     reset_student_qa_runtime_config,
+    update_model_runtime_config,
     update_student_qa_runtime_config,
 )
 from backend.app.teacher_runtime.status_service import (
@@ -125,7 +128,10 @@ async def qa_lab_runtime_config_get(request: Request, db: Session = Depends(get_
 async def qa_lab_runtime_config_update(request: Request, db: Session = Depends(get_db)) -> dict:
     payload = await request_payload(request)
     _require_teacher_auth(db, request, payload)
-    data = update_student_qa_runtime_config(db, payload)
+    try:
+        data = update_student_qa_runtime_config(db, payload)
+    except ValueError as exc:
+        raise ApiError(400, str(exc), status_code=400)
     return teacher_response(request, data)
 
 
@@ -134,6 +140,31 @@ async def qa_lab_runtime_config_reset(request: Request, db: Session = Depends(ge
     payload = await request_payload(request)
     _require_teacher_auth(db, request, payload)
     data = reset_student_qa_runtime_config(db)
+    return teacher_response(request, data)
+
+
+@router.get("/model-config/runtime-config")
+async def model_runtime_config_get(request: Request, db: Session = Depends(get_db)) -> dict:
+    _require_teacher_auth(db, request, {})
+    return teacher_response(request, build_model_runtime_config_payload(db))
+
+
+@router.put("/model-config/runtime-config")
+async def model_runtime_config_update(request: Request, db: Session = Depends(get_db)) -> dict:
+    payload = await request_payload(request)
+    _require_teacher_auth(db, request, payload)
+    try:
+        data = update_model_runtime_config(db, payload)
+    except ValueError as exc:
+        raise ApiError(400, str(exc), status_code=400)
+    return teacher_response(request, data)
+
+
+@router.post("/model-config/runtime-config/reset")
+async def model_runtime_config_reset(request: Request, db: Session = Depends(get_db)) -> dict:
+    payload = await request_payload(request)
+    _require_teacher_auth(db, request, payload)
+    data = reset_model_runtime_config(db)
     return teacher_response(request, data)
 
 

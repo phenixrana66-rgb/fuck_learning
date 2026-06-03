@@ -7,10 +7,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from backend.app.common.config import get_settings
+from backend.app.common.exceptions import ApiError
 from backend.app.student_runtime.db_learning_service import interact_with_section_context
 from backend.app.student_runtime.db_qa_service import record_qa_answer_trace
-from backend.app.student_runtime.qa_dashscope_client import DashScopeClient
 from backend.app.student_runtime.qa_image_storage import load_qa_image_as_data_url, storage_key_from_url
 from backend.app.student_runtime.qa_prompt_builder import (
     DEFAULT_IMAGE_ONLY_QUESTION,
@@ -18,6 +17,7 @@ from backend.app.student_runtime.qa_prompt_builder import (
     build_prompt,
     build_system_prompt,
 )
+from backend.app.student_runtime.qa_provider_adapters import ModelProviderError, build_provider_adapter
 from backend.app.student_runtime.qa_retrieval_service import build_qa_context_bundle
 from backend.app.student_runtime.qa_runtime_config_service import StudentQARuntimeConfig, get_student_qa_runtime_config
 
@@ -48,7 +48,6 @@ def answer_question(
         effective_question,
         runtime_config=effective_runtime_config,
     )
-    settings = get_settings()
     if effective_question and bundle.get("questionIntent") == "definition" and bundle.get("faq_candidates") and not image_data_urls:
         direct_result = _build_direct_faq_answer(bundle)
         return _compose_answer_response(
@@ -61,23 +60,12 @@ def answer_question(
             used_fallback=False,
             has_images=bool(image_data_urls),
         )
-    if not settings.dashscope_api_key:
-        fallback = interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
-        return _compose_answer_response(
-            fallback,
-            bundle=bundle,
-            runtime_config=effective_runtime_config,
-            include_debug=include_debug,
-            latency_ms=0,
-            mode="context_fallback",
-            used_fallback=True,
-            has_images=bool(image_data_urls),
-        )
 
     prompt = build_prompt(bundle, effective_question, history=history)
     started = time.perf_counter()
     try:
-        client = DashScopeClient(runtime_config=effective_runtime_config)
+        chat_config = effective_runtime_config.vision_chat if image_data_urls else effective_runtime_config.text_chat
+        client = build_provider_adapter(chat_config)
         raw = (
             client.chat_multimodal_completion(prompt=prompt, image_data_urls=image_data_urls, system_prompt=build_system_prompt())
             if image_data_urls
@@ -105,7 +93,7 @@ def answer_question(
                     "lesson_id": bundle.get("section", {}).get("lessonDbId"),
                     "section_id": bundle.get("section", {}).get("sectionDbId"),
                     "page_no": bundle.get("page", {}).get("pageNo"),
-                    "model_provider": settings.qa_llm_provider,
+                    "model_provider": effective_runtime_config.actual_chat_provider(has_images=bool(image_data_urls)),
                     "model_name": effective_runtime_config.actual_chat_model(has_images=bool(image_data_urls)),
                     "embedding_model": effective_runtime_config.qa_embedding_model,
                     "faq_hit_ids_json": [item["faqId"] for item in bundle.get("faq_candidates", [])],
@@ -125,6 +113,8 @@ def answer_question(
             used_fallback=False,
             has_images=bool(image_data_urls),
         )
+    except ModelProviderError as exc:
+        raise ApiError(400, str(exc), status_code=400) from exc
     except Exception:
         fallback = interact_with_section_context(db, lesson_id, section_id, effective_question, page_no)
         return _compose_answer_response(

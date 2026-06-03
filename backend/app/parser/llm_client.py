@@ -6,9 +6,14 @@ from typing import Any
 
 import httpx
 
-from backend.app.common.config import get_settings
+from backend.app.common.db import session_scope
 from backend.app.common.exceptions import ApiError
 from backend.app.parser.schemas import ExtractedPresentation, OutlineResult
+from backend.app.student_runtime.qa_runtime_config_service import (
+    CAP_TEACHER_STRUCTURE_PARSE,
+    get_teacher_llm_runtime_config,
+    resolve_api_key_ref,
+)
 
 
 LOG_DIR = Path("temp/log")
@@ -20,12 +25,14 @@ def generate_outline_with_llm(
     extracted: ExtractedPresentation,
     is_extract_key_point: bool,
 ) -> OutlineResult:
-    settings = get_settings()
-    if not settings.llm_api_key:
-        raise ApiError(code=500, msg="未配置 A12_LLM_API_KEY，无法调用 PPT 结构化 LLM 接口", status_code=500)
+    with session_scope() as db:
+        runtime_config = get_teacher_llm_runtime_config(db, CAP_TEACHER_STRUCTURE_PARSE)
+    api_key = resolve_api_key_ref(runtime_config.api_key_ref)
+    if not api_key:
+        raise ApiError(code=500, msg=f"未配置 {runtime_config.api_key_ref}，无法调用 PPT 结构化 LLM 接口", status_code=500)
 
     payload = {
-        "model": settings.llm_model,
+        "model": runtime_config.model_name,
         "temperature": 0.2,
         "stream": False,
         "messages": [
@@ -48,10 +55,10 @@ def generate_outline_with_llm(
         ],
     }
 
-    base_url = settings.llm_api_base_url.rstrip("/")
+    base_url = runtime_config.base_url.rstrip("/")
     request_url = f"{base_url}/chat/completions"
     request_headers = {
-        "Authorization": f"Bearer {settings.llm_api_key}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     trace_id = uuid.uuid4().hex
@@ -68,7 +75,7 @@ def generate_outline_with_llm(
     )
 
     try:
-        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
+        with httpx.Client(timeout=runtime_config.timeout_seconds) as client:
             response = client.post(
                 request_url,
                 headers=request_headers,

@@ -23,6 +23,8 @@ llm_api_base_url = "http://127.0.0.1:13010/v1"
 llm_api_key = "replace-with-your-local-key"
 llm_model = "gpt-5.1-codex-mini"
 llm_timeout_seconds = 60.0
+# 模型配置页只保存 apiKeyRef；真实密钥仍在本文件或环境变量中。
+# 例如教师端默认 apiKeyRef 为 llm_api_key。
 
 # 向量数据库（pgvector）配置
 vector_db_url = "postgresql+psycopg://postgres:你的密码@127.0.0.1:5433/chaoxing_ai_vector"
@@ -58,4 +60,6 @@ qa_image_generation_timeout_seconds = 60.0
 qa_image_generation_poll_interval_seconds = 2.0
 dashscope_api_key = "你的阿里云API Key"
 dashscope_base_url = "https://dashscope.aliyuncs.com"
+# OpenAI-compatible 学生端 provider 可引用这个密钥名，也可以添加其它 *_api_key 变量后在页面填写对应 apiKeyRef。
+openai_compat_api_key = "replace-with-your-openai-compatible-key"
 

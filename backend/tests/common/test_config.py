@@ -103,3 +103,17 @@ class ConfigSettingsTestCase(unittest.TestCase):
 
         self.assertEqual(settings.db_name, "local_db")
         self.assertFalse(hasattr(settings, "unknown_value"))
+
+    def test_local_config_keeps_extra_api_key_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            local_config = Path(tmp) / "config.local.py"
+            local_config.write_text(
+                "openai_compat_api_key_a = 'compat-secret'\n"
+                "random_value = 'still-ignored'\n",
+                encoding="utf-8",
+            )
+            with patch("backend.app.common.config._LOCAL_CONFIG_PATH", local_config):
+                settings = get_settings()
+
+        self.assertEqual(settings.openai_compat_api_key_a, "compat-secret")
+        self.assertFalse(hasattr(settings, "random_value"))
