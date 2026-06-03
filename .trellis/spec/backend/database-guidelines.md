@@ -171,6 +171,88 @@ answer = client.chat_multimodal_completion(question, image_inputs, system_prompt
 
 ---
 
+## Scenario: Student QA Generated Images
+
+### 1. Scope / Trigger
+- Trigger: student QA can generate images from a prompt inside the existing chat stream.
+- Why this needs code-spec depth: the contract spans frontend mode state, signed SSE payloads, DashScope async image tasks, local image cache, assistant-message attachments, and QA session history.
+
+### 2. Signatures
+- Stream API: `POST /student-api/api/v1/qa/interact/stream`
+- Stream request mode: `mode: "image_generation"`
+- Stream response:
+  - SSE `delta`: human-readable progress/final text
+  - SSE `done.data.mode: "image_generation"`
+  - SSE `done.data.attachments: Attachment[]`
+- Config keys:
+  - `qa_image_generation_model`
+  - `qa_image_generation_size`
+  - `qa_image_generation_count`
+  - `qa_image_generation_timeout_seconds`
+  - `qa_image_generation_poll_interval_seconds`
+- Storage helper:
+  - `store_qa_image_from_url(...)`
+- Session persistence:
+  - assistant `qa_messages` may have `qa_message_attachments`
+  - generated-image answers use `qa_answers.answer_type="mixed"` when an assistant attachment exists
+
+### 3. Contracts
+- Request:
+  - `question` is the image prompt and is required for image-generation mode.
+  - `attachments` are ignored in image-generation mode; uploaded image drafts belong to normal QA mode and must not become reference-image generation inputs.
+  - `lessonId`, `sectionId`, and `pageNo` are used only to build a compact teaching-context prompt.
+- Prompt context:
+  - include course name, section title, page title/summary, and up to a small set of knowledge-point names.
+  - do not pass full page/section text to the image-generation provider.
+- Response:
+  - generated provider URLs must be downloaded immediately and returned as `/cache/qa-images/...` attachment payloads.
+  - `done.data.attachments` must be stable local payloads with `storageKey`, `url`, `mimeType`, and `size`.
+  - image generation must not return or update `paceSuggestion`.
+- History:
+  - save/list must round-trip assistant attachments, not only user attachments.
+  - session history must not rely on provider temporary URLs or raw provider responses.
+
+### 4. Validation & Error Matrix
+- `mode="image_generation"` and empty `question` -> `400` with "请输入图片生成描述"
+- missing DashScope API key -> return a saveable assistant failure payload, not an SSE transport error
+- provider task `FAILED | CANCELED | UNKNOWN` -> return a saveable assistant failure payload
+- provider result URL download failure -> return a saveable assistant failure payload
+- image generation success/failure -> do not call `apply_qa_checkpoint(...)`
+- provider URL result -> store locally before returning to frontend
+
+### 5. Good / Base / Bad Cases
+- Good: student selects image-generation mode, enters a prompt, backend adds compact chapter context, stores the generated image locally, and `done.data.attachments[0].url` starts with `/cache/qa-images/`.
+- Base: provider fails or content safety rejects the prompt; frontend receives an assistant failure answer and saves the user prompt plus assistant message.
+- Bad: backend returns a provider URL directly, so the image disappears from history after the provider URL expires.
+- Bad: generated-image turns trigger QA checkpoint and incorrectly change student pacing state.
+
+### 6. Tests Required
+- Router regression:
+  - image-generation stream returns `mode=image_generation` and generated attachments
+  - image-generation stream does not call text QA orchestration or `apply_qa_checkpoint(...)`
+- Session persistence regression:
+  - assistant message attachments survive save/list round-trip
+- Config regression:
+  - image-generation config keys are overrideable from `config.local.py`
+- Frontend verification:
+  - `npm.cmd run build`
+  - generated `done.data.attachments` render in the assistant message
+
+### 7. Wrong vs Correct
+#### Wrong
+```python
+# Provider URLs are temporary and should not be the durable history shape.
+return {"attachments": [{"url": provider_result["url"]}]}
+```
+
+#### Correct
+```python
+stored = store_qa_image_from_url(image_url=provider_result["url"], subdir="generated")
+return {"mode": "image_generation", "attachments": [stored.to_payload()]}
+```
+
+---
+
 ## Scenario: Student Learning Position Sync
 
 ### 1. Scope / Trigger

@@ -51,6 +51,11 @@ qa_llm_model = "qwen-max"
 qa_multimodal_model = "qwen3.5-plus"
 qa_embedding_model = "text-embedding-v4"
 qa_embedding_dimensions = 1024
+qa_image_generation_model = "wanx2.1-t2i-turbo"
+qa_image_generation_size = "1024*1024"
+qa_image_generation_count = 1
+qa_image_generation_timeout_seconds = 60.0
+qa_image_generation_poll_interval_seconds = 2.0
 dashscope_api_key = "你的阿里云API Key"
 dashscope_base_url = "https://dashscope.aliyuncs.com"
 

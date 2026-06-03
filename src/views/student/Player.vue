@@ -324,12 +324,25 @@
                   multiple
                   @change="handleQaImageChange"
                 />
+                <div class="student-ai-mode-switch" role="tablist" aria-label="AI 问答模式">
+                  <button
+                    v-for="mode in qaInteractionModes"
+                    :key="mode.value"
+                    type="button"
+                    class="student-ai-mode-button"
+                    :class="{ active: qaInteractionMode === mode.value }"
+                    :aria-selected="qaInteractionMode === mode.value"
+                    @click="setQaInteractionMode(mode.value)"
+                  >
+                    {{ mode.label }}
+                  </button>
+                </div>
                 <el-input
                   v-model="questionText"
                   type="textarea"
                   :rows="4"
                   resize="none"
-                  placeholder="输入你的问题"
+                  :placeholder="qaInputPlaceholder"
                   @keydown.enter.exact.prevent="submitTextQuestion"
                 />
                 <div v-if="draftQaAttachments.length" class="student-ai-attachment-strip">
@@ -361,6 +374,7 @@
                   <button
                     type="button"
                     class="student-ai-icon-button image"
+                    :disabled="isImageGenerationMode"
                     aria-label="添加图片"
                     @click="openQaImagePicker"
                   >
@@ -388,7 +402,7 @@
                     type="button"
                     class="student-ai-icon-button voice"
                     :class="{ loading: voiceLoading }"
-                    :disabled="voiceLoading"
+                    :disabled="voiceLoading || isImageGenerationMode"
                     :aria-label="voiceLoading ? '语音识别中' : '语音输入'"
                     @click="!voiceLoading ? toggleRecording() : undefined"
                   >
@@ -404,7 +418,7 @@
                     type="button"
                     class="student-ai-icon-button send"
                     :class="{ 'is-stop': asking }"
-                    :disabled="!asking && !questionText.trim() && !draftQaAttachments.length"
+                    :disabled="!asking && !canSubmitQuestion"
                     :aria-label="asking ? '终止回答' : '发送问题'"
                     @click="asking ? stopStreamingAnswer() : submitTextQuestion()"
                   >
@@ -526,6 +540,8 @@ import {
 } from '@/utils/platform'
 import { buildAggregatedKnowledgeUnits, findAggregatedChapterForSection, getSectionsForAggregatedChapter } from '@/utils/studentKnowledge'
 
+const QA_INTERACTION_MODE_QA = 'qa'
+const QA_INTERACTION_MODE_IMAGE = 'image_generation'
 const route = useRoute()
 const router = useRouter()
 const topbarNavRef = ref(null)
@@ -545,6 +561,7 @@ const studentProfile = ref({
 const progressState = ref({})
 const activeView = ref('progress')
 const aiToolsVisible = ref(true)
+const qaInteractionMode = ref(QA_INTERACTION_MODE_QA)
 const questionText = ref('')
 const asking = ref(false)
 const activeAnswerController = ref(null)
@@ -589,6 +606,10 @@ const playerViewOrder = {
   knowledge: 1,
   ai: 2
 }
+const qaInteractionModes = [
+  { label: '问答', value: QA_INTERACTION_MODE_QA },
+  { label: '生成图片', value: QA_INTERACTION_MODE_IMAGE }
+]
 
 const lessonId = computed(() => route.params.lessonId)
 const allChapters = computed(() => (lesson.value.units || []).flatMap((unit) => unit.chapters || []))
@@ -709,6 +730,15 @@ const recommendedResumeChapter = computed(() => {
 const qaHistoryCount = computed(() => qaSessions.value.reduce((count, session) => (
   count + (session.messages || []).filter((item) => item.role === 'assistant').length
 ), 0))
+const isImageGenerationMode = computed(() => qaInteractionMode.value === QA_INTERACTION_MODE_IMAGE)
+const qaInputPlaceholder = computed(() => (
+  isImageGenerationMode.value ? '描述你想生成的教学图片' : '输入你的问题'
+))
+const canSubmitQuestion = computed(() => {
+  if (asking.value) return true
+  if (questionText.value.trim()) return true
+  return !isImageGenerationMode.value && draftQaAttachments.value.length > 0
+})
 const navIndicatorStyle = computed(() => ({
   width: `${navIndicator.value.width}px`,
   transform: `translateX(${navIndicator.value.left}px)`,
@@ -722,6 +752,7 @@ function buildCachedConversation(history) {
       id: item.id || `history-a-${index}`,
       role: 'assistant',
       content: item.answer,
+      attachments: cloneQaImageAttachments(item.answerAttachments || []),
       anchorTitle: item.anchorTitle,
       resumePageNo: item.resumePageNo,
       understandingLabel: item.understandingLabel,
@@ -778,6 +809,7 @@ function buildHistoryPairsFromMessages(messages) {
       question: questionItem.content,
       answer: answerItem.content,
       attachments: cloneQaImageAttachments(questionItem.attachments || []),
+      answerAttachments: cloneQaImageAttachments(answerItem.attachments || []),
       anchorTitle: answerItem.anchorTitle,
       resumePageNo: answerItem.resumePageNo,
       understandingLabel: answerItem.understandingLabel,
@@ -793,7 +825,12 @@ function getLatestImageAttachments(messages = []) {
 }
 
 function openQaImagePicker() {
+  if (isImageGenerationMode.value) return
   qaImageInputRef.value?.click()
+}
+
+function setQaInteractionMode(mode) {
+  qaInteractionMode.value = mode === QA_INTERACTION_MODE_IMAGE ? QA_INTERACTION_MODE_IMAGE : QA_INTERACTION_MODE_QA
 }
 
 function getSessionDisplayTitle(session) {
@@ -1436,7 +1473,8 @@ async function askQuestion(question, source = 'text') {
       return
     }
     const normalizedQuestion = `${question || ''}`.trim()
-    const outboundAttachments = cloneQaImageAttachments(draftQaAttachments.value)
+    const isGenerationRequest = source === QA_INTERACTION_MODE_IMAGE
+    const outboundAttachments = isGenerationRequest ? [] : cloneQaImageAttachments(draftQaAttachments.value)
     const sentQuestionType = outboundAttachments.length
       ? (normalizedQuestion ? 'mixed' : 'image')
       : source
@@ -1446,12 +1484,15 @@ async function askQuestion(question, source = 'text') {
       role: 'user',
       content: normalizedQuestion,
       questionType: sentQuestionType,
+      mode: isGenerationRequest ? QA_INTERACTION_MODE_IMAGE : QA_INTERACTION_MODE_QA,
       attachments: outboundAttachments
     }
     const assistantMessage = {
       id: `ai-${Date.now()}`,
       role: 'assistant',
-      content: ''
+      content: '',
+      mode: isGenerationRequest ? QA_INTERACTION_MODE_IMAGE : QA_INTERACTION_MODE_QA,
+      attachments: []
     }
     let assistantInserted = false
     chatList.value.push(userMessage)
@@ -1471,8 +1512,9 @@ async function askQuestion(question, source = 'text') {
       lessonId: lessonId.value,
       sectionId: currentSectionId,
       source,
+      mode: isGenerationRequest ? QA_INTERACTION_MODE_IMAGE : QA_INTERACTION_MODE_QA,
       question: normalizedQuestion,
-      attachments: buildQaImageAttachmentPayloads(outboundAttachments),
+      attachments: isGenerationRequest ? [] : buildQaImageAttachmentPayloads(outboundAttachments),
       anchorId: progressState.value.anchorId,
       anchorTitle: aiContextChapter.value.chapterTitle,
       pageNo: aiContextChapter.value.pageNo || progressState.value.pageNo,
@@ -1493,6 +1535,8 @@ async function askQuestion(question, source = 'text') {
     assistantStreamingStarted.value = true
     ensureAssistantVisible()
     assistantMessage.content = donePayload?.answer || assistantMessage.content || '当前内容暂无更多解读。'
+    assistantMessage.mode = donePayload?.mode || assistantMessage.mode
+    assistantMessage.attachments = cloneQaImageAttachments(donePayload?.attachments || [])
     assistantMessage.relatedPoints = donePayload?.relatedKnowledgePoints || []
     assistantMessage.understandingLevel = donePayload?.understandingLevel
     assistantMessage.understandingLabel = donePayload?.understandingLabel
@@ -1521,11 +1565,11 @@ async function askQuestion(question, source = 'text') {
 }
 
 async function submitTextQuestion() {
-  if (!questionText.value.trim() && !draftQaAttachments.value.length) {
-    ElMessage.warning('请输入问题内容或上传图片')
+  if (!canSubmitQuestion.value) {
+    ElMessage.warning(isImageGenerationMode.value ? '请输入图片生成描述' : '请输入问题内容或上传图片')
     return
   }
-  await askQuestion(questionText.value.trim(), 'text')
+  await askQuestion(questionText.value.trim(), isImageGenerationMode.value ? QA_INTERACTION_MODE_IMAGE : 'text')
 }
 
 async function submitSuggestedQuestion(question) {
@@ -3043,12 +3087,44 @@ onDeactivated(() => {
     inset 0 1px 0 rgba(255, 255, 255, 0.75),
     0 10px 24px rgba(128, 155, 205, 0.08);
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
 }
 
 .student-ai-file-input {
   display: none;
+}
+
+.student-ai-mode-switch {
+  width: max-content;
+  max-width: 100%;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(86px, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(208, 220, 240, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.student-ai-mode-button {
+  min-width: 0;
+  min-height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #667896;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.student-ai-mode-button.active {
+  background: #101418;
+  color: #fff;
+  box-shadow: 0 8px 16px rgba(16, 20, 24, 0.14);
 }
 
 .student-ai-attachment-strip {

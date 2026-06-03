@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
+
 from backend.app.common.exceptions import ApiError
 
 
@@ -66,6 +68,49 @@ def store_qa_image_from_data_url(
     extension = SUPPORTED_QA_IMAGE_MIME_TYPES[resolved_mime]
     safe_name = _normalize_file_name(file_name or f"image{extension}", extension)
     storage_key = f"{uuid4().hex[:2]}/{uuid4().hex}{extension}"
+    output_path = get_qa_image_cache_dir() / storage_key
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(raw_bytes)
+    return StoredQaImage(
+        storage_provider="local",
+        storage_key=storage_key,
+        url=build_qa_image_public_url(storage_key),
+        name=safe_name,
+        mime_type=resolved_mime,
+        size=len(raw_bytes),
+    )
+
+
+def store_qa_image_from_url(
+    *,
+    image_url: str,
+    file_name: str | None = None,
+    mime_type: str | None = None,
+    subdir: str = "generated",
+    timeout: float = 30.0,
+) -> StoredQaImage:
+    normalized_url = str(image_url or "").strip()
+    if not normalized_url:
+        raise ApiError(502, "图片生成结果为空", status_code=502)
+    try:
+        with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=True) as client:
+            response = client.get(normalized_url)
+            response.raise_for_status()
+            raw_bytes = response.content
+    except Exception as exc:
+        raise ApiError(502, "生成图片下载失败，请稍后重试", status_code=502) from exc
+    if not raw_bytes:
+        raise ApiError(502, "生成图片内容为空", status_code=502)
+    _ensure_image_size_within_limit(len(raw_bytes))
+    resolved_mime = (mime_type or response.headers.get("content-type", "").split(";")[0] or mimetypes.guess_type(normalized_url)[0] or "").lower()
+    if resolved_mime not in SUPPORTED_QA_IMAGE_MIME_TYPES:
+        raise ApiError(502, "生成图片格式暂不支持", status_code=502)
+    extension = SUPPORTED_QA_IMAGE_MIME_TYPES[resolved_mime]
+    safe_name = _normalize_file_name(file_name or f"generated-image{extension}", extension)
+    safe_subdir = str(subdir or "generated").replace("\\", "/").strip("/")
+    if not safe_subdir or safe_subdir.startswith("..") or "/../" in f"/{safe_subdir}/":
+        safe_subdir = "generated"
+    storage_key = f"{safe_subdir}/{uuid4().hex[:2]}/{uuid4().hex}{extension}"
     output_path = get_qa_image_cache_dir() / storage_key
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(raw_bytes)

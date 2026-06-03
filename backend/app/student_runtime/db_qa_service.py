@@ -111,10 +111,10 @@ def get_qa_sessions(db: Session, student_identifier: str | int | None, lesson_id
             }
             if message.role == "user":
                 item["questionType"] = message.question_type or "text"
-                item["attachments"] = [
-                    _serialize_attachment_payload(row)
-                    for row in sorted(message.attachments or [], key=lambda row: (row.sort_no, row.id))
-                ]
+            item["attachments"] = [
+                _serialize_attachment_payload(row)
+                for row in sorted(message.attachments or [], key=lambda row: (row.sort_no, row.id))
+            ]
             if message.role == "assistant":
                 answer = answers_by_message_id.get(message.id)
                 item["relatedPoints"] = [
@@ -213,7 +213,7 @@ def save_qa_session(
     for item in messages_payload:
         role = "assistant" if item.get("role") == "assistant" else "user"
         created_at = _datetime_from_maybe_ms(item.get("createdAt"))
-        attachments_payload = normalize_qa_image_attachments(item.get("attachments") or []) if role == "user" else []
+        attachments_payload = normalize_qa_image_attachments(item.get("attachments") or [])
         message = QAMessage(
             session_id=session.id,
             lesson_id=lesson.id,
@@ -225,25 +225,24 @@ def save_qa_session(
         )
         db.add(message)
         db.flush()
-        if role == "user":
-            for attachment_index, attachment_payload in enumerate(attachments_payload):
-                stored = _store_attachment_payload(attachment_payload)
-                db.add(
-                    QAMessageAttachment(
-                        message_id=message.id,
-                        session_id=session.id,
-                        lesson_id=lesson.id,
-                        attachment_type="image",
-                        storage_provider=str(stored.get("storageProvider") or "local"),
-                        storage_key=str(stored.get("storageKey") or ""),
-                        file_url=str(stored.get("url") or ""),
-                        file_name=str(stored.get("name") or "image"),
-                        mime_type=str(stored.get("mimeType") or "image/jpeg"),
-                        file_size=stored.get("size"),
-                        sort_no=attachment_index,
-                        created_at=created_at,
-                    )
+        for attachment_index, attachment_payload in enumerate(attachments_payload):
+            stored = _store_attachment_payload(attachment_payload)
+            db.add(
+                QAMessageAttachment(
+                    message_id=message.id,
+                    session_id=session.id,
+                    lesson_id=lesson.id,
+                    attachment_type="image",
+                    storage_provider=str(stored.get("storageProvider") or "local"),
+                    storage_key=str(stored.get("storageKey") or ""),
+                    file_url=str(stored.get("url") or ""),
+                    file_name=str(stored.get("name") or "image"),
+                    mime_type=str(stored.get("mimeType") or "image/jpeg"),
+                    file_size=stored.get("size"),
+                    sort_no=attachment_index,
+                    created_at=created_at,
                 )
+            )
         if role == "user":
             pending_question = message
             continue
@@ -257,7 +256,7 @@ def save_qa_session(
             question_message_id=pending_question.id,
             assistant_message_id=message.id,
             related_section_id=section.id,
-            answer_type="text",
+            answer_type="mixed" if attachments_payload else "text",
             understanding_level=understanding_level,
             recommended_section_id=section.id if item.get("resumePageNo") else None,
             recommended_page_no=item.get("resumePageNo"),

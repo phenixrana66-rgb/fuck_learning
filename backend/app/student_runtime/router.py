@@ -38,6 +38,7 @@ from backend.app.student_runtime.qa_image_storage import normalize_qa_image_atta
 from backend.app.student_runtime.learning_service import LearningService
 from backend.app.student_runtime.qa_asr_service import AudioPayloadError, transcribe_audio_payload
 from backend.app.student_runtime.qa_asr_realtime_service import handle_realtime_asr_message
+from backend.app.student_runtime.qa_image_generation_service import IMAGE_GENERATION_MODE, generate_qa_image
 from backend.app.student_runtime.qa_orchestrator import answer_question
 from backend.app.student_runtime.qa_streaming import iter_answer_chunks
 from backend.chaoxing_db.models import StudentPracticeAttempt, StudentSectionProgress
@@ -257,11 +258,15 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
     question = (payload.get("question") or "").strip()
     page_no = payload.get("pageNo")
     lesson_id = payload.get("lessonId")
+    mode = str(payload.get("mode") or payload.get("intent") or "").strip().lower()
+    is_image_generation = mode == IMAGE_GENERATION_MODE
     student_db_id = _resolve_user_id(db, payload.get("studentId"))
     lesson = _find_lesson(db, lesson_id) if section_id and student_db_id else None
     section = _find_section(db, lesson.id, section_id) if lesson else None
-    attachments = normalize_qa_image_attachments(payload.get("attachments") or [])
+    attachments = [] if is_image_generation else normalize_qa_image_attachments(payload.get("attachments") or [])
     request_id = getattr(request.state, "request_id", None)
+    if is_image_generation and not question:
+        raise ApiError(400, "请输入图片生成描述", status_code=400)
     if not question and not attachments:
         raise ApiError(400, "请输入问题或上传图片", status_code=400)
 
@@ -272,7 +277,16 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
         yield emit({"type": "start", "requestId": request_id})
 
         try:
-            if section_id and (question or attachments):
+            if is_image_generation:
+                yield emit({"type": "delta", "delta": "正在生成图片，请稍候。"})
+                data = generate_qa_image(
+                    db,
+                    lesson_id=lesson_id,
+                    section_id=section_id,
+                    page_no=page_no,
+                    prompt=question,
+                )
+            elif section_id and (question or attachments):
                 data = answer_question(
                     db,
                     lesson_id=lesson_id,
@@ -287,7 +301,7 @@ async def qa_interact_stream(request: Request, db: Session = Depends(get_db)):
                 data = learning_service.interact(lesson_id, question, payload.get("anchorId"), page_no)
 
             pace_suggestion = None
-            if data and student_db_id and lesson and section:
+            if data and not is_image_generation and student_db_id and lesson and section:
                 section_progress = ensure_section_progress(db, student_db_id=student_db_id, lesson=lesson, section=section)
                 pace_suggestion = apply_qa_checkpoint(
                     db,

@@ -270,6 +270,141 @@ class StudentRouterTestCase(unittest.TestCase):
     @patch("backend.app.lesson.service.synthesize_speech")
     @patch("backend.app.courseware.service.build_cir")
     @patch("backend.app.courseware.service.parse_courseware")
+    def test_qa_sessions_save_and_list_preserve_assistant_generated_image_attachments(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+
+        save_response = self.client.post(
+            "/student-api/api/v1/qa/sessions/save",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "session": {
+                        "sessionId": "session-generated-image",
+                        "messages": [
+                            {
+                                "id": "user-1",
+                                "role": "user",
+                                "content": "生成一张二叉树遍历示意图",
+                                "questionType": "text",
+                            },
+                            {
+                                "id": "assistant-1",
+                                "role": "assistant",
+                                "content": "已根据你的描述生成图片。",
+                                "attachments": [self._demo_image_attachment()],
+                            },
+                        ],
+                    },
+                }
+            ),
+        )
+
+        self.assertEqual(save_response.status_code, 200)
+        saved_session = save_response.json()["data"]["session"]
+        assistant_attachment = saved_session["messages"][1]["attachments"][0]
+        self.assertTrue(assistant_attachment["url"].startswith("/cache/qa-images/"))
+        self.assertTrue(assistant_attachment["storageKey"])
+
+        list_response = self.client.post(
+            "/student-api/api/v1/qa/sessions/list",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                }
+            ),
+        )
+
+        self.assertEqual(list_response.status_code, 200)
+        listed_session = list_response.json()["data"]["sessions"][0]
+        self.assertEqual(listed_session["sessionId"], "session-generated-image")
+        self.assertTrue(listed_session["messages"][1]["attachments"][0]["url"].startswith("/cache/qa-images/"))
+
+    @patch("backend.app.student_runtime.router.apply_qa_checkpoint")
+    @patch("backend.app.student_runtime.router.answer_question")
+    @patch("backend.app.student_runtime.router.generate_qa_image")
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
+    def test_qa_stream_image_generation_returns_attachments_without_pace_checkpoint(
+        self,
+        mock_parse_courseware,
+        mock_build_cir,
+        mock_synthesize_speech,
+        mock_get_voice_cache_dir,
+        mock_generate_qa_image,
+        mock_answer_question,
+        mock_apply_qa_checkpoint,
+    ) -> None:
+        publish = self._publish_demo_lesson(
+            mock_parse_courseware,
+            mock_build_cir,
+            mock_synthesize_speech,
+            mock_get_voice_cache_dir,
+        )
+        section_id = self._get_first_section_id(publish["lessonId"])
+        student_identifier = self._get_student_identifier()
+        mock_generate_qa_image.return_value = {
+            "answer": "已根据你的描述生成图片。",
+            "mode": "image_generation",
+            "attachments": [
+                {
+                    "type": "image",
+                    "storageProvider": "local",
+                    "storageKey": "generated/demo.png",
+                    "url": "/cache/qa-images/generated/demo.png",
+                    "name": "generated-image.png",
+                    "mimeType": "image/png",
+                    "size": 128,
+                }
+            ],
+            "relatedKnowledgePoints": [],
+            "generation": {"status": "SUCCEEDED", "model": "wanx2.1-t2i-turbo", "imageCount": 1},
+        }
+
+        response = self.client.post(
+            "/student-api/api/v1/qa/interact/stream",
+            json=self._signed_payload(
+                {
+                    "studentId": student_identifier,
+                    "lessonId": publish["lessonId"],
+                    "sectionId": section_id,
+                    "mode": "image_generation",
+                    "question": "生成一张二叉树遍历示意图",
+                    "attachments": [self._demo_image_attachment()],
+                }
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("正在生成图片", response.text)
+        self.assertIn('"mode": "image_generation"', response.text)
+        self.assertIn('/cache/qa-images/generated/demo.png', response.text)
+        mock_generate_qa_image.assert_called_once()
+        self.assertEqual(mock_generate_qa_image.call_args.kwargs["prompt"], "生成一张二叉树遍历示意图")
+        mock_answer_question.assert_not_called()
+        mock_apply_qa_checkpoint.assert_not_called()
+
+    @patch("backend.app.lesson.voice_storage.get_voice_cache_dir")
+    @patch("backend.app.lesson.service.synthesize_speech")
+    @patch("backend.app.courseware.service.build_cir")
+    @patch("backend.app.courseware.service.parse_courseware")
     def test_qa_lab_course_outline_returns_lessons_sections_and_pages(
         self,
         mock_parse_courseware,

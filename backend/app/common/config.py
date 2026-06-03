@@ -54,6 +54,11 @@ class Settings(BaseModel):
     qa_multimodal_model: str = "qwen3.5-plus"
     qa_embedding_model: str = "text-embedding-v4"
     qa_embedding_dimensions: int = 1024
+    qa_image_generation_model: str = "wanx2.1-t2i-turbo"
+    qa_image_generation_size: str = "1024*1024"
+    qa_image_generation_count: int = 1
+    qa_image_generation_timeout_seconds: float = 60.0
+    qa_image_generation_poll_interval_seconds: float = 2.0
     qa_asr_model: str = "qwen3-asr-flash"
     qa_asr_timeout_seconds: float = 180.0
     qa_asr_poll_interval_seconds: float = 2.0

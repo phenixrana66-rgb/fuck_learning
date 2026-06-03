@@ -103,6 +103,66 @@ class DashScopeClient:
         except Exception as exc:
             raise RuntimeError(f"Unexpected DashScope multimodal response: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
 
+    def create_image_generation_task(
+        self,
+        *,
+        prompt: str,
+        parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.ensure_ready()
+        payload = {
+            "model": self.settings.qa_image_generation_model,
+            "input": {"prompt": prompt},
+            "parameters": parameters or {},
+        }
+        url = self.settings.dashscope_base_url.rstrip("/") + "/api/v1/services/aigc/text2image/image-synthesis"
+        headers = {
+            "Authorization": f"Bearer {self.settings.dashscope_api_key}",
+            "Content-Type": "application/json",
+            "X-DashScope-Async": "enable",
+        }
+        with httpx.Client(timeout=self.settings.llm_timeout_seconds, trust_env=False) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        try:
+            output = data["output"]
+            return {
+                "raw": data,
+                "task_id": output["task_id"],
+                "status": output.get("task_status") or "PENDING",
+                "request_id": data.get("request_id") or data.get("requestId"),
+                "model": self.settings.qa_image_generation_model,
+            }
+        except Exception as exc:
+            raise RuntimeError(f"Unexpected DashScope image task response: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
+
+    def get_image_generation_task(self, task_id: str) -> dict[str, Any]:
+        self.ensure_ready()
+        normalized_task_id = str(task_id or "").strip()
+        if not normalized_task_id:
+            raise RuntimeError("DashScope image task id is empty.")
+        url = self.settings.dashscope_base_url.rstrip("/") + f"/api/v1/tasks/{normalized_task_id}"
+        headers = {"Authorization": f"Bearer {self.settings.dashscope_api_key}"}
+        with httpx.Client(timeout=self.settings.llm_timeout_seconds, trust_env=False) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+        try:
+            output = data["output"]
+            return {
+                "raw": data,
+                "task_id": output.get("task_id") or normalized_task_id,
+                "status": output.get("task_status") or "UNKNOWN",
+                "results": output.get("results") or [],
+                "metrics": output.get("task_metrics") or {},
+                "usage": data.get("usage") or {},
+                "request_id": data.get("request_id") or data.get("requestId"),
+                "model": self.settings.qa_image_generation_model,
+            }
+        except Exception as exc:
+            raise RuntimeError(f"Unexpected DashScope image task query response: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
+
     def embed_texts(self, texts: list[str], *, text_type: str = 'document') -> list[list[float]]:
         self.ensure_ready()
         if not texts:

@@ -52,6 +52,26 @@ class ConfigSettingsTestCase(unittest.TestCase):
 
         self.assertEqual(settings.qa_multimodal_model, "qwen3.5-plus")
 
+    def test_local_config_reads_image_generation_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            local_config = Path(tmp) / "config.local.py"
+            local_config.write_text(
+                "qa_image_generation_model = 'wanx2.1-t2i-plus'\n"
+                "qa_image_generation_size = '1024*768'\n"
+                "qa_image_generation_count = 1\n"
+                "qa_image_generation_timeout_seconds = 45.0\n"
+                "qa_image_generation_poll_interval_seconds = 1.5\n",
+                encoding="utf-8",
+            )
+            with patch("backend.app.common.config._LOCAL_CONFIG_PATH", local_config):
+                settings = get_settings()
+
+        self.assertEqual(settings.qa_image_generation_model, "wanx2.1-t2i-plus")
+        self.assertEqual(settings.qa_image_generation_size, "1024*768")
+        self.assertEqual(settings.qa_image_generation_count, 1)
+        self.assertEqual(settings.qa_image_generation_timeout_seconds, 45.0)
+        self.assertEqual(settings.qa_image_generation_poll_interval_seconds, 1.5)
+
     def test_local_config_reads_new_uppercase_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             local_config = Path(tmp) / "config.local.py"
