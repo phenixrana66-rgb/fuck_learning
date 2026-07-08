@@ -63,3 +63,13 @@ dashscope_base_url = "https://dashscope.aliyuncs.com"
 # OpenAI-compatible 学生端 provider 可引用这个密钥名，也可以添加其它 *_api_key 变量后在页面填写对应 apiKeyRef。
 openai_compat_api_key = "replace-with-your-openai-compatible-key"
 
+# ====================== S3 / MinIO 存储配置 ======================
+s3_enabled = False
+s3_endpoint = "localhost:13052"
+s3_access_key = ""
+s3_secret_key = ""
+s3_secure = False
+s3_bucket = "chaoxing"
+s3_public_url = "http://localhost:13052/chaoxing"
+
+

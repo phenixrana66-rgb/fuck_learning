@@ -14,6 +14,7 @@ import fitz
 from pptx import Presentation
 
 from backend.app.common.exceptions import ApiError
+from backend.app.common.storage import get_storage_manager
 from backend.app.parser.schemas import ExtractedPresentation, ExtractedSlide, FileInfo
 from backend.app.parser.source_loader import load_source_bytes
 
@@ -144,7 +145,7 @@ def _build_preview_urls(
         return {}
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="pptx-preview-", dir="/tmp") as temp_dir_name:
+    with tempfile.TemporaryDirectory(prefix="pptx-preview-", dir=None) as temp_dir_name:
         temp_dir = Path(temp_dir_name)
         input_path = temp_dir / Path(file_name).name
         export_dir = temp_dir / "exported"
@@ -176,11 +177,48 @@ def _build_preview_urls(
             raise ApiError(code=500, msg=message, status_code=500)
 
         preview_urls: dict[int, str] = {}
+        storage_manager = get_storage_manager()
+        parse_id = public_base.rstrip("/").split("/")[-1]
         for index, source_path in enumerate(exported_files, start=1):
-            target_path = output_dir / f"page-{index}.png"
-            shutil.copy2(source_path, target_path)
-            preview_urls[index] = f"{public_base.rstrip('/')}/page-{index}.png"
+            if output_dir:
+                target_path = output_dir / f"page-{index}.png"
+                shutil.copy2(source_path, target_path)
+            storage_key = f"courseware/{parse_id}/page-{index}.png"
+            url = storage_manager.upload_file(source_path, storage_key, content_type="image/png")
+            preview_urls[index] = url
         return preview_urls
+
+
+def _find_macos_powerpoint_app() -> Path | None:
+    for candidate in MACOS_POWERPOINT_APP_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    try:
+        completed = subprocess.run(
+            ["mdfind", f"kMDItemCFBundleIdentifier == '{MACOS_POWERPOINT_BUNDLE_ID}'"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        candidate = Path(line.strip())
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _find_soffice_executable() -> Path | None:
+    soffice_path = shutil.which("soffice")
+    if soffice_path:
+        return Path(soffice_path)
+    for candidate in LIBREOFFICE_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _resolve_preview_exporters() -> list[tuple[str, Callable[[Path, Path, int], None]]]:
@@ -237,38 +275,6 @@ def _resolve_preview_exporters() -> list[tuple[str, Callable[[Path, Path, int], 
         msg="当前环境未找到 LibreOffice soffice，macOS/Linux 请先安装 LibreOffice 后再导出课件页图",
         status_code=500,
     )
-
-
-def _find_macos_powerpoint_app() -> Path | None:
-    for candidate in MACOS_POWERPOINT_APP_CANDIDATES:
-        if candidate.exists():
-            return candidate
-    try:
-        completed = subprocess.run(
-            ["mdfind", f"kMDItemCFBundleIdentifier == '{MACOS_POWERPOINT_BUNDLE_ID}'"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return None
-    if completed.returncode != 0:
-        return None
-    for line in completed.stdout.splitlines():
-        candidate = Path(line.strip())
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _find_soffice_executable() -> Path | None:
-    soffice_path = shutil.which("soffice")
-    if soffice_path:
-        return Path(soffice_path)
-    for candidate in LIBREOFFICE_CANDIDATES:
-        if candidate.exists():
-            return candidate
-    return None
 
 
 def _export_with_powerpoint(input_path: Path, output_dir: Path, _slide_count: int) -> None:

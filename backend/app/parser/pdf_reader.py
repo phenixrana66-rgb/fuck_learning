@@ -5,6 +5,7 @@ from pathlib import Path
 import fitz
 
 from backend.app.common.exceptions import ApiError
+from backend.app.common.storage import get_storage_manager
 from backend.app.parser.schemas import ExtractedPresentation, ExtractedSlide, FileInfo
 from backend.app.parser.source_loader import load_source_bytes
 
@@ -95,11 +96,22 @@ def _render_preview_page(
     if output_dir is None or not public_base:
         return None
 
-    target_path = output_dir / f"page-{page_no}.png"
-    matrix = fitz.Matrix(1.5, 1.5)
-    pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-    pixmap.save(target_path)
-    return f"{public_base.rstrip('/')}/page-{page_no}.png"
+    import tempfile
+    storage_manager = get_storage_manager()
+    parse_id = public_base.rstrip("/").split("/")[-1]
+
+    with tempfile.TemporaryDirectory(prefix="pdf-preview-") as temp_dir:
+        temp_path = Path(temp_dir) / f"page-{page_no}.png"
+        matrix = fitz.Matrix(1.5, 1.5)
+        pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+        pixmap.save(str(temp_path))
+
+        if output_dir:
+            import shutil
+            shutil.copy2(temp_path, output_dir / f"page-{page_no}.png")
+
+        storage_key = f"courseware/{parse_id}/page-{page_no}.png"
+        return storage_manager.upload_file(temp_path, storage_key, content_type="image/png")
 
 
 def _normalize_text(value: str | None) -> str:

@@ -195,6 +195,7 @@ class CompatRouterTestCase(unittest.TestCase):
             'ZGVtbw==',
             '第一章',
             'http://testserver/',
+            None,
         )
         mock_thread.assert_called_once_with(
             target=unittest.mock.ANY,

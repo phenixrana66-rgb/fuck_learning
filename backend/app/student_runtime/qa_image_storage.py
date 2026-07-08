@@ -10,6 +10,8 @@ from uuid import uuid4
 import httpx
 
 from backend.app.common.exceptions import ApiError
+from backend.app.common.config import get_settings
+from backend.app.common.storage import get_storage_manager
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -67,14 +69,17 @@ def store_qa_image_from_data_url(
     _ensure_image_size_within_limit(len(raw_bytes))
     extension = SUPPORTED_QA_IMAGE_MIME_TYPES[resolved_mime]
     safe_name = _normalize_file_name(file_name or f"image{extension}", extension)
-    storage_key = f"{uuid4().hex[:2]}/{uuid4().hex}{extension}"
-    output_path = get_qa_image_cache_dir() / storage_key
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(raw_bytes)
+    uuid_key = f"{uuid4().hex[:2]}/{uuid4().hex}{extension}"
+    
+    settings = get_settings()
+    storage_provider = "s3" if settings.s3_enabled else "local"
+    storage_manager = get_storage_manager()
+    url = storage_manager.upload_bytes(raw_bytes, f"qa/{uuid_key}", content_type=resolved_mime)
+    
     return StoredQaImage(
-        storage_provider="local",
-        storage_key=storage_key,
-        url=build_qa_image_public_url(storage_key),
+        storage_provider=storage_provider,
+        storage_key=uuid_key,
+        url=url,
         name=safe_name,
         mime_type=resolved_mime,
         size=len(raw_bytes),
@@ -111,13 +116,16 @@ def store_qa_image_from_url(
     if not safe_subdir or safe_subdir.startswith("..") or "/../" in f"/{safe_subdir}/":
         safe_subdir = "generated"
     storage_key = f"{safe_subdir}/{uuid4().hex[:2]}/{uuid4().hex}{extension}"
-    output_path = get_qa_image_cache_dir() / storage_key
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(raw_bytes)
+    
+    settings = get_settings()
+    storage_provider = "s3" if settings.s3_enabled else "local"
+    storage_manager = get_storage_manager()
+    url = storage_manager.upload_bytes(raw_bytes, f"qa/{storage_key}", content_type=resolved_mime)
+    
     return StoredQaImage(
-        storage_provider="local",
+        storage_provider=storage_provider,
         storage_key=storage_key,
-        url=build_qa_image_public_url(storage_key),
+        url=url,
         name=safe_name,
         mime_type=resolved_mime,
         size=len(raw_bytes),
@@ -176,21 +184,30 @@ def normalize_qa_image_attachments(raw_attachments: list[object] | None) -> list
 
 def load_qa_image_as_data_url(storage_key: str, mime_type: str | None = None) -> str:
     key = _normalize_storage_key(storage_key)
-    file_path = get_qa_image_cache_dir() / key
-    if not file_path.exists():
-        raise ApiError(404, "图片资源不存在或已失效", status_code=404)
-    resolved_mime = (mime_type or mimetypes.guess_type(file_path.name)[0] or "image/jpeg").lower()
-    raw_bytes = file_path.read_bytes()
+    storage_manager = get_storage_manager()
+    try:
+        raw_bytes = storage_manager.download_bytes(f"qa/{key}")
+    except Exception as exc:
+        raise ApiError(404, "图片资源不存在或已失效", status_code=404) from exc
+        
+    resolved_mime = (mime_type or mimetypes.guess_type(key)[0] or "image/jpeg").lower()
     encoded = base64.b64encode(raw_bytes).decode("ascii")
     return f"data:{resolved_mime};base64,{encoded}"
 
 
 def storage_key_from_url(file_url: str) -> str | None:
     normalized = str(file_url or "").strip()
-    if not normalized.startswith(QA_IMAGE_PUBLIC_PREFIX):
-        return None
-    suffix = normalized[len(QA_IMAGE_PUBLIC_PREFIX):].strip("/")
-    return _normalize_storage_key(suffix) if suffix else None
+    # 兼容本地缓存 URL
+    if normalized.startswith(QA_IMAGE_PUBLIC_PREFIX):
+        suffix = normalized[len(QA_IMAGE_PUBLIC_PREFIX):].strip("/")
+        return _normalize_storage_key(suffix) if suffix else None
+        
+    # 兼容 S3 的 URL 提取 (例如包含 /qa/ 路径的部分)
+    if "/qa/" in normalized:
+        suffix = normalized.split("/qa/", 1)[-1].strip("/")
+        return _normalize_storage_key(suffix) if suffix else None
+        
+    return None
 
 
 def _normalize_storage_key(storage_key: str) -> str:

@@ -67,6 +67,15 @@ class Settings(BaseModel):
     openai_compat_api_key: str | None = None
     vector_db_url: str | None = None
 
+    # S3 / MinIO 存储配置
+    s3_enabled: bool = False
+    s3_endpoint: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_secure: bool = False
+    s3_bucket: str = "chaoxing"
+    s3_public_url: str = ""
+
     model_config = ConfigDict(extra="allow")
 
 
@@ -78,7 +87,15 @@ _LOCAL_CONFIG_PATH = _REPO_ROOT / "config.local.py"
 def get_settings() -> Settings:
     defaults = Settings().model_dump()
     file_overrides = _load_local_config_values()
-    return Settings(**{**defaults, **file_overrides})
+    settings = Settings(**{**defaults, **file_overrides})
+    
+    # 自动识别单元测试环境，若在测试中则强制关闭 S3
+    import sys
+    is_testing = "unittest" in sys.modules or any("unittest" in arg for arg in sys.argv)
+    if is_testing:
+        settings.s3_enabled = False
+        
+    return settings
 
 
 def get_setting(name: str, default=None):

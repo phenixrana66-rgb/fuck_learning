@@ -226,6 +226,6 @@ class CoursewareServiceTestCase(unittest.TestCase):
         presentation.save(target)
         return target
 
-    def _mock_exported_pptx_pngs(self, _input_path: Path, export_dir: Path) -> None:
+    def _mock_exported_pptx_pngs(self, _input_path: Path, export_dir: Path, *args, **kwargs) -> None:
         (export_dir / "幻灯片1.PNG").write_bytes(b"slide-1")
         (export_dir / "幻灯片2.PNG").write_bytes(b"slide-2")
