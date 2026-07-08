@@ -8,6 +8,7 @@ import httpx
 
 from backend.app.common.db import session_scope
 from backend.app.common.exceptions import ApiError
+from backend.app.common.storage import get_storage_manager
 from backend.app.parser.schemas import ExtractedPresentation, OutlineResult
 from backend.app.student_runtime.qa_runtime_config_service import (
     CAP_TEACHER_STRUCTURE_PARSE,
@@ -24,7 +25,21 @@ def generate_outline_with_llm(
     course_id: str,
     extracted: ExtractedPresentation,
     is_extract_key_point: bool,
+    parse_id: str | None = None,
 ) -> OutlineResult:
+    storage_manager = get_storage_manager()
+    if parse_id:
+        cache_key = f"courseware/{parse_id}/llm_outline_cache.json"
+        try:
+            cache_bytes = storage_manager.download_bytes(cache_key)
+            if cache_bytes:
+                import logging
+                logging.info(f"课件结构化 LLM 缓存命中！[parse_id={parse_id}]，免去重复的大模型调用。")
+                data = json.loads(cache_bytes.decode("utf-8"))
+                return OutlineResult.model_validate(data)
+        except Exception:
+            pass
+
     with session_scope() as db:
         runtime_config = get_teacher_llm_runtime_config(db, CAP_TEACHER_STRUCTURE_PARSE)
     api_key = resolve_api_key_ref(runtime_config.api_key_ref)
@@ -185,6 +200,15 @@ def generate_outline_with_llm(
             "result": result.model_dump(),
         },
     )
+    if parse_id and result:
+        cache_key = f"courseware/{parse_id}/llm_outline_cache.json"
+        try:
+            cache_data = result.model_dump(mode="json")
+            cache_bytes = json.dumps(cache_data, ensure_ascii=False).encode("utf-8")
+            storage_manager.upload_bytes(cache_bytes, cache_key, content_type="application/json")
+        except Exception as e:
+            import logging
+            logging.error(f"保存大纲 LLM 缓存失败: {e}")
     return result
 
 

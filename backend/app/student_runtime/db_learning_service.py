@@ -18,7 +18,7 @@ from backend.app.student_runtime.pace_service import (
     refresh_lesson_progress_rollup,
     should_clear_pace_on_completion,
 )
-from backend.chaoxing_db.models import ChapterPptAsset, ChapterParseResult, ChapterScript, ChapterScriptSection, CourseChapter, Lesson, LessonSection, LessonSectionAnchor, LessonSectionPage, LessonUnit, ProgressTrackLog, ResumeRecord, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionMasteryLog, StudentSectionProgress, User
+from backend.chaoxing_db.models import ChapterPptAsset, ChapterParseResult, ChapterParseTask, ChapterScript, ChapterScriptSection, CourseChapter, Lesson, LessonSection, LessonSectionAnchor, LessonSectionPage, LessonUnit, ProgressTrackLog, ResumeRecord, StudentLessonProgress, StudentPageProgress, StudentPracticeAttempt, StudentSectionMasteryLog, StudentSectionProgress, User
 
 UNDERSTANDING_LABELS = {"weak": "未理解", "partial": "部分理解", "complete": "完全理解"}
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -233,6 +233,153 @@ def _preview_folder_name(section: LessonSection) -> str:
 def _ensure_real_preview_pages(db: Session, section: LessonSection) -> bool:
     if not section.ppt_asset_id:
         return False
+
+    # 1. 尝试获取该小节专属的合法页码范围 (从 ChapterScriptSection 中解析)
+    valid_pages = None
+    if section.script_id and section.section_code:
+        clean_code = section.section_code.split("-")[-1]
+        script_sec = db.query(ChapterScriptSection).filter(
+            ChapterScriptSection.script_id == section.script_id,
+            ChapterScriptSection.section_code == clean_code
+        ).first()
+        if script_sec and script_sec.related_page_range:
+            try:
+                parts = script_sec.related_page_range.split("-")
+                start = int(parts[0])
+                end = int(parts[1])
+                valid_pages = set(range(start, end + 1))
+            except Exception:
+                pass
+
+    # 2. 获取大纲映射数据 (优先)
+    parse_result = None
+    if section.parse_result_id:
+        parse_result = db.query(ChapterParseResult).filter(ChapterParseResult.id == section.parse_result_id).first()
+
+    page_mapping = parse_result.page_mapping if parse_result else None
+    
+    # 3. 构造现有的页面缓存
+    existing_pages = {page.page_no: page for page in db.query(LessonSectionPage).filter(LessonSectionPage.section_id == section.id).all()}
+    changed = False
+
+    if page_mapping:
+        # 在 S3 / 数据库大纲模式下
+        for item in page_mapping:
+            page_no = item.get("pageNo", 1)
+            
+            # 如果存在合法页码范围，且当前页码不在范围内，则绝对不属于该小节，直接跳过！
+            if valid_pages is not None and page_no not in valid_pages:
+                continue
+
+            row = existing_pages.get(page_no)
+            if not row:
+                row = LessonSectionPage(
+                    lesson_id=section.lesson_id,
+                    section_id=section.id,
+                    source_ppt_asset_id=section.ppt_asset_id,
+                    source_page_no=page_no,
+                    page_no=page_no,
+                    sort_no=page_no,
+                )
+                db.add(row)
+                changed = True
+            elif _has_real_page_payload(section.section_name, row):
+                continue
+
+            target_url = item.get("previewUrl") or ""
+            if not target_url:
+                from backend.app.lesson.service import _resolve_courseware_preview_url
+                task = db.query(ChapterParseTask).filter(ChapterParseTask.ppt_asset_id == section.ppt_asset_id).first()
+                parse_no = task.parse_no if task else None
+                target_url = _resolve_courseware_preview_url(parse_no, page_no)
+
+            if row.ppt_page_url != target_url:
+                row.ppt_page_url = target_url
+                changed = True
+
+            page_title = item.get("title") or f"第 {page_no} 页"
+            if row.page_title != page_title:
+                row.page_title = page_title
+                changed = True
+
+            body_texts = item.get("bodyTexts", [])
+            body_text_content = "\n".join(body_texts) if isinstance(body_texts, list) else str(body_texts)
+            parsed_content = body_text_content or f"本页为《{section.section_name}》课件第 {page_no} 页。"
+            if row.parsed_content != parsed_content:
+                row.parsed_content = parsed_content
+                changed = True
+
+            page_summary = item.get("pageSummary") or f"查看《{section.section_name}》课件第 {page_no} 页内容。"
+            if row.page_summary != page_summary:
+                row.page_summary = page_summary
+                changed = True
+
+            row.source_ppt_asset_id = section.ppt_asset_id
+            row.source_page_no = page_no
+            row.sort_no = page_no
+
+        asset = db.query(ChapterPptAsset).filter(ChapterPptAsset.id == section.ppt_asset_id).first()
+        if asset and asset.page_count != len(page_mapping):
+            asset.page_count = len(page_mapping)
+            changed = True
+        if changed:
+            db.commit()
+        return changed
+
+    # 4. 回退本地文件磁盘扫描模式 (保障本地旧单元测试/无大纲小节的兼容)
+    preview_dir = PREVIEW_ROOT / _preview_folder_name(section)
+    if not preview_dir.exists():
+        return False
+    image_files = sorted(preview_dir.glob("page-*.png"), key=lambda file: int(file.stem.split("-")[-1]))
+    if not image_files:
+        return False
+
+    for page_no, _image in enumerate(image_files, start=1):
+        # 如果存在合法页码范围，且当前页码不在范围内，则绝对不属于该小节，直接跳过！
+        if valid_pages is not None and page_no not in valid_pages:
+            continue
+
+        row = existing_pages.get(page_no)
+        if not row:
+            row = LessonSectionPage(
+                lesson_id=section.lesson_id,
+                section_id=section.id,
+                source_ppt_asset_id=section.ppt_asset_id,
+                source_page_no=page_no,
+                page_no=page_no,
+                sort_no=page_no,
+            )
+            db.add(row)
+            changed = True
+        elif _has_real_page_payload(section.section_name, row):
+            continue
+
+        target_url = f"/lesson-previews/{_preview_folder_name(section)}/page-{page_no}.png"
+        if row.ppt_page_url != target_url:
+            row.ppt_page_url = target_url
+            changed = True
+        if row.page_title != f"第 {page_no} 页":
+            row.page_title = f"第 {page_no} 页"
+            changed = True
+        if row.page_summary != f"查看《{section.section_name}》课件第 {page_no} 页内容。":
+            row.page_summary = f"查看《{section.section_name}》课件第 {page_no} 页内容。"
+            changed = True
+        if row.parsed_content != f"本页为《{section.section_name}》课件第 {page_no} 页。":
+            row.parsed_content = f"本页为《{section.section_name}》课件第 {page_no} 页。"
+            changed = True
+        row.source_ppt_asset_id = section.ppt_asset_id
+        row.source_page_no = page_no
+        row.sort_no = page_no
+
+    asset = db.query(ChapterPptAsset).filter(ChapterPptAsset.id == section.ppt_asset_id).first()
+    if asset and asset.page_count != len(image_files):
+        asset.page_count = len(image_files)
+        changed = True
+    if changed:
+        db.commit()
+    return changed
+
+    # 回退逻辑：若未在数据库中找到大纲页图记录，回退到读取本地磁盘（保障老课件/旧数据的兼容性）
     preview_dir = PREVIEW_ROOT / _preview_folder_name(section)
     if not preview_dir.exists():
         return False

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import math
@@ -196,6 +196,8 @@ def _run_script_generation(
                 next_section_name=next_section_name,
                 is_first_section=index == 0,
                 is_last_section=index == total_sections - 1,
+                script_id=script_id,
+                section_id=section.sectionId,
             )
             content = generated['content'].strip()
             previous_summary = generated['summaryForNext'].strip() or _build_summary_for_next(content, section.sectionName, next_section_name)

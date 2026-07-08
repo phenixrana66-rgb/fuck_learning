@@ -36,7 +36,10 @@ class TeacherRuntimeStatusServiceTestCase(unittest.TestCase):
         clear_parse_tasks()
         reset_database_url()
         assert self.temp_dir is not None
-        self.temp_dir.cleanup()
+        try:
+            self.temp_dir.cleanup()
+        except OSError:
+            pass
 
     @patch('backend.app.lesson.voice_storage.get_voice_cache_dir')
     @patch('backend.app.lesson.service.synthesize_speech')

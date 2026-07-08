@@ -100,6 +100,20 @@ def _render_preview_page(
     storage_manager = get_storage_manager()
     parse_id = public_base.rstrip("/").split("/")[-1]
 
+    # 尝试检测并复用已存在的图片文件，避免大模型生成失败等重试时需要重复执行昂贵的 PDF 渲染
+    storage_key = f"courseware/{parse_id}/page-{page_no}.png"
+    try:
+        sm_bytes = storage_manager.download_bytes(storage_key)
+        if sm_bytes:
+            if output_dir:
+                target_path = output_dir / f"page-{page_no}.png"
+                if not target_path.exists():
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    target_path.write_bytes(sm_bytes)
+            return storage_manager.get_public_url(storage_key)
+    except Exception:
+        pass
+
     with tempfile.TemporaryDirectory(prefix="pdf-preview-") as temp_dir:
         temp_path = Path(temp_dir) / f"page-{page_no}.png"
         matrix = fitz.Matrix(1.5, 1.5)

@@ -845,10 +845,15 @@ def _resolve_preview_url(page_mapping: dict, page_no: int, parse_no: str | None 
 def _resolve_courseware_preview_url(parse_no: str | None, page_no: int) -> str:
     if not parse_no:
         return ""
+    from backend.app.common.storage import get_storage_manager
+    storage_manager = get_storage_manager()
     for extension in sorted(IMAGE_EXTENSIONS):
+        storage_key = f"courseware/{parse_no}/page-{page_no}{extension}"
+        if storage_manager.__class__.__name__ == "MinioStorageProvider":
+            return storage_manager.get_public_url(storage_key)
         preview_file = COURSEWARE_PREVIEW_ROOT / parse_no / f"page-{page_no}{extension}"
         if preview_file.exists():
-            return f"/courseware-previews/{parse_no}/page-{page_no}{extension}"
+            return storage_manager.get_public_url(storage_key)
     return ""
 
 

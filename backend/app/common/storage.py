@@ -125,21 +125,22 @@ class MinioStorageProvider(StorageProvider):
         try:
             if not self.client.bucket_exists(bucket):
                 self.client.make_bucket(bucket)
-                # 设置全局匿名只读 Policy，使前端能直接加载图片与音频
-                policy = {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {"AWS": ["*"]},
-                            "Action": ["s3:GetObject"],
-                            "Resource": [f"arn:aws:s3:::{bucket}/*"]
-                        }
-                    ]
-                }
-                self.client.set_bucket_policy(bucket, json.dumps(policy))
+            
+            # 无论桶是否已存在，均强制应用全局匿名只读 Policy，使前端能匿名加载图片与音频
+            policy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {"AWS": ["*"]},
+                        "Action": ["s3:GetObject"],
+                        "Resource": [f"arn:aws:s3:::{bucket}/*"]
+                    }
+                ]
+            }
+            self.client.set_bucket_policy(bucket, json.dumps(policy))
         except Exception as e:
-            logging.error(f"检查/自动创建 MinIO 桶 '{bucket}' 失败: {e}")
+            logging.error(f"检查/自动创建或设置 MinIO 桶 '{bucket}' 的 Policy 失败: {e}")
 
     def upload_file(self, local_path: Path, storage_key: str, bucket: str | None = None, content_type: str | None = None) -> str:
         if not self.client:

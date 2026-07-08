@@ -124,8 +124,16 @@ def resolve_api_key_ref(api_key_ref: str) -> str | None:
     normalized = _normalize_text(api_key_ref)
     if not normalized:
         return None
+        
+    # 兼容逻辑：若 api_key_ref 自身就是以 sk- 开头的真实密钥，则直接返回
+    if normalized.startswith("sk-") or len(normalized) > 30:
+        return api_key_ref
+        
     value = get_setting(normalized)
     if value in (None, ""):
+        # 回退检测：如果配置项不存在，但原输入就是 sk- Key，则直接返回
+        if normalized.startswith("sk-") or len(normalized) > 20:
+            return api_key_ref
         return None
     return str(value)
 

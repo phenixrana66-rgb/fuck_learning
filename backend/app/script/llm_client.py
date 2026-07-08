@@ -1,4 +1,4 @@
-﻿import json
+import json
 import re
 from typing import Any
 
@@ -7,6 +7,7 @@ import httpx
 from backend.app.cir.schemas import CirSlideContent
 from backend.app.common.db import session_scope
 from backend.app.common.exceptions import ApiError
+from backend.app.common.storage import get_storage_manager
 from backend.app.script.schemas import GenerateScriptRequest
 from backend.app.student_runtime.qa_runtime_config_service import (
     CAP_TEACHER_SCRIPT,
@@ -25,7 +26,21 @@ def generate_script_section_with_llm(
     next_section_name: str | None,
     is_first_section: bool,
     is_last_section: bool,
+    script_id: str | None = None,
+    section_id: str | None = None,
 ) -> dict[str, str]:
+    storage_manager = get_storage_manager()
+    if script_id and section_id:
+        cache_key = f"voice/script_cache/{script_id}_{section_id}.json"
+        try:
+            cache_bytes = storage_manager.download_bytes(cache_key)
+            if cache_bytes:
+                import logging
+                logging.info(f"脚本生成 LLM 缓存命中！[script_id={script_id}, section_id={section_id}]，免去重复的大模型调用。")
+                return json.loads(cache_bytes.decode("utf-8"))
+        except Exception:
+            pass
+
     with session_scope() as db:
         runtime_config = get_teacher_llm_runtime_config(db, CAP_TEACHER_SCRIPT)
     api_key = resolve_api_key_ref(runtime_config.api_key_ref)
@@ -77,7 +92,16 @@ def generate_script_section_with_llm(
 
     response_json = _parse_llm_response_json(response)
     content = _extract_message_content(response_json)
-    return _extract_section_result(content)
+    result = _extract_section_result(content)
+    if script_id and section_id and result:
+        cache_key = f"voice/script_cache/{script_id}_{section_id}.json"
+        try:
+            cache_bytes = json.dumps(result, ensure_ascii=False).encode("utf-8")
+            storage_manager.upload_bytes(cache_bytes, cache_key, content_type="application/json")
+        except Exception as e:
+            import logging
+            logging.error(f"保存脚本生成 LLM 缓存失败: {e}")
+    return result
 
 
 def _build_system_prompt() -> str:

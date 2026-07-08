@@ -99,8 +99,8 @@ def extract_pptx_presentation(
                 if text:
                     body_texts.append(text)
 
-            table = getattr(shape, "table", None)
-            if table is not None:
+            if getattr(shape, "has_table", False):
+                table = shape.table
                 rows: list[str] = []
                 for row in table.rows:
                     values = [_normalize_text(cell.text) for cell in row.cells]
@@ -143,6 +143,33 @@ def _build_preview_urls(
 ) -> dict[int, str]:
     if output_dir is None or not public_base:
         return {}
+
+    # 自检并复用已存在的缓存资源，避免大模型接口超时等失败重试时需要重复执行昂贵的 PPT 导出
+    parse_id = public_base.rstrip("/").split("/")[-1]
+    storage_manager = get_storage_manager()
+    cache_available = True
+    cached_urls: dict[int, str] = {}
+    for index in range(1, slide_count + 1):
+        storage_key = f"courseware/{parse_id}/page-{index}.png"
+        try:
+            sm_bytes = storage_manager.download_bytes(storage_key)
+            if not sm_bytes:
+                cache_available = False
+                break
+            cached_urls[index] = storage_manager.get_public_url(storage_key)
+            if output_dir:
+                target_path = output_dir / f"page-{index}.png"
+                if not target_path.exists():
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    target_path.write_bytes(sm_bytes)
+        except Exception:
+            cache_available = False
+            break
+
+    if cache_available and len(cached_urls) == slide_count:
+        import logging
+        logging.info(f"课件预览图 S3/本地缓存命中，共 {slide_count} 页，直接复用并跳过 Office 导出。")
+        return cached_urls
 
     output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="pptx-preview-", dir=None) as temp_dir_name:

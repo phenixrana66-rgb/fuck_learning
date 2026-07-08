@@ -31,7 +31,13 @@ def parse_courseware(
     else:
         raise ApiError(code=400, msg=f"不支持的课件类型：{file_type}", status_code=400)
 
-    outline = generate_outline_with_llm(course_id, extracted, is_extract_key_point)
+    parse_id = None
+    if preview_public_base:
+        parse_id = preview_public_base.rstrip("/").split("/")[-1]
+    elif preview_output_dir:
+        parse_id = preview_output_dir.name
+
+    outline = generate_outline_with_llm(course_id, extracted, is_extract_key_point, parse_id=parse_id)
     preview = _outline_to_structure_preview(course_id, outline, file_info.pageCount)
     return file_info, preview, extracted
 
