@@ -45,6 +45,17 @@ def _normalize_audio_asset_url(url: str | None) -> str:
     normalized = _normalize_asset_url(url)
     if not normalized:
         return ""
+    
+    from backend.app.common.config import get_settings
+    settings = get_settings()
+    if settings.s3_enabled:
+        if normalized.startswith("/"):
+            public_base = settings.s3_public_url.rstrip("/")
+            parsed_pub = urlsplit(public_base)
+            base_root = f"{parsed_pub.scheme}://{parsed_pub.netloc}"
+            return f"{base_root}{normalized}"
+        return normalized
+
     parsed = urlsplit(normalized)
     if parsed.scheme in {"http", "https"} and parsed.hostname in {"localhost", "testserver"} and parsed.path:
         if parsed.query:

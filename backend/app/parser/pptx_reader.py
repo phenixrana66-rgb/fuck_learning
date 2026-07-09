@@ -305,33 +305,56 @@ def _resolve_preview_exporters() -> list[tuple[str, Callable[[Path, Path, int], 
 
 
 def _export_with_powerpoint(input_path: Path, output_dir: Path, _slide_count: int) -> None:
-    if not POWERSHELL_EXE.exists():
-        raise ApiError(code=500, msg="当前环境缺少 PowerShell，无法调用 PowerPoint 导出课件页图", status_code=500)
+    import win32com.client
+    import re
 
-    script_path = output_dir.parent / "export_pptx_preview.ps1"
-    script_path.write_text(POWERPOINT_EXPORT_SCRIPT, encoding="utf-8")
-    completed = subprocess.run(
-        [
-            str(POWERSHELL_EXE),
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script_path),
-            "-InputPath",
-            str(input_path),
-            "-OutputDir",
-            str(output_dir),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        message = detail[-1] if detail else "未知错误"
-        raise ApiError(code=500, msg=f"调用 PowerPoint 导出页图失败：{message}", status_code=500)
+    abs_input = str(input_path.resolve()).replace("/", "\\")
+    abs_output_dir = str(output_dir.resolve()).replace("/", "\\")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    ppt_app = None
+    presentation = None
+    try:
+        # 启动 PowerPoint 应用程序实例
+        ppt_app = win32com.client.DispatchEx("PowerPoint.Application")
+        
+        # 以隐藏窗口且只读的方式打开课件 PPTX
+        presentation = ppt_app.Presentations.Open(
+            abs_input,
+            ReadOnly=True,
+            Untitled=False,
+            WithWindow=False
+        )
+
+        # 18 代表 ppSaveAsPNG。PowerPoint 会把每一页以幻灯片序号命名保存到目标目录下
+        presentation.SaveAs(abs_output_dir, 18)
+
+        # 归一化重命名导出的图片（兼容中英文版 Office 生成的 SlideX.PNG/幻灯片X.PNG 命名）
+        exported_files = list(output_dir.glob("*.[pP][nN][gG]"))
+        for file_path in exported_files:
+            stem = file_path.stem
+            match = re.search(r"\d+", stem)
+            if match:
+                page_no = int(match.group())
+                target_path = output_dir / f"page-{page_no}.png"
+                if file_path != target_path:
+                    if target_path.exists():
+                        target_path.unlink()
+                    file_path.rename(target_path)
+    except Exception as e:
+        raise ApiError(code=500, msg=f"通过 win32com 调用 PowerPoint 导出页图失败: {e}", status_code=500)
+    finally:
+        if presentation:
+            try:
+                presentation.Close()
+            except Exception:
+                pass
+        if ppt_app:
+            try:
+                ppt_app.Quit()
+            except Exception:
+                pass
 
 
 def _export_with_macos_powerpoint(_powerpoint_app: Path, input_path: Path, output_dir: Path, slide_count: int) -> None:

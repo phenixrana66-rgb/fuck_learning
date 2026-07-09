@@ -38,6 +38,17 @@ def resolve_course(db: Session, external_course_id: str) -> Course | None:
 def _normalize_audio_asset_url(url: str | None) -> str:
     if not url:
         return ""
+        
+    from backend.app.common.config import get_settings
+    settings = get_settings()
+    if settings.s3_enabled:
+        if url.startswith("/"):
+            public_base = settings.s3_public_url.rstrip("/")
+            parsed_pub = urlsplit(public_base)
+            base_root = f"{parsed_pub.scheme}://{parsed_pub.netloc}"
+            return f"{base_root}{url}"
+        return url
+
     parsed = urlsplit(url)
     if parsed.scheme in {"http", "https"} and parsed.hostname in {"localhost", "testserver"} and parsed.path:
         if parsed.query:
