@@ -1,6 +1,6 @@
-﻿from threading import Thread
+from threading import Thread
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -222,3 +222,24 @@ async def play_lesson_endpoint(request: Request) -> dict:
     verify_signature_placeholder(typed_payload.enc, typed_payload.time)
     data = play_lesson(typed_payload)
     return success_response(request, data, msg="lesson playback prepared")
+
+
+@router.get("/media/file")
+async def get_media_file(key: str):
+    import mimetypes
+    cleaned_key = key.replace("\\", "/").strip("/")
+    if not (cleaned_key.startswith("courseware/") or cleaned_key.startswith("voice/") or cleaned_key.startswith("qa/")):
+        raise ApiError(400, "非法的文件访问路径", status_code=400)
+        
+    try:
+        from backend.app.common.storage import get_storage_manager
+        storage_manager = get_storage_manager()
+        data = storage_manager.download_bytes(cleaned_key)
+        
+        mime_type, _ = mimetypes.guess_type(cleaned_key)
+        if not mime_type:
+            mime_type = "application/octet-stream"
+            
+        return Response(content=data, media_type=mime_type)
+    except Exception as e:
+        raise ApiError(404, f"获取媒体资源失败: {e}", status_code=404)

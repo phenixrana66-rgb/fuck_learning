@@ -1,10 +1,10 @@
-﻿from uuid import uuid4
+from uuid import uuid4
 
 import asyncio
 import json
 
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.app.common.db import get_db
@@ -484,3 +484,24 @@ async def notification_read(request: Request):
     if data is None:
         raise ApiError(404, "通知不存在", status_code=404)
     return response(200, "success", data, getattr(request.state, "request_id", None))
+
+
+@router.get("/api/v1/media/file")
+async def get_media_file(key: str):
+    import mimetypes
+    cleaned_key = key.replace("\\", "/").strip("/")
+    if not (cleaned_key.startswith("courseware/") or cleaned_key.startswith("voice/") or cleaned_key.startswith("qa/")):
+        raise ApiError(400, "非法的文件访问路径", status_code=400)
+        
+    try:
+        from backend.app.common.storage import get_storage_manager
+        storage_manager = get_storage_manager()
+        data = storage_manager.download_bytes(cleaned_key)
+        
+        mime_type, _ = mimetypes.guess_type(cleaned_key)
+        if not mime_type:
+            mime_type = "application/octet-stream"
+            
+        return Response(content=data, media_type=mime_type)
+    except Exception as e:
+        raise ApiError(404, f"获取媒体资源失败: {e}", status_code=404)

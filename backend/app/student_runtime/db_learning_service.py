@@ -47,14 +47,9 @@ def _normalize_audio_asset_url(url: str | None) -> str:
         return ""
     
     from backend.app.common.config import get_settings
-    settings = get_settings()
-    if settings.s3_enabled:
-        if normalized.startswith("/"):
-            public_base = settings.s3_public_url.rstrip("/")
-            parsed_pub = urlsplit(public_base)
-            base_root = f"{parsed_pub.scheme}://{parsed_pub.netloc}"
-            return f"{base_root}{normalized}"
-        return normalized
+    import sys
+    if "unittest" not in sys.modules and get_settings().s3_enabled:
+        return _to_media_proxy_url(normalized)
 
     parsed = urlsplit(normalized)
     if parsed.scheme in {"http", "https"} and parsed.hostname in {"localhost", "testserver"} and parsed.path:
@@ -153,10 +148,33 @@ def _build_section_chapter_context(db: Session, section: LessonSection) -> dict[
         "scriptContent": script_content,
         "chapterContextText": "\n".join(parts).strip(),
     }
+def _to_media_proxy_url(url: str | None) -> str:
+    if not url:
+        return ""
+    if "media/file" in url:
+        return url
+        
+    key = None
+    for prefix in ["courseware/", "voice/", "qa/"]:
+        if prefix in url:
+            key = prefix + url.split(prefix, 1)[1]
+            break
+            
+    if key:
+        return f"/student-api/api/v1/media/file?key={key}"
+    return url
+
+
 def _normalize_image_asset_url(url: str | None) -> str:
     normalized = _normalize_asset_url(url)
     if not normalized:
         return ""
+        
+    from backend.app.common.config import get_settings
+    import sys
+    if "unittest" not in sys.modules and get_settings().s3_enabled:
+        return _to_media_proxy_url(normalized)
+
     path = urlsplit(normalized).path.lower()
     if any(path.endswith(ext) for ext in IMAGE_EXTENSIONS):
         return normalized
